@@ -2,8 +2,9 @@ from pathlib import Path
 
 from fakes import FakeBackend, FakeExecutor, FakeVerifier
 from iac_harness.conditions import A, B, C
-from iac_harness.runner import RunContext, SandboxGate, run_task
-from iac_harness.types import CheckStatus, Stage, Task, TaskOracle
+from iac_harness.runner import RunContext, SandboxGate, run_gates, run_task
+from iac_harness.types import CheckResult, CheckStatus, Stage, Task, TaskOracle
+from iac_harness.workspace import Workspace
 
 TASK = Task("aws/task-1", "prompt", 2)
 ORACLE = TaskOracle({}, "package terraform.policy")
@@ -168,3 +169,36 @@ def test_unsupported_task_predeploy_failure_is_normal_fail(tmp_path):
     assert finals[0].final_status == "FAIL"
     assert finals[0].first_failure_stage == "VALIDATE_FAIL"
     assert executor.applies == 0
+
+
+class _InitGate:
+    """Simula o `terraform init`: cria `.terraform/` no workspace e devolve `status`."""
+
+    def __init__(self, status: CheckStatus) -> None:
+        self.status = status
+
+    def check(self, workspace: Workspace, oracle: TaskOracle) -> CheckResult:
+        (workspace.path / ".terraform").mkdir()
+        (workspace.path / ".terraform" / "x").write_text("provider")
+        return CheckResult(Stage.VALIDATE, self.status)
+
+
+def _gates_cleanup(tmp_path, status):
+    (tmp_path / ".terraform.lock.hcl").write_text("lock")
+    (tmp_path / "main.tf").write_text("x 1")
+    ws = Workspace(tmp_path, "hash")
+    run_gates([Stage.VALIDATE], {Stage.VALIDATE: _InitGate(status)}, ws, ORACLE)
+    return tmp_path
+
+
+def test_run_gates_removes_terraform_dir_but_keeps_other_files(tmp_path):
+    path = _gates_cleanup(tmp_path, CheckStatus.PASS)
+    assert not (path / ".terraform").exists()
+    assert (path / ".terraform.lock.hcl").exists()
+    assert (path / "main.tf").exists()
+
+
+def test_run_gates_removes_terraform_dir_on_early_failure(tmp_path):
+    path = _gates_cleanup(tmp_path, CheckStatus.FAIL)
+    assert not (path / ".terraform").exists()
+    assert (path / ".terraform.lock.hcl").exists()

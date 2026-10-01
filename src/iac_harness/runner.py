@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -67,16 +68,22 @@ def run_gates(
     """Roda os gates em ordem e para na primeira falha; os demais ficam SKIPPED.
 
     Devolve (status por estágio, resultado que falhou, duração por estágio executado).
+    Ao final, remove o `.terraform/` do workspace (cópia do provider).
     """
     statuses = {s.value: CheckStatus.SKIPPED.value for s in COMMON_CHAIN}
     durations: dict[str, float] = {}
-    for stage in stages:
-        result = gates[stage].check(workspace, oracle)
-        statuses[stage.value] = result.status.value
-        durations[stage.value] = result.duration_s
-        if result.status is not CheckStatus.PASS:
-            return statuses, result, durations
-    return statuses, None, durations
+    try:
+        for stage in stages:
+            result = gates[stage].check(workspace, oracle)
+            statuses[stage.value] = result.status.value
+            durations[stage.value] = result.duration_s
+            if result.status is not CheckStatus.PASS:
+                return statuses, result, durations
+        return statuses, None, durations
+    finally:
+        # o `terraform init` copia o provider AWS (~700 MB) para cada workspace e nada
+        # o usa depois dos gates; sem limpar, o disco enche. Mantém lock, .tf e planos.
+        shutil.rmtree(workspace.path / ".terraform", ignore_errors=True)
 
 
 def first_failure_of(failing: CheckResult | None) -> FirstFailure:
