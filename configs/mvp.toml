@@ -1,0 +1,40 @@
+# Execução completa do MVP: 186 tarefas, N = 5, condições A/B/C.
+[run]
+name = "mvp"
+reps = 5
+conditions = ["A", "B", "C"]
+runs_dir = "runs"
+
+[dataset]
+revision = "defefc108d437f5659f40be66fc863833e9c96fb"
+
+[agent]
+provider = "anthropic"
+# ID aceito pelo gateway atual (middleware); a API direta usa "claude-sonnet-5-5".
+model = "Sonnet 5.5"
+max_tokens = 8192
+# effort = "medium"   # opcional; só é enviado quando definido
+
+[feedback]
+max_chars = 2000
+policy_visibility = "rule_names"   # none | rule_names | full
+
+[sandbox]
+# endpoint: como a toolchain (no container) enxerga o Floci.
+endpoint = "http://floci:4566"
+# host_endpoint: como o harness (no host) enxerga o Floci.
+host_endpoint = "http://127.0.0.1:4566"
+# container: reiniciado a cada reset (o reset nativo do Floci apaga a VPC default).
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"   # docker | local
+image = "iac-harness-toolchain:latest"
+# Timeout por comando terraform/opa. O Floci cria recursos em segundos; esperas longas
+# (ex.: cluster que nunca fica "available") viram ERROR em vez de travar a execução.
+timeout_s = 180
+
+# US$ por milhão de tokens: [entrada, saída]. Confirme os valores vigentes antes de reportar custo.
+[prices]
+"Sonnet 5.5" = [3.0, 15.0]

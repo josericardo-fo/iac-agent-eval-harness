@@ -1,0 +1,20 @@
+# Floci (emulador AWS) + rede interna onde roda a toolchain.
+# A toolchain (docker run --network iac-sandbox) só enxerga o Floci, sem acesso à internet.
+name: iac-harness
+
+services:
+  floci:
+    # Versão + digest fixados (protocolo §10).
+    image: floci/floci:2.1.0@sha256:f5aa8c18302cedb4f2385f5c4e455b3efc77fee6bf7b6e5d1712b2817ba102db
+    ports:
+      # Só loopback: o harness (no host) usa 127.0.0.1:4566 para health e seed.
+      - "127.0.0.1:4566:4566"
+    networks:
+      - iac-sandbox
+      # Redes internal não publicam portas; a rede default existe só para o port mapping.
+      - default
+
+networks:
+  iac-sandbox:
+    name: iac-sandbox
+    internal: true

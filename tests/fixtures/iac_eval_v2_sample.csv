@@ -1,0 +1,169 @@
+task_id,suite,difficulty,resource,prompt,intent,rego_policy,reference_output,opa_input_path,has_starting_state,source,terraform_version,opa_version
+aws/task-146,aws,2,aws_redshift_cluster,"# Task 146
+
+
+Setup a 2 node RedShift cluster in us-east-1 and replicate it to us-east-2.
+
+## Intent
+
+Creates a redshift_clluster in us-east-1 and a snapshot_copy in us-east-2",Creates a redshift_clluster in us-east-1 and a snapshot_copy in us-east-2,"package terraform.policy
+
+import rego.v1
+
+default allow = false
+
+aws_redshift_cluster_valid(resources) if {
+    some resource in resources
+    resource.type == ""aws_redshift_cluster""
+    resource.change.after.number_of_nodes == 2
+}
+
+aws_redshift_snapshot_copy_valid(resources) if {
+    some resource in resources
+    resource.type == ""aws_redshift_snapshot_copy""
+    resource.change.after.destination_region == ""us-east-2""
+}
+
+allow if {
+    aws_redshift_cluster_valid(input.resource_changes)
+    aws_redshift_snapshot_copy_valid(input.resource_changes)
+}
+
+main if {
+    allow
+}
+","terraform {
+  required_version = "">= 1.15.0""
+
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 6.0""
+    }
+  }
+}
+
+provider ""aws"" {
+  region = ""us-east-1""
+  alias  = ""useast1""
+}
+
+resource ""aws_redshift_cluster"" ""primary_cluster"" {
+  provider = aws.useast1
+
+  cluster_identifier  = ""primary-cluster""
+  database_name       = ""mydatabase""
+  master_username     = ""myusername""
+  master_password     = ""Mypassword1""
+  node_type           = ""dc2.large""
+  cluster_type        = ""multi-node""
+  number_of_nodes     = 2
+  skip_final_snapshot = true
+}
+
+resource ""aws_redshift_snapshot_copy"" ""primary_cluster"" {
+  cluster_identifier = aws_redshift_cluster.primary_cluster.id
+  destination_region = ""us-east-2""
+}
+",resource_changes,False,autoiac-project/iac-eval,>= 1.15.0,1.16.1
+aws/task-227,aws,3,"aws_dax_cluster, aws_iam_role","# Task 227
+
+
+Create a DAX cluster.
+
+## Intent
+
+has one ""aws_dax_cluster""","has one ""aws_dax_cluster""","package terraform.policy
+
+import rego.v1
+
+default allow = false
+
+# Check for DAX cluster creation
+dax_cluster_created(resources) if {
+some resource in resources
+resource.type == ""aws_dax_cluster""
+resource.change.actions[_] == ""create""
+}
+
+# Allow DAX cluster creation
+allow if {
+dax_cluster_created(input.resource_changes)
+}
+
+main if {
+    allow
+}
+","terraform {
+  required_version = "">= 1.15.0""
+
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 6.0""
+    }
+  }
+}
+
+resource ""aws_iam_role"" ""example"" {
+name = ""test_role""
+
+# Terraform's ""jsonencode"" function converts a
+# Terraform expression result to valid JSON syntax.
+assume_role_policy = jsonencode({
+Version = ""2012-10-17""
+Statement = [
+{
+Action = ""sts:AssumeRole""
+Effect = ""Allow""
+Sid = """"
+Principal = {
+Service = ""dax.amazonaws.com""
+}
+},
+]
+})
+}
+
+resource ""aws_dax_cluster"" ""bar"" {
+cluster_name = ""cluster-example""
+iam_role_arn = aws_iam_role.example.arn
+node_type = ""dax.r4.large""
+replication_factor = 1
+}
+",resource_changes,False,autoiac-project/iac-eval,>= 1.15.0,1.16.1
+aws/task-269,aws,1,aws_s3_bucket,"# Task 269
+
+
+Create an AWS resource to help me store images that I want to display on my website
+
+## Intent
+
+Has an aws_s3_bucket resource",Has an aws_s3_bucket resource,"package terraform.policy
+
+import rego.v1
+default valid := false
+
+valid if {
+    some bucket in input.resource_changes
+    bucket.type == ""aws_s3_bucket""
+}
+
+main if {
+    valid
+}
+","terraform {
+  required_version = "">= 1.15.0""
+
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 6.0""
+    }
+  }
+}
+
+resource ""aws_s3_bucket"" ""example-bucket"" {
+  bucket = ""test-bucket""
+}
+",resource_changes,False,autoiac-project/iac-eval,>= 1.15.0,1.16.1
