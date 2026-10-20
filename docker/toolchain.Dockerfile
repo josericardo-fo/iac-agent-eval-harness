@@ -19,9 +19,10 @@ ARG BOTO3_VERSION=1.43.115
 ARG AWSCLI_GPG_FINGERPRINT=FB5DB77FD5C118B80511ADA8A6310ACC4672475C
 ARG TARGETARCH
 
+# jq: declarado ao agente na modalidade CLI (ferramenta comum junto da AWS CLI).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl unzip gnupg \
-       python3 python3-venv \
+       python3 python3-venv jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Terraform, com verificação de checksum.

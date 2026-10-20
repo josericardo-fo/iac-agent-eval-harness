@@ -7,7 +7,13 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from iac_harness.agents.prompts import PROMPT_VERSION, SYSTEM_PROMPT, render_files, render_repair
+from iac_harness.agents.prompts import (
+    PROMPT_VERSION,
+    REPAIR_TEMPLATE,
+    SYSTEM_PROMPT,
+    render_files,
+    render_repair,
+)
 from iac_harness.types import AgentReply, Artifact, Task, Turn, Usage
 
 DEFAULT_MAX_TOKENS = 8192
@@ -24,13 +30,23 @@ def parse_files(text: str) -> dict[str, str]:
     return {name.strip(): body for name, body in _BLOCK.findall(text)}
 
 
-def build_messages(task: Task, history: list[Turn]) -> list[dict[str, str]]:
+def build_messages(
+    task: Task,
+    history: list[Turn],
+    repair_template: str = REPAIR_TEMPLATE,
+    code_lang: str = "hcl",
+) -> list[dict[str, str]]:
     """Histórico: prompt cru, e para cada turno (código anterior + diagnóstico) o repair."""
     messages = [{"role": "user", "content": task.prompt}]
     for turn in history:
-        messages.append({"role": "assistant", "content": render_files(turn.artifact.files)})
+        files = turn.artifact.files
+        previous = turn.raw_text if turn.raw_text is not None else render_files(files, code_lang)
+        messages.append({"role": "assistant", "content": previous})
         messages.append(
-            {"role": "user", "content": render_repair(turn.artifact.files, turn.feedback)}
+            {
+                "role": "user",
+                "content": render_repair(files, turn.feedback, repair_template, code_lang),
+            }
         )
     return messages
 
@@ -42,10 +58,24 @@ class AnthropicBackend:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         effort: str | None = None,
         client: Any | None = None,
+        system_prompt: str | None = None,
+        repair_template: str | None = None,
+        prompt_version: str | None = None,
+        code_lang: str = "hcl",
     ) -> None:
+        """Sem `system_prompt`/`repair_template`, usa os prompts do A/B/C (PROMPT_VERSION).
+
+        Prompt customizado exige `prompt_version`, para o params registrar a versão usada.
+        """
+        if (system_prompt or repair_template) and not prompt_version:
+            raise ValueError("prompt customizado exige prompt_version")
         self.model = model
         self.max_tokens = max_tokens
         self.effort = effort
+        self.system_prompt = system_prompt or SYSTEM_PROMPT
+        self.repair_template = repair_template or REPAIR_TEMPLATE
+        self.prompt_version = prompt_version or PROMPT_VERSION
+        self.code_lang = code_lang  # linguagem dos blocos de código reconstruídos no histórico
         # max_retries=0: retries escondidos contaminariam a variável experimental.
         self._client = client if client is not None else Anthropic(max_retries=0)
 
@@ -57,15 +87,15 @@ class AnthropicBackend:
             "effort": self.effort,
             "temperature": None,
             "max_retries": 0,
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": self.prompt_version,
         }
 
     def generate(self, task: Task, history: list[Turn]) -> AgentReply:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "system": SYSTEM_PROMPT,
-            "messages": build_messages(task, history),
+            "system": self.system_prompt,
+            "messages": build_messages(task, history, self.repair_template, self.code_lang),
         }
         if self.effort is not None:
             kwargs["output_config"] = {"effort": self.effort}

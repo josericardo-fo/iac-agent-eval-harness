@@ -43,15 +43,21 @@ format with title="file-name".
 """
 
 
-def render_files(files: dict[str, str]) -> str:
+def render_files(files: dict[str, str], lang: str = "hcl") -> str:
     return "\n\n".join(
-        f'```hcl title="{name}"\n{body.rstrip()}\n```' for name, body in files.items()
+        f'```{lang} title="{name}"\n{body.rstrip()}\n```' for name, body in files.items()
     )
 
 
-def render_repair(files: dict[str, str], feedback: Feedback) -> str:
-    return REPAIR_TEMPLATE.format(
-        previous_code=render_files(files),
+def render_repair(
+    files: dict[str, str],
+    feedback: Feedback,
+    template: str = REPAIR_TEMPLATE,
+    lang: str = "hcl",
+) -> str:
+    """Mensagem de repair; o template pode ignorar campos (str.format aceita sobras)."""
+    return template.format(
+        previous_code=render_files(files, lang),
         stage=feedback.stage.value,
         error_class=feedback.error_class,
         message=feedback.message,

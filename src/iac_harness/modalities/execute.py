@@ -26,14 +26,28 @@ CHECK_FILENAME = "check.py"
 @dataclass(frozen=True)
 class ExecResult:
     ok: bool
-    output: str  # stdout+stderr truncados
+    output: str  # stdout+stderr truncados (o que vai ao agente)
     unsupported: bool = False  # casou UNSUPPORTED_PATTERNS (o Floci não implementa a operação)
+    raw: str = ""  # stdout+stderr completos de todos os comandos, sem corte (para análise)
 
 
 def truncate(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     """Mesma truncagem do feedback do agente (feedback.build_feedback)."""
     text = strip_ansi(text).strip()
     return text[:max_chars].rstrip() + TRUNCATION_MARK if len(text) > max_chars else text
+
+
+def truncate_middle(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
+    """Guarda começo e fim (metade de max_chars em cada ponta), como o mini-swe-agent.
+
+    O erro do Terraform/CLI costuma ficar no fim de uma saída longa.
+    """
+    text = strip_ansi(text).strip()
+    if len(text) <= max_chars:
+        return text
+    half = max_chars // 2
+    omitted = len(text) - 2 * half
+    return f"{text[:half]}\n[... {omitted} characters omitted ...]\n{text[-half:]}"
 
 
 def _run_commands(
@@ -51,8 +65,12 @@ def _run_commands(
             outputs.append(raw)
             if proc.returncode != 0:
                 unsupported = FlociExecutor.classify_error(raw) is CheckStatus.UNSUPPORTED
-                return ExecResult(False, truncate(raw, max_chars), unsupported)
-        return ExecResult(True, truncate("\n".join(outputs), max_chars))
+                prefix = f"exit code {proc.returncode}\n"
+                # Só a falha corta começo+fim: é a única saída que volta ao agente.
+                message = truncate_middle(prefix + raw, max_chars)
+                return ExecResult(False, message, unsupported, raw=prefix + "\n".join(outputs))
+        full = "\n".join(outputs)
+        return ExecResult(True, truncate(full, max_chars), raw=full)
     finally:
         # Mesmo motivo de runner.run_gates: o provider copiado pelo init enche o disco.
         shutil.rmtree(path / ".terraform", ignore_errors=True)
@@ -70,8 +88,9 @@ def run_artifact(
     inherit_from: Path | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
     group: str | None = None,
+    rep: int = 0,
 ) -> tuple[ExecResult, Path]:
-    """Grava o artefato em runs/<run_id>/<task>/0/<group>/<name>/ e o executa.
+    """Grava o artefato em runs/<run_id>/<task>/<rep>/<group>/<name>/ e o executa.
 
     `group` é a modalidade avaliada (padrão: a do artefato). Na modalidade terraform, injeta o
     override do Floci e, com `inherit_from`, copia o tfstate e o lock de um apply anterior
@@ -80,7 +99,7 @@ def run_artifact(
     artifact = Artifact({modality.filename: content})
     override = executor.override_for(artifact.files) if modality.name == "terraform" else None
     ws = create_workspace(
-        runs_dir, run_id, task_id, 0, group or modality.name, name, artifact, override
+        runs_dir, run_id, task_id, rep, group or modality.name, name, artifact, override
     )
     if inherit_from is not None and modality.name == "terraform":
         for filename in INHERITED_TF_FILES:
@@ -97,13 +116,15 @@ def apply_initial(
     runs_dir: Path,
     run_id: str,
     max_chars: int = DEFAULT_MAX_CHARS,
+    rep: int = 0,
+    name: str = "initial",
 ) -> tuple[ExecResult, Path]:
-    """Aplica o initial.tf com Terraform, no workspace próprio <modalidade>/initial."""
+    """Aplica o initial.tf com Terraform, no workspace próprio <modalidade>/<name>."""
     if task.initial_tf is None:
         raise ValueError(f"{task.task_id}: tarefa sem estado inicial")
     return run_artifact(
         toolchain, executor, MODALITIES["terraform"], task.initial_tf, runs_dir, run_id,
-        task.task_id, "initial", max_chars=max_chars, group=modality.name,
+        task.task_id, name, max_chars=max_chars, group=modality.name, rep=rep,
     )  # fmt: skip
 
 

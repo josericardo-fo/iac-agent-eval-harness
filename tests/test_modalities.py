@@ -98,7 +98,7 @@ def test_run_artifact_truncates_output(tmp_path):
         tc, FlociExecutor(tc), MODALITIES["cli"], "x", tmp_path, "r", "t", "reference",
         max_chars=100,
     )  # fmt: skip
-    assert len(res.output) < 200 and "truncated" in res.output
+    assert len(res.output) < 200 and "characters omitted" in res.output
 
 
 def test_check_runs_outside_workspace(tmp_path):

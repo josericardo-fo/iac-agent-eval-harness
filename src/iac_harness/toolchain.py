@@ -112,13 +112,14 @@ class Toolchain:
             raise
 
     def versions(self, workdir: Path) -> dict[str, str]:
-        """Versões efetivas de terraform, opa, aws e boto3, para o run_config."""
+        """Versões de terraform, opa, aws, boto3 e jq (+ id da imagem), para o run_config."""
         out: dict[str, str] = {}
         tools = (
             ("terraform", ["terraform", "version"]),
             ("opa", ["opa", "version"]),
             ("aws", ["aws", "--version"]),
             ("boto3", ["python3", "-c", "import boto3; print(boto3.__version__)"]),
+            ("jq", ["jq", "--version"]),
         )
         for tool, args in tools:
             try:
@@ -127,4 +128,14 @@ class Toolchain:
                 out[tool] = first or f"erro: {proc.stderr.strip()[:200]}"
             except (subprocess.TimeoutExpired, OSError) as exc:
                 out[tool] = f"indisponível: {exc}"
+        if self.mode == "docker":
+            # ID da imagem (no host): aponta exatamente o ambiente usado no run.
+            try:
+                proc = subprocess.run(
+                    ["docker", "image", "inspect", "--format", "{{.Id}}", self.image],
+                    capture_output=True, text=True, timeout=120,
+                )  # fmt: skip
+                out["image_id"] = proc.stdout.strip() or f"erro: {proc.stderr.strip()[:200]}"
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                out["image_id"] = f"indisponível: {exc}"
         return out

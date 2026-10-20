@@ -129,6 +129,9 @@ class Turn:
 
     artifact: Artifact
     feedback: Feedback
+    # Resposta bruta, quando não houve artefato reconstruível (falha de formato nas modalidades).
+    # O runner principal não a usa: o histórico do A/B/C continua só com o artefato.
+    raw_text: str | None = None
 
 
 @dataclass

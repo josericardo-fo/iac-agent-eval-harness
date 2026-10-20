@@ -84,3 +84,50 @@ def test_unparseable_reply_gives_empty_artifact():
     reply = backend.generate(TASK, [])
     assert reply.artifact.files == {}
     assert reply.raw_text == "Não consegui gerar nada."
+
+
+def test_default_prompts_unchanged_for_abc():
+    """Sem system_prompt/repair_template, o backend manda exatamente o mesmo do A/B/C."""
+    from iac_harness.agents.prompts import REPAIR_TEMPLATE, render_repair
+
+    backend, messages = _backend(TEXT)
+    turn = Turn(Artifact({"main.tf": "bad"}), Feedback(Stage.PLAN, "Runtime", "Error: x"))
+    backend.generate(TASK, [turn])
+    assert messages.kwargs["system"] == SYSTEM_PROMPT
+    assert messages.kwargs["messages"][1]["content"] == '```hcl title="main.tf"\nbad\n```'
+    assert messages.kwargs["messages"][2]["content"] == REPAIR_TEMPLATE.format(
+        previous_code='```hcl title="main.tf"\nbad\n```',
+        stage="PLAN",
+        error_class="Runtime",
+        message="Error: x",
+    )
+    assert messages.kwargs["messages"][2]["content"] == render_repair(
+        {"main.tf": "bad"}, turn.feedback
+    )
+    assert backend.params["prompt_version"] == PROMPT_VERSION
+
+
+def test_custom_prompts_and_version():
+    backend, messages = _backend(
+        TEXT, system_prompt="SYS", repair_template="ERR:{message}", prompt_version="mod-v1",
+        code_lang="bash",
+    )  # fmt: skip
+    turn = Turn(Artifact({"run.sh": "aws x"}), Feedback(Stage.SANDBOX, "Execution", "boom"))
+    reply = backend.generate(TASK, [turn])
+    assert messages.kwargs["system"] == "SYS"
+    assert messages.kwargs["messages"][1]["content"] == '```bash title="run.sh"\naws x\n```'
+    assert messages.kwargs["messages"][2]["content"] == "ERR:boom"
+    assert reply.params["prompt_version"] == "mod-v1"
+
+
+def test_custom_prompt_requires_version():
+    import pytest
+
+    with pytest.raises(ValueError, match="prompt_version"):
+        _backend(TEXT, system_prompt="SYS")
+
+
+def test_turn_raw_text_replaces_rendered_artifact():
+    turn = Turn(Artifact({}), Feedback(Stage.SANDBOX, "Format", "no block"), raw_text="texto cru")
+    msgs = build_messages(TASK, [turn])
+    assert msgs[1]["content"] == "texto cru"

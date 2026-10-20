@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
-from collections.abc import Container
+from collections.abc import Callable, Container
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,8 +23,11 @@ from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.metrics import compute_metrics, load_events
+from iac_harness.modalities import prompts as mod_prompts
 from iac_harness.modalities.execute import prevalidate_pair
 from iac_harness.modalities.loader import load_tasks
+from iac_harness.modalities.metrics import compute_modality_metrics
+from iac_harness.modalities.runner import DEFAULT_MAX_ATTEMPTS, ModRunContext, run_pair
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.runner import COMMON_CHAIN, RunContext, SandboxGate, run_gates, run_task
@@ -485,22 +488,30 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
     return "\n".join(lines)
 
 
-def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config)
+def _select_modality_run(
+    cfg: dict[str, Any], tasks_arg: list[str] | None, modalities_arg: list[str] | None = None
+) -> tuple[list[Any], list[str]]:
+    """Tarefas e modalidades: argumento da CLI > seção [modality] > todas."""
     mod_cfg = cfg.get("modality", {})
-    toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
     tasks = load_tasks()
-    wanted = args.tasks or mod_cfg.get("tasks")
+    wanted = tasks_arg or mod_cfg.get("tasks")
     if wanted:
         missing = set(wanted) - {t.task_id for t in tasks}
         if missing:
             raise SystemExit(f"tarefas não encontradas: {sorted(missing)}")
         tasks = [t for t in tasks if t.task_id in set(wanted)]
-    modalities = mod_cfg.get("modalities", list(MODALITIES))
+    modalities = modalities_arg or mod_cfg.get("modalities", list(MODALITIES))
     unknown = set(modalities) - set(MODALITIES)
     if unknown:
         raise SystemExit(f"modalidades desconhecidas: {sorted(unknown)}")
+    return tasks, modalities
+
+
+def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
+    tasks, modalities = _select_modality_run(cfg, args.tasks)
     max_chars = cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS)
     runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
     run_id = new_run_id("modality-prevalidate")
@@ -542,6 +553,169 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- modality-run ----------
+
+MODALITY_UNIT = ("task_id", "modality", "rep")
+
+
+def _modality_backends(cfg: dict[str, Any], modalities: list[str]) -> dict[str, Any]:
+    """Um backend por modalidade: system prompt e repair próprios, versão mod_prompts."""
+    return {
+        name: _build_backend(
+            cfg,
+            system_prompt=mod_prompts.system_prompt(MODALITIES[name]),
+            repair_template=mod_prompts.repair_template(MODALITIES[name]),
+            prompt_version=mod_prompts.PROMPT_VERSION,
+            code_lang=mod_prompts.CODE_LANG[name],
+        )
+        for name in modalities
+    }
+
+
+def _modality_summary(events: list[dict[str, Any]]) -> str:
+    finals = [e for e in events if e.get("event") == "final"]
+    lines = [f"{len(finals)} trajetórias"]
+    for modality, cats in compute_modality_metrics(finals).items():
+        for category, m in cats.items():
+            lines.append(
+                f"{modality:<10} {category:<7} sucesso {m['success']:<6} "
+                f"estado {m['state_pass']:<6} "
+                f"tentativas {m['mean_attempts']:.2f}  tokens {m['mean_total_tokens']:.0f}  "
+                f"{m['termination']}"
+            )
+    return "\n".join(lines)
+
+
+def _modality_loop(
+    cfg: dict[str, Any],
+    tasks: list[Any],
+    modalities: list[str],
+    reps: int,
+    runs_dir: Path,
+    run_id: str,
+    skip: Container[tuple] = frozenset(),
+) -> None:
+    """Rep externo: as modalidades de uma tarefa rodam lado a lado no tempo (menos deriva)."""
+    toolchain = build_toolchain(cfg)
+    ctx = ModRunContext(
+        run_id=run_id,
+        runs_dir=runs_dir,
+        toolchain=toolchain,
+        executor=build_executor(cfg, toolchain),
+        model_provider=cfg["agent"]["provider"],
+        max_attempts=cfg.get("modality", {}).get("max_attempts", DEFAULT_MAX_ATTEMPTS),
+        max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
+    )
+    backends = _modality_backends(cfg, modalities)
+    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
+    try:
+        for rep in range(1, reps + 1):
+            for task in tasks:
+                for name in modalities:
+                    if (task.task_id, name, rep) in skip:
+                        continue
+                    final = run_pair(task, MODALITIES[name], rep, backends[name], recorder, ctx)
+                    print(
+                        f"{task.task_id} × {name} rep {rep}: success={final['success']} "
+                        f"check={final['check_pass']} "
+                        f"{final['termination']} ({final['attempts']} tent.)",
+                        file=sys.stderr,
+                    )
+    finally:
+        recorder.close()
+
+
+def cmd_modality_run(args: argparse.Namespace) -> int:
+    if args.resume is not None:
+        return cmd_modality_resume(args)
+    if args.config is None:
+        raise SystemExit("erro: informe --config (ou --resume RUN_DIR)")
+    cfg = load_config(args.config)
+    tasks, modalities = _select_modality_run(cfg, args.tasks, args.modalities)
+    reps = args.reps or cfg["run"].get("reps", 1)
+    _modality_backends(cfg, modalities)  # falha cedo (ex.: sem chave) antes de criar o run
+    runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
+    run_id = new_run_id(cfg["run"]["name"])
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    toolchain = build_toolchain(cfg)
+    (run_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "config": cfg,
+                "reps": reps,
+                "tasks": [t.task_id for t in tasks],
+                "modalities": modalities,
+                "prompt_version": mod_prompts.PROMPT_VERSION,
+                **_git_provenance(),
+                "versions": {
+                    **toolchain.versions(run_dir),
+                    "toolchain_image": toolchain.image,
+                    "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
+                },
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id)
+    print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
+    print(run_dir)
+    return 0
+
+
+def cmd_modality_resume(args: argparse.Namespace) -> int:
+    given = [
+        f"--{o}" for o in ("config", "tasks", "modalities", "reps") if getattr(args, o) is not None
+    ]
+    if given:
+        raise SystemExit(
+            f"erro: --resume não aceita {', '.join(given)} (a configuração vem do run_config.json)"
+        )
+    run_dir = Path(args.resume)
+    config_path = run_dir / "run_config.json"
+    if not config_path.is_file():
+        raise SystemExit(f"erro: {config_path} não encontrado")
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    cfg, reps, modalities = saved["config"], saved["reps"], saved["modalities"]
+    tasks, _ = _select_modality_run(cfg, saved["tasks"], modalities) if saved["tasks"] else ([], [])
+    runs_dir, run_id = run_dir.parent, run_dir.name
+
+    def unit_dir(key: tuple) -> Path:
+        task_id, modality, rep = key
+        return pair_dir(runs_dir, run_id, task_id, rep) / modality
+
+    complete, discarded = discard_incomplete(runs_dir, run_id, None, MODALITY_UNIT, unit_dir)
+    planned = [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in modalities]
+    pending = [p for p in planned if p not in complete]
+    for key in pending:  # diretório sem evento (queda antes do 1º registro)
+        shutil.rmtree(unit_dir(key), ignore_errors=True)
+    saved.setdefault("resumes", []).append(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            **_git_provenance(),
+            "skipped_pairs": len(planned) - len(pending),
+            "discarded_pairs": len(discarded),
+        }
+    )
+    config_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False))
+    print(
+        f"resume {run_id}: {len(planned) - len(pending)} completos pulados, "
+        f"{len(discarded)} incompletos descartados, {len(pending)} a rodar",
+        file=sys.stderr,
+    )
+    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, complete)
+    print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
+    print(run_dir)
+    return 0
+
+
+def cmd_modality_metrics(args: argparse.Namespace) -> int:
+    metrics = compute_modality_metrics(load_events(Path(args.run_dir) / "events.jsonl"))
+    print(json.dumps(metrics, indent=2, ensure_ascii=False))
+    return 0
+
+
 # ---------- run ----------
 
 
@@ -569,13 +743,17 @@ def _build_run(cfg: dict[str, Any]) -> tuple[Toolchain, FlociExecutor, dict, Iac
     return toolchain, executor, gates, adapter
 
 
-def _build_backend(cfg: dict[str, Any]) -> Any:
-    """Backend do agente; montado só depois de validadas tarefas e condições."""
+def _build_backend(cfg: dict[str, Any], **prompt_kwargs: Any) -> Any:
+    """Backend do agente; montado só depois de validadas tarefas e condições.
+
+    `prompt_kwargs` (system_prompt, repair_template, ...) só no teste de modalidades.
+    """
     agent_cfg = cfg["agent"]
     return BACKENDS[agent_cfg["provider"]](
         model=agent_cfg["model"],
         max_tokens=agent_cfg.get("max_tokens", DEFAULT_MAX_TOKENS),
         effort=agent_cfg.get("effort"),
+        **prompt_kwargs,
     )
 
 
@@ -668,22 +846,36 @@ _RUN_DEFINING_OPTIONS = ("config", "tasks", "limit", "reps", "prevalidation", "n
 
 
 def pair_completion(
-    events: list[dict[str, Any]], conditions: list[str]
-) -> tuple[set[tuple[str, int]], set[tuple[str, int]]]:
-    """(completos, incompletos): completo = tem um evento `final` para cada condição."""
-    finals: dict[tuple[str, int], set[str]] = {}
+    events: list[dict[str, Any]],
+    conditions: list[str] | None,
+    fields: tuple[str, ...] = ("task_id", "rep"),
+) -> tuple[set[tuple], set[tuple]]:
+    """(completos, incompletos) por unidade `fields`.
+
+    Completo = tem um evento `final` para cada condição; com `conditions=None` (modalidades,
+    sem condição), basta um evento `final`.
+    """
+    finals: dict[tuple, set[str | None]] = {}
     for e in events:
-        done = finals.setdefault((e["task_id"], e["rep"]), set())
+        done = finals.setdefault(tuple(e[f] for f in fields), set())
         if e["event"] == "final":
-            done.add(e["condition"])
-    complete = {k for k, done in finals.items() if set(conditions) <= done}
+            done.add(e.get("condition"))
+    required = set(conditions) if conditions is not None else {None}
+    complete = {k for k, done in finals.items() if required <= done}
     return complete, set(finals) - complete
 
 
 def discard_incomplete(
-    runs_dir: Path, run_id: str, conditions: list[str]
-) -> tuple[set[tuple[str, int]], set[tuple[str, int]]]:
+    runs_dir: Path,
+    run_id: str,
+    conditions: list[str] | None,
+    fields: tuple[str, ...] = ("task_id", "rep"),
+    unit_dir: Callable[[tuple], Path] | None = None,
+) -> tuple[set[tuple], set[tuple]]:
     """Move os eventos dos pares incompletos para events.discarded.jsonl e apaga seus artefatos.
+
+    `fields` e `unit_dir` definem a unidade (padrão: (task, rep) em pair_dir); ver
+    `pair_completion` para `conditions`.
 
     events.jsonl é reescrito só com os pares completos (linhas originais preservadas). Uma
     última linha truncada (queda no meio da gravação) também vai para o discarded; linha
@@ -707,8 +899,8 @@ def discard_incomplete(
             print(f"aviso: última linha de {events_path} truncada; movida para o discarded",
                   file=sys.stderr)  # fmt: skip
     lines = lines[: len(events)]
-    complete, incomplete = pair_completion(events, conditions)
-    keyed = [((e["task_id"], e["rep"]), ln) for ln, e in zip(lines, events, strict=True)]
+    complete, incomplete = pair_completion(events, conditions, fields)
+    keyed = [(tuple(e[f] for f in fields), ln) for ln, e in zip(lines, events, strict=True)]
     keep = [ln for key, ln in keyed if key in complete]
     drop = [ln for key, ln in keyed if key in incomplete] + truncated
     if drop:
@@ -726,8 +918,9 @@ def discard_incomplete(
         tmp = events_path.with_suffix(".jsonl.tmp")
         tmp.write_text(new_text, encoding="utf-8")
         tmp.replace(events_path)
-    for task_id, rep in incomplete:
-        shutil.rmtree(pair_dir(runs_dir, run_id, task_id, rep), ignore_errors=True)
+    for key in incomplete:
+        path = unit_dir(key) if unit_dir else pair_dir(runs_dir, run_id, *key)
+        shutil.rmtree(path, ignore_errors=True)
     return complete, incomplete
 
 
@@ -838,6 +1031,25 @@ def main(argv: list[str] | None = None) -> int:
     p_mpre.add_argument("--config", type=Path, required=True)
     p_mpre.add_argument("--tasks", nargs="+")
     p_mpre.set_defaults(func=cmd_modality_prevalidate)
+
+    p_mrun = sub.add_parser(
+        "modality-run", help="roda o agente nas modalidades (Terraform/CLI/boto3)"
+    )
+    p_mrun.add_argument("--config", type=Path)
+    p_mrun.add_argument("--tasks", nargs="+")
+    p_mrun.add_argument("--modalities", nargs="+", choices=list(MODALITIES))
+    p_mrun.add_argument("--reps", type=int)
+    p_mrun.add_argument(
+        "--resume",
+        type=Path,
+        metavar="RUN_DIR",
+        help="retoma um run interrompido: pula (tarefa, modalidade, rep) com evento final",
+    )
+    p_mrun.set_defaults(func=cmd_modality_run)
+
+    p_mmet = sub.add_parser("modality-metrics", help="métricas de um modality-run")
+    p_mmet.add_argument("run_dir", type=Path)
+    p_mmet.set_defaults(func=cmd_modality_metrics)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")
     common(p_run, config_required=False)  # obrigatório sem --resume (validado em cmd_run)
