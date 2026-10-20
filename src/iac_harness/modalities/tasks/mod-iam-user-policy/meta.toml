@@ -1,0 +1,5 @@
+# Enunciado escrito do zero, neutro em relação à modalidade; o estado inicial é initial.tf.
+id = "mod-iam-user-policy"
+category = "modify"
+origin = "authored"
+region = "us-east-1"

@@ -9,7 +9,7 @@ from pathlib import Path
 from iac_harness.modalities.spec import MODALITIES
 
 TASKS_DIR = Path(__file__).parent / "tasks"
-CATEGORIES = ("create", "modify")
+CATEGORIES = ("create", "modify", "delete", "query")
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class ModalityTask:
     prompt: str
     check: str  # código do check.py (roda fora do workspace)
     references: dict[str, str]  # nome da modalidade → conteúdo da referência
-    initial_tf: str | None = None  # estado inicial (só nas tarefas de modificação)
+    initial_tf: str | None = None  # estado inicial (só em modify/delete/query)
 
 
 def load_task(path: Path) -> ModalityTask:
@@ -31,8 +31,10 @@ def load_task(path: Path) -> ModalityTask:
     if meta["category"] not in CATEGORIES:
         raise ValueError(f"{path}: categoria inválida {meta['category']!r}")
     initial = path / "initial.tf"
-    if (meta["category"] == "modify") != initial.exists():
-        raise ValueError(f"{path}: initial.tf é obrigatório só nas tarefas de modificação")
+    if (meta["category"] != "create") != initial.exists():
+        raise ValueError(
+            f"{path}: initial.tf é obrigatório em modify/delete/query e proibido em create"
+        )
     return ModalityTask(
         task_id=meta["id"],
         category=meta["category"],

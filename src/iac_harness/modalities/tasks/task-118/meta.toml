@@ -1,0 +1,11 @@
+# reference.tf (do IaC-Eval) usa us-west-1. O check acha o tópico pelo ARN gravado na
+# notificação do bucket (região vem do ARN), então aceita qualquer região.
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# "similar to" = condição ArnLike/ArnEquals/StringLike/StringEquals (com ou sem IfExists) em
+# aws:SourceArn (chave case-insensitive) cujo valor é o ARN do bucket ou um padrão que case com ele.
+# Resource da policy: aceita o ARN do tópico ou um padrão que case com ele (a referência usa
+# arn:aws:sns:*:*:s3-event-notification-topic).
+id = "task-118"
+category = "create"
+origin = "iac-eval-v2:aws/task-118"
+region = "us-east-1"

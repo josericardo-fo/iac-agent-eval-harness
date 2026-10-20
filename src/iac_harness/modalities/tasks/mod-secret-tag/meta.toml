@@ -1,0 +1,7 @@
+# Enunciado escrito do zero, neutro em relação à modalidade; o estado inicial é initial.tf.
+# Substitui mod-sns-tag: o sns:TagResource do Floci responde 200 sem o nó TagResourceResult e
+# terraform/CLI/boto3 falham ao desserializar (a tag é gravada, mas a referência dá erro).
+id = "mod-secret-tag"
+category = "modify"
+origin = "authored"
+region = "us-east-1"

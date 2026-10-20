@@ -18,10 +18,14 @@ from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.interfaces import AgentBackend, Recorder
 from iac_harness.modalities.execute import (
+    ANSWER_FILENAME,
     ExecResult,
     apply_initial,
+    inherits_state,
     run_artifact,
     run_check,
+    truncate,
+    with_answer,
 )
 from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.prompts import FORMAT_ERROR, PROMPT_VERSION, user_prompt
@@ -62,7 +66,13 @@ def _prepare(
         ctx.toolchain, ctx.executor, task, modality, ctx.runs_dir, ctx.run_id, ctx.max_chars,
         rep=rep, name=f"initial_{attempt}",
     )  # fmt: skip
-    return initial, (path if modality.name == "terraform" else None)
+    return initial, (path if inherits_state(task, modality) else None)
+
+
+def _answer(path: Path, max_chars: int) -> str | None:
+    """answer.json da tentativa (truncado), para análise; None se não existe."""
+    answer = path / ANSWER_FILENAME
+    return truncate(answer.read_text(), max_chars) if answer.is_file() else None
 
 
 def run_pair(
@@ -114,6 +124,7 @@ def run_pair(
             )  # fmt: skip
             artifact_hash = Artifact({modality.filename: content}).sha256
             format_fail = False
+            result = with_answer(task, modality, result, path)
         exec_ok = result.ok
         (path / RESPONSE_FILENAME).write_text(reply.raw_text)
 
@@ -156,6 +167,7 @@ def run_pair(
                 "duration_s": round(time.monotonic() - start, 3),
                 "artifact_path": str(path),
                 "artifact_hash": artifact_hash,
+                "answer": _answer(path, ctx.max_chars) if task.category == "query" else None,
             }
         )
         if step is not None:
@@ -166,7 +178,7 @@ def run_pair(
     if termination is ModTermination.INITIAL_FAIL:
         check_pass, details = False, {"error": "initial.tf não aplicou"}
     else:
-        check_pass, details = run_check(ctx.toolchain, task)
+        check_pass, details = run_check(ctx.toolchain, task, path)
     final = {
         **base,
         "event": "final",

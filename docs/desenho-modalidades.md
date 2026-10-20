@@ -97,3 +97,24 @@ presentes nas tarefas executáveis e nas triplas compatíveis do Multi-IaC-Eval.
 - O Floci pode divergir entre APIs, por exemplo quando uma operação funciona via provider e não via
   CLI.
 - O prompt por modalidade é uma variável confundida. Mitigar com blocos mínimos e simétricos.
+- Enunciados que não dizem se o recurso já existe pesam diferente por modalidade. Achado da
+  task-230 ("Enable point-in-time recovery for the DynamoDB table") no run N=3 de 20/10:
+  Terraform 3/3, CLI 3/3 (via repair), boto3 0/3 (o script não achou tabela e terminou sem
+  erro, então não houve repair). Mantida como achado; o enunciado do dataset não foi alterado.
+- O Floci diverge da AWS em pontos que afetam uma modalidade e não as outras:
+  - ignora os filtros `ip-permission.*` de `DescribeSecurityGroups`, então
+    `data "aws_security_groups"` com filtro devolve todos os SGs;
+  - o `sns:TagResource` responde sem `TagResourceResult` e quebra os 3 clientes (a tarefa foi
+    trocada por tag em segredo);
+  - ignora `expected_bucket_owner`.
+  Os resultados por modalidade precisam ser lidos junto com essa lista. O LocalStack serve de
+  segunda opinião.
+- Consulta: o Terraform responde por `output "answer"`, e o harness lê o valor do
+  `terraform.tfstate`. O `terraform output` exige os plugins, apagados depois do apply; o valor
+  é o mesmo. CLI e boto3 gravam `answer.json`.
+- O gateway de acesso ao modelo acrescenta a todo pedido um bloco fixo de diretrizes
+  corporativas (idioma, padrões de código, uma linha de verificação no fim da resposta). O bloco
+  não muda e é igual em todas as condições e modalidades, então a comparação entre elas vale, mas
+  as taxas absolutas são "com governança corporativa" e podem diferir na API direta. A linha extra
+  fica fora do bloco de código e nunca chegou ao artefato executado. O mesmo vale para os runs
+  A/B/C da Semana 6.

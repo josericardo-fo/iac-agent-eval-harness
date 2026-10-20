@@ -1,0 +1,7 @@
+# Enunciado escrito do zero, neutro em relação à modalidade; o estado inicial é initial.tf.
+# Pede SSE-KMS (aws:kms) e não SSE-S3: a AWS aplica SSE-S3 (AES256) por padrão desde jan/2023,
+# então pedir AES256 não testa nada (o estado inicial já passaria).
+id = "mod-s3-encryption"
+category = "modify"
+origin = "authored"
+region = "us-east-1"

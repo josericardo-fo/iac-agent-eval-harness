@@ -82,6 +82,10 @@ def _top_level_alias(body: str) -> str | None:
 
 
 class FlociExecutor:
+    KIND = "floci"  # valor de `[sandbox] kind` (cli.build_executor) e da procedência
+    NAME = "Floci"
+    HEALTH_PATH = "/_floci/health"
+
     def __init__(
         self,
         toolchain: Toolchain,
@@ -203,6 +207,11 @@ class FlociExecutor:
         as recria (protocolo §9.2), então o reset é um restart do container (~1 s). Falha de
         propósito com exceção: uma pré-validação com sandbox sujo não pode passar despercebida.
         """
+        self._restart()
+        self._seed_default_vpcs()
+
+    def _restart(self) -> None:
+        """`docker restart` do container e espera o health (`HEALTH_PATH`) responder 200."""
         proc = subprocess.run(
             ["docker", "restart", self.container],
             capture_output=True, text=True, timeout=RESTART_TIMEOUT_S,
@@ -212,10 +221,9 @@ class FlociExecutor:
                 f"docker restart {self.container} falhou ({proc.returncode}): {proc.stderr.strip()}"
             )
         self._wait_healthy()
-        self._seed_default_vpcs()
 
     def _wait_healthy(self) -> None:
-        url = f"{self.host_endpoint}/_floci/health"
+        url = f"{self.host_endpoint}{self.HEALTH_PATH}"
         deadline = time.monotonic() + HEALTH_TIMEOUT_S
         while True:
             try:
@@ -224,7 +232,9 @@ class FlociExecutor:
             except httpx2.HTTPError:
                 pass  # ainda subindo
             if time.monotonic() > deadline:
-                raise RuntimeError(f"Floci não ficou saudável em {HEALTH_TIMEOUT_S:.0f}s: {url}")
+                raise RuntimeError(
+                    f"{self.NAME} não ficou saudável em {HEALTH_TIMEOUT_S:.0f}s: {url}"
+                )
             time.sleep(0.5)
 
     def _seed_default_vpcs(self) -> None:

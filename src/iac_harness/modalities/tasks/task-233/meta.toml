@@ -1,0 +1,10 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia a tabela e a AWS cifra toda tabela DynamoDB em repouso (chave da AWS
+# por padrão, sem SSEDescription): o check aceita qualquer tabela da região cujo SSE não esteja
+# desabilitado (ausente = padrão cifrado; ENABLED/ENABLING = KMS explícito).
+# A reference_output do IaC-Eval liga streams (Intent/Rego), o que o enunciado não pede; foi
+# mantida como está e o check não olha streams.
+id = "task-233"
+category = "create"
+origin = "iac-eval-v2:aws/task-233"
+region = "us-east-1"

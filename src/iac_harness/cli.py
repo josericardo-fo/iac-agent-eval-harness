@@ -21,6 +21,7 @@ from iac_harness.conditions import A, B, C, Condition
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
 from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
+from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.metrics import compute_metrics, load_events
 from iac_harness.modalities import prompts as mod_prompts
@@ -39,6 +40,9 @@ from iac_harness.workspace import OVERRIDE_FILENAME, create_workspace, pair_dir
 
 CONDITIONS: dict[str, Condition] = {"A": A, "B": B, "C": C}
 BACKENDS = {"anthropic": AnthropicBackend}
+EXECUTORS: dict[str, type[FlociExecutor]] = {
+    cls.KIND: cls for cls in (FlociExecutor, LocalStackExecutor)
+}
 DATA_DIR = Path("data")
 MIRROR_DIR = "/opt/terraform-providers"  # filesystem mirror dentro da imagem da toolchain
 _RESOURCE = re.compile(r"\b(aws(?:cc)?_\w+)\b")
@@ -67,8 +71,11 @@ def build_toolchain(cfg: dict[str, Any]) -> Toolchain:
 
 def build_executor(cfg: dict[str, Any], toolchain: Toolchain) -> FlociExecutor:
     sb = cfg.get("sandbox", {})
+    kind = sb.get("kind", FlociExecutor.KIND)
+    if kind not in EXECUTORS:
+        raise SystemExit(f"[sandbox] kind desconhecido: {kind!r} (use um de {sorted(EXECUTORS)})")
     kwargs = {k: sb[k] for k in ("endpoint", "host_endpoint", "container") if k in sb}
-    return FlociExecutor(toolchain, **kwargs)
+    return EXECUTORS[kind](toolchain, **kwargs)
 
 
 def build_gates(cfg: dict[str, Any], toolchain: Toolchain, executor: FlociExecutor) -> dict:
@@ -132,6 +139,29 @@ def _mirror_providers(toolchain: Toolchain, workdir: Path) -> list[str] | str:
     return sorted(line.rsplit("/", 1)[-1] for line in proc.stdout.split() if line)
 
 
+def _emulator_image(container: str) -> tuple[str | None, str | None, str | None]:
+    """Imagem, ID e RepoDigests do container do emulador (tolerante a falha, como `_query`)."""
+    image = _query(["docker", "inspect", "--format", "{{.Config.Image}}", container])
+    image_id = _query(["docker", "inspect", "--format", "{{.Image}}", container])
+    digests = None
+    if image_id and not image_id.startswith("erro:"):
+        digests = _query(
+            ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image_id]
+        )
+    return image, image_id, digests
+
+
+def _sandbox_provenance(executor: FlociExecutor) -> dict[str, Any]:
+    """Emulador usado no run de modalidades: tipo (`[sandbox] kind`), imagem e ID."""
+    image, image_id, digests = _emulator_image(executor.container)
+    return {
+        "sandbox_kind": executor.KIND,
+        "sandbox_image": image,
+        "sandbox_image_id": image_id,
+        "sandbox_repo_digests": digests,
+    }
+
+
 def collect_provenance(
     toolchain: Toolchain,
     executor: FlociExecutor,
@@ -147,13 +177,8 @@ def collect_provenance(
         toolchain_id = _query(
             ["docker", "image", "inspect", "--format", "{{.Id}}", toolchain.image]
         )
-    floci_image = _query(["docker", "inspect", "--format", "{{.Config.Image}}", executor.container])
-    floci_image_id = _query(["docker", "inspect", "--format", "{{.Image}}", executor.container])
-    floci_digests = None
-    if floci_image_id and not floci_image_id.startswith("erro:"):
-        floci_digests = _query(
-            ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", floci_image_id]
-        )
+    # Chaves floci_* mantidas por compatibilidade com os runs A/B/C; `sandbox_kind` diz o emulador.
+    floci_image, floci_image_id, floci_digests = _emulator_image(executor.container)
     return {
         **_git_provenance(),
         "versions": {
@@ -161,6 +186,7 @@ def collect_provenance(
             "toolchain_image": toolchain.image,
             "toolchain_image_id": toolchain_id,
             "providers": _mirror_providers(toolchain, run_dir),
+            "sandbox_kind": executor.KIND,
             "floci_image": floci_image,
             "floci_image_id": floci_image_id,
             "floci_repo_digests": floci_digests,
@@ -528,6 +554,7 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
                     **toolchain.versions(run_dir),
                     "toolchain_image": toolchain.image,
                     "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
+                    **_sandbox_provenance(executor),
                 },
             },
             indent=2,
@@ -593,15 +620,16 @@ def _modality_loop(
     reps: int,
     runs_dir: Path,
     run_id: str,
+    toolchain: Toolchain,
+    executor: FlociExecutor,
     skip: Container[tuple] = frozenset(),
 ) -> None:
     """Rep externo: as modalidades de uma tarefa rodam lado a lado no tempo (menos deriva)."""
-    toolchain = build_toolchain(cfg)
     ctx = ModRunContext(
         run_id=run_id,
         runs_dir=runs_dir,
         toolchain=toolchain,
-        executor=build_executor(cfg, toolchain),
+        executor=executor,
         model_provider=cfg["agent"]["provider"],
         max_attempts=cfg.get("modality", {}).get("max_attempts", DEFAULT_MAX_ATTEMPTS),
         max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
@@ -639,6 +667,7 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
     (run_dir / "run_config.json").write_text(
         json.dumps(
             {
@@ -652,13 +681,14 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
                     **toolchain.versions(run_dir),
                     "toolchain_image": toolchain.image,
                     "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
+                    **_sandbox_provenance(executor),
                 },
             },
             indent=2,
             ensure_ascii=False,
         )
     )
-    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id)
+    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, toolchain, executor)
     print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0
@@ -704,7 +734,9 @@ def cmd_modality_resume(args: argparse.Namespace) -> int:
         f"{len(discarded)} incompletos descartados, {len(pending)} a rodar",
         file=sys.stderr,
     )
-    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, complete)
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
+    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, toolchain, executor, complete)
     print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0

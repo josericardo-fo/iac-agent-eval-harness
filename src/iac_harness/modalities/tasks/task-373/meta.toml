@@ -1,0 +1,8 @@
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia disco, instância, blueprint, bundle, tamanho nem disk path: o check
+# aceita qualquer disco Lightsail da região anexado a uma instância Lightsail existente.
+id = "task-373"
+category = "create"
+origin = "iac-eval-v2:aws/task-373"
+region = "us-east-1"

@@ -10,7 +10,7 @@ from __future__ import annotations
 from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.spec import Modality
 
-PROMPT_VERSION = "mod-v2"
+PROMPT_VERSION = "mod-v3"
 
 # Linguagem do bloco de código de cada modalidade (resposta e histórico).
 CODE_LANG = {"terraform": "hcl", "cli": "bash", "boto3": "python"}
@@ -72,6 +72,28 @@ MODIFY_NOTES = {
     ),
 }
 
+# Frase das tarefas de consulta: só diz onde sai a resposta (mesma estrutura nas três).
+QUERY_NOTES = {
+    "terraform": (
+        'Deliver the answer as the value of a Terraform output named "answer", declared in\n'
+        "main.tf; the harness reads it after the apply."
+    ),
+    "cli": (
+        "Deliver the answer by writing it to the file answer.json in the working directory;\n"
+        "the harness reads it after run.sh."
+    ),
+    "boto3": (
+        "Deliver the answer by writing it to the file answer.json in the working directory;\n"
+        "the harness reads it after main.py."
+    ),
+}
+
+QUERY_TEMPLATE = """\
+{prompt}
+
+{note}
+"""
+
 MODIFY_TEMPLATE = """\
 {prompt}
 
@@ -115,7 +137,12 @@ def repair_template(modality: Modality) -> str:
 
 
 def user_prompt(task: ModalityTask, modality: Modality) -> str:
-    """Enunciado; nas tarefas de modificação, acrescenta o initial.tf e a frase da modalidade."""
+    """Enunciado; em modify/delete acrescenta o initial.tf e a frase da modalidade.
+
+    Na consulta, só a frase de onde sai a resposta: o initial.tf entregaria a resposta.
+    """
+    if task.category == "query":
+        return QUERY_TEMPLATE.format(prompt=task.prompt.rstrip(), note=QUERY_NOTES[modality.name])
     if task.initial_tf is None:
         return task.prompt
     return MODIFY_TEMPLATE.format(

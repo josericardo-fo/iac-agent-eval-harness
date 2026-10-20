@@ -1,0 +1,8 @@
+# Enunciado escrito do zero, neutro em relação à modalidade; o estado inicial é initial.tf.
+# Consulta: a resposta é comparada com um gabarito fixo (check.py), sem recalcular do estado.
+# O provider aws da imagem tem data "aws_dynamodb_tables" (listagem), então a consulta é possível
+# nas três modalidades.
+id = "query-dynamodb-ondemand"
+category = "query"
+origin = "authored"
+region = "us-east-1"

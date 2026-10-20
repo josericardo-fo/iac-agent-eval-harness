@@ -1,0 +1,7 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado só pede o número de brokers: o check aceita qualquer cluster MSK da região com
+# NumberOfBrokerNodes = 3 que não esteja em FAILED/DELETING (versão, instância, rede livres).
+id = "task-201"
+category = "create"
+origin = "iac-eval-v2:aws/task-201"
+region = "us-east-1"

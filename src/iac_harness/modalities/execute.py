@@ -18,9 +18,16 @@ from iac_harness.toolchain import Toolchain
 from iac_harness.types import Artifact, CheckStatus
 from iac_harness.workspace import create_workspace
 
-# Arquivos do apply inicial herdados pelo workspace Terraform nas tarefas de modificação.
+# Arquivos do apply inicial herdados pelo workspace Terraform em modify/delete.
 INHERITED_TF_FILES = ("terraform.tfstate", ".terraform.lock.hcl")
 CHECK_FILENAME = "check.py"
+ANSWER_FILENAME = "answer.json"
+# Erro fixo de resposta ausente/inválida nas consultas (volta ao agente como erro de execução).
+ANSWER_ERROR = {
+    "terraform": 'The output "answer" was not produced by the apply.',
+    "cli": f"{ANSWER_FILENAME} was not produced or is not valid JSON.",
+    "boto3": f"{ANSWER_FILENAME} was not produced or is not valid JSON.",
+}
 
 
 @dataclass(frozen=True)
@@ -108,6 +115,54 @@ def run_artifact(
     return _run_commands(toolchain, modality.command, ws.path, max_chars), ws.path
 
 
+def collect_answer(path: Path, modality: Modality) -> ExecResult:
+    """Resposta da consulta em <path>/answer.json, depois de uma execução ok.
+
+    Terraform: o valor do output "answer" (string com JSON é decodificada). Equivale a
+    `terraform output -json answer`, mas lido do terraform.tfstate, porque o .terraform (com os
+    plugins que o comando exige) já foi apagado. CLI/boto3: o script grava o arquivo.
+    """
+    answer = path / ANSWER_FILENAME
+    error = ExecResult(False, ANSWER_ERROR[modality.name])
+    if modality.name == "terraform":
+        try:
+            state = json.loads((path / "terraform.tfstate").read_text())
+            value = state["outputs"]["answer"]["value"]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            return error
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                pass  # string comum: vira string JSON e o check decide
+        answer.write_text(json.dumps(value))
+    try:
+        json.loads(answer.read_text())
+    except (OSError, ValueError):
+        return error
+    return ExecResult(True, "")
+
+
+def with_answer(
+    task: ModalityTask, modality: Modality, result: ExecResult, path: Path
+) -> ExecResult:
+    """Na consulta com execução ok, coleta a resposta; se faltar, a execução vira falha."""
+    if not (result.ok and task.category == "query"):
+        return result
+    answer = collect_answer(path, modality)
+    if answer.ok:
+        return result
+    return ExecResult(False, answer.output, raw=result.raw + "\n" + answer.output)
+
+
+def inherits_state(task: ModalityTask, modality: Modality) -> bool:
+    """Workspace Terraform herda o tfstate do initial só em modify/delete.
+
+    Na consulta, o apply só com data sources destruiria o estado inicial.
+    """
+    return modality.name == "terraform" and task.category in ("modify", "delete")
+
+
 def apply_initial(
     toolchain: Toolchain,
     executor: FlociExecutor,
@@ -143,11 +198,18 @@ def parse_check_output(stdout: str) -> tuple[bool, dict[str, Any]]:
     return data["pass"], details if isinstance(details, dict) else {"details": details}
 
 
-def run_check(toolchain: Toolchain, task: ModalityTask) -> tuple[bool, dict[str, Any]]:
-    """Roda o check.py num diretório temporário FORA do workspace (como o OpaVerifier)."""
+def run_check(
+    toolchain: Toolchain, task: ModalityTask, workspace: Path | None = None
+) -> tuple[bool, dict[str, Any]]:
+    """Roda o check.py num diretório temporário FORA do workspace (como o OpaVerifier).
+
+    Se `workspace` tiver answer.json (consulta), ele é copiado para o lado do check.
+    """
     with tempfile.TemporaryDirectory(prefix="iac-check-") as tmp:
         tmp_dir = Path(tmp)
         (tmp_dir / CHECK_FILENAME).write_text(task.check)
+        if workspace is not None and (workspace / ANSWER_FILENAME).is_file():
+            shutil.copy(workspace / ANSWER_FILENAME, tmp_dir / ANSWER_FILENAME)
         try:
             proc = toolchain.run(["python3", CHECK_FILENAME, task.region], tmp_dir)
         except (subprocess.TimeoutExpired, OSError) as exc:
@@ -186,13 +248,15 @@ def prevalidate_pair(
         row.update(initial_ok=initial.ok, initial_output=initial.output)
         if not initial.ok:
             return row  # sem estado inicial não há o que pré-validar
-        inherit = initial_path if modality.name == "terraform" else None
+        if inherits_state(task, modality):
+            inherit = initial_path
     row["baseline_pass"], row["baseline_details"] = run_check(toolchain, task)
-    ref, _ = run_artifact(
+    ref, ref_path = run_artifact(
         toolchain, executor, modality, task.references[modality.name], runs_dir, run_id,
         task.task_id, "reference", inherit, max_chars,
     )  # fmt: skip
+    ref = with_answer(task, modality, ref, ref_path)
     row.update(ref_exec_ok=ref.ok, ref_output=ref.output, ref_unsupported_pattern=ref.unsupported)
-    row["ref_check_pass"], row["ref_check_details"] = run_check(toolchain, task)
+    row["ref_check_pass"], row["ref_check_details"] = run_check(toolchain, task, ref_path)
     row["valid"] = row["baseline_pass"] is False and ref.ok and row["ref_check_pass"] is True
     return row

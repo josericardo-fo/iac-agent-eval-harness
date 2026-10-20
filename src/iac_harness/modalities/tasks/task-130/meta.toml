@@ -1,0 +1,11 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# Ambíguo: "public subnet" não é definido; a referência só liga MapPublicIpOnLaunch (sem IGW).
+# O check aceita como pública a subnet com MapPublicIpOnLaunch ou com rota 0.0.0.0/0 para um
+# internet gateway; privada = nenhuma das duas.
+# RDS fica num DB subnet group (exige 2 AZs) e o emulador não informa a subnet efetiva: o check
+# aceita RDS cujo subnet group contém uma subnet privada diferente da do app server.
+# "web servers"/"application servers" não têm estado verificável: só a subnet das instâncias.
+id = "task-130"
+category = "create"
+origin = "iac-eval-v2:aws/task-130"
+region = "us-east-1"

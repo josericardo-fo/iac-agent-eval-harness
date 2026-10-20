@@ -6,8 +6,17 @@ runs_dir = "runs"
 
 [modality]
 tasks = [
+  # criação: 5 originais + 7 sorteadas (docs/selecao-tarefas-modalidades.md)
   "task-108", "task-115", "task-230", "task-231", "task-234",
+  "task-110", "task-118", "task-130", "task-201", "task-233", "task-373", "task-375",
+  # modificação
   "mod-s3-versioning", "mod-dynamodb-pitr", "mod-sg-https",
+  "mod-s3-encryption", "mod-sqs-retention", "mod-iam-user-policy", "mod-dynamodb-ttl",
+  "mod-secret-tag",
+  # remoção
+  "del-s3-bucket", "del-sqs-dev", "del-iam-user",
+  # consulta
+  "query-sg-ssh-open", "query-dynamodb-ondemand",
 ]
 modalities = ["terraform", "cli", "boto3"]
 

@@ -1,0 +1,7 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia instância, discos, blueprint, bundle, tamanho nem disk paths: o check
+# aceita qualquer instância Lightsail da região com 2 ou mais discos anexados.
+id = "task-375"
+category = "create"
+origin = "iac-eval-v2:aws/task-375"
+region = "us-east-1"

@@ -332,7 +332,7 @@ def test_modality_resume_skips_completed(tmp_path, monkeypatch):
     ran = []
     monkeypatch.setattr(
         cli, "_modality_loop",
-        lambda cfg, tasks, mods, reps, rd, rid, skip=frozenset(): ran.append(
+        lambda cfg, tasks, mods, reps, rd, rid, tc, ex, skip=frozenset(): ran.append(
             [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in mods
              if (t.task_id, m, r) not in skip]
         ),
@@ -351,3 +351,63 @@ def test_modality_resume_skips_completed(tmp_path, monkeypatch):
 def test_modality_resume_rejects_run_options(tmp_path):
     with pytest.raises(SystemExit, match="--resume não aceita"):
         main(["modality-run", "--resume", str(tmp_path), "--reps", "2"])
+
+
+# ---------- consulta ----------
+
+
+@pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
+def test_query_prompt_has_note_without_initial(name):
+    task = _task("query-sg-ssh-open")
+    text = prompts.user_prompt(task, MODALITIES[name])
+    assert task.prompt.strip() in text and prompts.QUERY_NOTES[name] in text
+    assert "resource " not in text and "query-bastion-sg" not in text
+
+
+def test_query_notes_are_similar_length():
+    notes = [len(n) for n in prompts.QUERY_NOTES.values()]
+    assert max(notes) < 1.2 * min(notes)
+
+
+def test_query_missing_answer_is_repaired_with_fixed_message(tmp_path):
+    class AnswerToolchain(ScriptedToolchain):
+        """A 2ª execução de run.sh grava answer.json; a 1ª não."""
+
+        runs = 0
+
+        def run(self, args, workdir, timeout_s=None):
+            if args[0] == "bash":
+                self.runs += 1
+                if self.runs == 2:
+                    (Path(workdir) / "answer.json").write_text('{"security_groups": []}')
+            return super().run(args, workdir, timeout_s)
+
+    tc = AnswerToolchain()
+    backend = ScriptedBackend([{"run.sh": "a"}, {"run.sh": "b"}])
+    rec = ListRecorder()
+    ctx = ModRunContext("r", tmp_path, tc, FakeExec(tc), max_attempts=3)
+    final = run_pair(_task("query-sg-ssh-open"), MODALITIES["cli"], 1, backend, rec, ctx)
+    assert final["termination"] == "EXEC_OK" and final["attempts"] == 2
+    (turn,) = backend.calls[1][1]
+    assert turn.feedback.message == "answer.json was not produced or is not valid JSON."
+    assert rec.events[0]["answer"] is None and not rec.events[0]["exec_ok"]
+    assert rec.events[1]["answer"] == '{"security_groups": []}'
+
+
+def test_query_terraform_does_not_inherit_tfstate(tmp_path):
+    class StateToolchain(ScriptedToolchain):
+        def run(self, args, workdir, timeout_s=None):
+            if args[:2] == ["terraform", "apply"]:
+                state = '{"outputs": {"answer": {"value": {"security_groups": []}}}}'
+                (Path(workdir) / "terraform.tfstate").write_text(state)
+            return super().run(args, workdir, timeout_s)
+
+    tc = StateToolchain()
+    backend = ScriptedBackend([{"main.tf": "x"}])
+    ctx = ModRunContext("r", tmp_path, tc, FakeExec(tc), max_attempts=3)
+    final = run_pair(_task("query-sg-ssh-open"), MODALITIES["terraform"], 1, backend,
+                     ListRecorder(), ctx)  # fmt: skip
+    assert final["termination"] == "EXEC_OK"
+    attempt = tmp_path / "r" / "query-sg-ssh-open" / "1" / "terraform" / "attempt_1"
+    assert json.loads((attempt / "terraform.tfstate").read_text())["outputs"]  # do próprio apply
+    assert (attempt / "answer.json").exists()

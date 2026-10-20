@@ -1,0 +1,12 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# reference.tf adaptado: a reference_output usa bucket_prefix, mas o enunciado nomeia o bucket
+# 'wellcomecollection-platform-infra'; trocado por bucket = "...". O resto é o do CSV.
+# Ambíguo: "preventive destruction measures" não diz o quê (na AWS não há estado
+# correspondente a prevent_destroy); o check não confere nada para isso.
+# Ambíguo: "transition old versions" pode ser Transition (a referência usa) ou
+# NoncurrentVersionTransition; o check aceita qualquer um com 30 dias e STANDARD_IA.
+# ACL 'private' = nenhum grant além do dono; o check aceita qualquer ownership control.
+id = "task-110"
+category = "create"
+origin = "iac-eval-v2:aws/task-110"
+region = "us-east-1"

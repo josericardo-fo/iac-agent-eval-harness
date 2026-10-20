@@ -1,0 +1,6 @@
+# Enunciado escrito do zero, neutro em relação à modalidade; o estado inicial é initial.tf.
+# Consulta: a resposta é comparada com um gabarito fixo (check.py), sem recalcular do estado.
+id = "query-sg-ssh-open"
+category = "query"
+origin = "authored"
+region = "us-east-1"

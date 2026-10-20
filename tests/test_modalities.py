@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import pytest
 
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.modalities.execute import (
+    ANSWER_ERROR,
+    collect_answer,
     parse_check_output,
     prevalidate_pair,
     run_artifact,
@@ -17,7 +20,12 @@ from test_floci import FakeToolchain
 
 EXPECTED_TASKS = {
     "task-108", "task-115", "task-230", "task-231", "task-234",
+    "task-110", "task-118", "task-130", "task-201", "task-233", "task-373", "task-375",
     "mod-s3-versioning", "mod-dynamodb-pitr", "mod-sg-https",
+    "mod-s3-encryption", "mod-sqs-retention", "mod-iam-user-policy", "mod-dynamodb-ttl",
+    "mod-secret-tag",
+    "del-s3-bucket", "del-sqs-dev", "del-iam-user",
+    "query-sg-ssh-open", "query-dynamodb-ondemand",
 }  # fmt: skip
 
 
@@ -36,14 +44,14 @@ class RecordingToolchain(FakeToolchain):
         return subprocess.CompletedProcess(args, self.returncode, self.stdout, self.stderr)
 
 
-def test_load_tasks_has_all_eight_with_required_files():
+def test_load_tasks_has_all_with_required_files():
     tasks = load_tasks()
     assert {t.task_id for t in tasks} == EXPECTED_TASKS
     for t in tasks:
         assert t.prompt.strip() and t.check.strip()
         assert set(t.references) == set(MODALITIES)
         assert all(body.strip() for body in t.references.values())
-        assert (t.category == "modify") == (t.initial_tf is not None)
+        assert (t.category != "create") == (t.initial_tf is not None)
         assert "## Intent" not in t.prompt
         assert "terraform" not in t.prompt.lower()
 
@@ -57,6 +65,28 @@ def test_load_task_rejects_missing_initial_in_modify(tmp_path):
             (dst / p.name).write_text(p.read_text())
     with pytest.raises(ValueError, match="initial.tf"):
         load_task(dst)
+
+
+def _copy_task_as_delete(tmp_path, with_initial):
+    src = TASKS_DIR / "mod-s3-versioning"
+    dst = tmp_path / "mod-s3-versioning"
+    dst.mkdir()
+    for p in src.iterdir():
+        if p.name != "initial.tf" or with_initial:
+            (dst / p.name).write_text(p.read_text())
+    meta = dst / "meta.toml"
+    meta.write_text(meta.read_text().replace('category = "modify"', 'category = "delete"'))
+    return dst
+
+
+def test_load_task_accepts_delete_with_initial(tmp_path):
+    task = load_task(_copy_task_as_delete(tmp_path, with_initial=True))
+    assert task.category == "delete" and task.initial_tf is not None
+
+
+def test_load_task_rejects_missing_initial_in_delete(tmp_path):
+    with pytest.raises(ValueError, match="initial.tf"):
+        load_task(_copy_task_as_delete(tmp_path, with_initial=False))
 
 
 def test_modality_commands():
@@ -199,3 +229,61 @@ def test_prevalidate_pair_stops_when_initial_fails(tmp_path):
     )
     assert row["initial_ok"] is False and not row["valid"]
     assert row["baseline_pass"] is None and row["ref_exec_ok"] is None
+
+
+# ---------- consulta ----------
+
+
+def _query_toolchain(write_state: bool):
+    """Apply grava tfstate com o output "answer"; o check registra se recebeu o answer.json."""
+
+    class QueryToolchain(RecordingToolchain):
+        def run(self, args, workdir, timeout_s=None):
+            if write_state and args[:2] == ["terraform", "apply"]:
+                state = {"outputs": {"answer": {"value": {"security_groups": ["a"]}}}}
+                (Path(workdir) / "terraform.tfstate").write_text(json.dumps(state))
+            if args[:2] == ["python3", "check.py"]:
+                self.stdout = '{"pass": false, "details": {}}'
+                if (Path(workdir) / "answer.json").exists():
+                    self.stdout = '{"pass": true, "details": {}}'
+            return super().run(args, workdir, timeout_s)
+
+    return QueryToolchain()
+
+
+def test_terraform_query_does_not_inherit_tfstate(tmp_path):
+    tc = _query_toolchain(write_state=True)
+    row = prevalidate_pair(
+        _task("query-sg-ssh-open"), MODALITIES["terraform"], tc, FlociExecutor(tc), tmp_path, "r"
+    )
+    ref_init = next(f for a, w, f in tc.seen if a[:2] == ["terraform", "init"] and
+                    w.name == "reference")  # fmt: skip
+    assert "terraform.tfstate" not in ref_init
+    assert row["ref_exec_ok"] and row["valid"]  # o check recebeu o answer.json
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [({"tables": ["x"]}, {"tables": ["x"]}), ('{"tables": ["x"]}', {"tables": ["x"]})],
+)
+def test_collect_answer_terraform_decodes_object_and_json_string(tmp_path, value, expected):
+    state = {"outputs": {"answer": {"value": value}}}
+    (tmp_path / "terraform.tfstate").write_text(json.dumps(state))
+    assert collect_answer(tmp_path, MODALITIES["terraform"]).ok
+    assert json.loads((tmp_path / "answer.json").read_text()) == expected
+
+
+@pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
+def test_collect_answer_missing_is_fixed_error(tmp_path, name):
+    res = collect_answer(tmp_path, MODALITIES[name])
+    assert not res.ok and res.output == ANSWER_ERROR[name]
+    (tmp_path / "answer.json").write_text("não é json")
+    (tmp_path / "terraform.tfstate").write_text('{"outputs": {}}')
+    assert not collect_answer(tmp_path, MODALITIES[name]).ok
+
+
+def test_run_check_receives_answer_json(tmp_path):
+    (tmp_path / "answer.json").write_text('{"tables": []}')
+    tc = RecordingToolchain(stdout='{"pass": true, "details": {}}')
+    run_check(tc, _task("query-dynamodb-ondemand"), tmp_path)
+    assert tc.seen[0][2] == {"check.py", "answer.json"}

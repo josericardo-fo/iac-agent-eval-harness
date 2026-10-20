@@ -1,0 +1,4 @@
+# Task 233
+
+
+Create a DynamoDB table with data encryption at rest enabled for the table.

@@ -1,0 +1,117 @@
+{
+  "seed": 20261020,
+  "rules": {
+    "a": "Excluir as 5 tarefas de criação já usadas (aws/task-108, 115, 230, 231, 234).",
+    "b": "Excluir reference_output com data \"archive_file\" ou resource \"aws_lambda_function\".",
+    "c": "Excluir reference_output sem nenhum bloco resource (só data source).",
+    "d": "Serviço = segmento após 'aws_' do primeiro resource da reference_output; no máximo 2 por serviço entre as sorteadas (as 5 já usadas não contam; v2 da regra).",
+    "e": "Estratos por difficulty: 1-2 -> 1, 3 -> 2, 4 -> 2, 5-6 -> 2.",
+    "f": "Por estrato, na ordem acima: ids ordenados, random.Random(f'{SEED}-{estrato}').shuffle, pega os que não estouram o teto global de serviço; o resto vira fila de substitutos.",
+    "g": "Excluir enunciados (sem o Intent) que citam 'terraform' ou 'hcl': não são neutros entre modalidades e não podem ser editados (mesmo critério das 5 já usadas)."
+  },
+  "excluded": {
+    "a": [
+      "aws/task-108",
+      "aws/task-115",
+      "aws/task-230",
+      "aws/task-231",
+      "aws/task-234"
+    ],
+    "b": [
+      "aws/task-150",
+      "aws/task-151",
+      "aws/task-153",
+      "aws/task-154",
+      "aws/task-156",
+      "aws/task-157",
+      "aws/task-158",
+      "aws/task-159",
+      "aws/task-186"
+    ],
+    "c": [],
+    "g": [
+      "aws/task-097",
+      "aws/task-109",
+      "aws/task-119",
+      "aws/task-120",
+      "aws/task-121",
+      "aws/task-122",
+      "aws/task-124",
+      "aws/task-162",
+      "aws/task-167"
+    ]
+  },
+  "selected": {
+    "1-2": [
+      "aws/task-233"
+    ],
+    "3": [
+      "aws/task-118",
+      "aws/task-373"
+    ],
+    "4": [
+      "aws/task-375",
+      "aws/task-110"
+    ],
+    "5-6": [
+      "aws/task-130",
+      "aws/task-201"
+    ]
+  },
+  "substitutes": {
+    "1-2": [
+      "aws/task-195",
+      "aws/task-136",
+      "aws/task-194",
+      "aws/task-133",
+      "aws/task-266",
+      "aws/task-114",
+      "aws/task-057",
+      "aws/task-268",
+      "aws/task-197",
+      "aws/task-079",
+      "aws/task-196",
+      "aws/task-232",
+      "aws/task-113",
+      "aws/task-111",
+      "aws/task-362",
+      "aws/task-365",
+      "aws/task-161",
+      "aws/task-366",
+      "aws/task-359",
+      "aws/task-363",
+      "aws/task-165",
+      "aws/task-135",
+      "aws/task-372",
+      "aws/task-172",
+      "aws/task-137",
+      "aws/task-269",
+      "aws/task-112",
+      "aws/task-265"
+    ],
+    "3": [
+      "aws/task-224",
+      "aws/task-166",
+      "aws/task-374",
+      "aws/task-226",
+      "aws/task-351"
+    ],
+    "4": [
+      "aws/task-128",
+      "aws/task-189"
+    ],
+    "5-6": [
+      "aws/task-192",
+      "aws/task-205",
+      "aws/task-191",
+      "aws/task-131",
+      "aws/task-202",
+      "aws/task-204",
+      "aws/task-208",
+      "aws/task-206",
+      "aws/task-207",
+      "aws/task-213",
+      "aws/task-203"
+    ]
+  }
+}

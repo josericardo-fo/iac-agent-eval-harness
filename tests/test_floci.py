@@ -5,6 +5,7 @@ import httpx2
 import pytest
 
 from iac_harness.executors.floci import DEFAULT_VPC_REGIONS, FlociExecutor
+from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import CheckStatus
 from iac_harness.workspace import Workspace
@@ -169,3 +170,16 @@ def test_reset_restart_failure_includes_stderr(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(RuntimeError, match="No such container: x"):
         _executor().reset()
+
+
+def test_localstack_reset_restarts_and_waits_health_without_seed(monkeypatch):
+    calls = _patch_reset(monkeypatch)
+    LocalStackExecutor(FakeToolchain()).reset()
+    assert calls["run"] == [["docker", "restart", "iac-harness-localstack-1"]]
+    assert calls["get"] == ["http://127.0.0.1:4567/_localstack/health"] * 2
+    assert calls["post"] == []  # o LocalStack já cria a VPC default
+
+
+def test_localstack_override_points_to_localstack():
+    text = LocalStackExecutor(FakeToolchain()).override_tf()
+    assert 's3 = "http://localstack:4566"' in text and "floci" not in text.split("\n", 1)[1]
