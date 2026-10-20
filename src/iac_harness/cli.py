@@ -599,15 +599,23 @@ def _modality_backends(cfg: dict[str, Any], modalities: list[str]) -> dict[str, 
     }
 
 
+def _short_rate(r: dict[str, Any]) -> str:
+    """k/n [IC de Wilson curto, em %]."""
+    lo, hi = r["wilson"]
+    return f"{r['k']}/{r['n']} [{lo * 100:.0f}-{hi * 100:.0f}%]"
+
+
 def _modality_summary(events: list[dict[str, Any]]) -> str:
-    finals = [e for e in events if e.get("event") == "final"]
-    lines = [f"{len(finals)} trajetórias"]
-    for modality, cats in compute_modality_metrics(finals).items():
-        for category, m in cats.items():
+    metrics = compute_modality_metrics(events)
+    lines = [f"{metrics['n_trajectories']} trajetórias"]
+    for modality, blocks in metrics["modalities"].items():
+        for category, m in blocks["by_category"].items():
+            first = f"{m['first_attempt_success']['k']}/{m['first_attempt_success']['n']}"
+            state = f"{m['state_pass']['k']}/{m['state_pass']['n']}"
             lines.append(
-                f"{modality:<10} {category:<7} sucesso {m['success']:<6} "
-                f"estado {m['state_pass']:<6} "
-                f"tentativas {m['mean_attempts']:.2f}  tokens {m['mean_total_tokens']:.0f}  "
+                f"{modality:<10} {category:<7} sucesso {_short_rate(m['success']):<17} "
+                f"1ª tent. {first:<6} estado {state:<6} "
+                f"tentativas {m['mean_attempts']:.2f}  tokens {m['tokens']['mean_total']:.0f}  "
                 f"{m['termination']}"
             )
     return "\n".join(lines)
@@ -742,9 +750,47 @@ def cmd_modality_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def _modality_difficulty() -> dict[str, int]:
+    """task_id → dificuldade do IaC-Eval v2, pelo `origin` do meta.toml; "authored" fica fora."""
+    prefix = "iac-eval-v2:"
+    origins = {
+        t.task_id: t.origin[len(prefix) :] for t in load_tasks() if t.origin.startswith(prefix)
+    }
+    if not origins:
+        return {}
+    by_id = {task.task_id: task.difficulty for task, _ in IacEvalV2Adapter(DATA_DIR).load()}
+    return {t: by_id[o] for t, o in origins.items() if o in by_id}
+
+
+def _modality_metrics_table(metrics: dict[str, Any]) -> str:
+    """Tabela legível modalidade × categoria (e total por modalidade)."""
+    header = (
+        f"{'modalidade':<10} {'categoria':<9} {'sucesso [IC 95%]':<20} {'1ª tentativa':<13} "
+        f"{'tentativas':>10} {'tokens':>8} {'custo US$':>10}"
+    )
+    lines = [header, "-" * len(header)]
+    for modality, blocks in metrics["modalities"].items():
+        for category, m in [*blocks["by_category"].items(), ("total", blocks["overall"])]:
+            first = f"{m['first_attempt_success']['k']}/{m['first_attempt_success']['n']}"
+            lines.append(
+                f"{modality:<10} {category:<9} {_short_rate(m['success']):<20} "
+                f"{first:<13} {m['mean_attempts']:>10.2f} "
+                f"{m['tokens']['mean_total']:>8.0f} {m['cost_usd']:>10.4f}"
+            )
+    return "\n".join(lines)
+
+
 def cmd_modality_metrics(args: argparse.Namespace) -> int:
-    metrics = compute_modality_metrics(load_events(Path(args.run_dir) / "events.jsonl"))
-    print(json.dumps(metrics, indent=2, ensure_ascii=False))
+    run_dir = Path(args.run_dir)
+    cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
+    prices = {m: tuple(p) for m, p in cfg.get("prices", {}).items()}
+    metrics = compute_modality_metrics(
+        load_events(run_dir / "events.jsonl"), prices, difficulty=_modality_difficulty()
+    )
+    if args.format == "table":
+        print(_modality_metrics_table(metrics))
+    else:
+        print(json.dumps(metrics, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -1081,6 +1127,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_mmet = sub.add_parser("modality-metrics", help="métricas de um modality-run")
     p_mmet.add_argument("run_dir", type=Path)
+    p_mmet.add_argument("--format", choices=("json", "table"), default="json")
     p_mmet.set_defaults(func=cmd_modality_metrics)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")

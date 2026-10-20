@@ -275,33 +275,105 @@ def test_initial_failure_is_harness_failure(tmp_path):
 # ---------- métricas ----------
 
 
-def _final(modality, category, passed, attempts, tokens, termination, success=None):
+def _final(
+    modality, category, passed, attempts, tokens, termination, success=None, task_id="t1", rep=1
+):
     return {
-        "event": "final", "modality": modality, "category": category, "check_pass": passed,
+        "event": "final", "task_id": task_id, "rep": rep, "model_id": "m",
+        "modality": modality, "category": category, "check_pass": passed,
         "success": passed if success is None else success,
         "attempts": attempts, "input_tokens": tokens, "output_tokens": 0, "total_tokens": tokens,
         "termination": termination,
     }  # fmt: skip
 
 
+def _attempt(modality, exec_ok, task_id="t1", rep=1, attempt=1, unsupported=False):
+    return {
+        "event": "attempt", "task_id": task_id, "rep": rep, "modality": modality,
+        "attempt": attempt, "exec_ok": exec_ok, "unsupported": unsupported,
+    }  # fmt: skip
+
+
 def test_modality_metrics_synthetic():
     events = [
-        _final("cli", "create", True, 1, 100, "EXEC_OK"),
-        _final("cli", "create", False, 3, 300, "BUDGET_EXHAUSTED"),
-        _final("cli", "modify", True, 2, 200, "EXEC_OK"),
-        _final("cli", "modify", True, 3, 200, "BUDGET_EXHAUSTED", success=False),
-        _final("terraform", "create", False, 1, 50, "EXEC_OK"),
-        {"event": "attempt", "modality": "cli", "category": "create"},
+        _final("cli", "create", True, 1, 100, "EXEC_OK", task_id="a"),
+        _final("cli", "create", False, 3, 300, "BUDGET_EXHAUSTED", task_id="b"),
+        _final("cli", "modify", True, 2, 200, "EXEC_OK", task_id="c"),
+        _final("cli", "modify", True, 3, 200, "BUDGET_EXHAUSTED", success=False, task_id="d"),
+        _final("terraform", "create", False, 1, 50, "EXEC_OK", task_id="a"),
+        _attempt("cli", True, task_id="a"),
     ]
-    m = compute_modality_metrics(events)
-    assert m["cli"]["create"]["success"] == "1/2"
-    assert m["cli"]["create"]["mean_attempts"] == 2
-    assert m["cli"]["create"]["mean_total_tokens"] == 200
-    assert m["cli"]["create"]["termination"] == {"BUDGET_EXHAUSTED": 1, "EXEC_OK": 1}
-    assert m["cli"]["modify"]["success"] == "1/2" and m["cli"]["modify"]["success_rate"] == 0.5
-    assert m["cli"]["modify"]["state_pass"] == "2/2"
-    assert m["cli"]["modify"]["state_pass_rate"] == 1.0
-    assert m["terraform"]["create"]["success"] == "0/1"
+    m = compute_modality_metrics(events, prices={"m": (1.0, 0.0)})
+    create = m["modalities"]["cli"]["by_category"]["create"]
+    assert (create["success"]["k"], create["success"]["n"]) == (1, 2)
+    assert create["mean_attempts"] == 2
+    assert create["tokens"]["mean_total"] == 200 and create["tokens"]["total"] == 400
+    assert create["cost_usd"] == pytest.approx(400 / 1_000_000)
+    assert create["termination"] == {"BUDGET_EXHAUSTED": 1, "EXEC_OK": 1}
+    modify = m["modalities"]["cli"]["by_category"]["modify"]
+    assert modify["success"]["rate"] == 0.5 and modify["state_pass"]["rate"] == 1.0
+    assert m["modalities"]["cli"]["overall"]["success"]["n"] == 4
+    assert m["modalities"]["terraform"]["overall"]["success"]["k"] == 0
+    assert m["modalities"]["cli"]["overall"]["by_difficulty"] == {}
+
+
+def test_modality_metrics_first_attempt_success():
+    events = [
+        _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="a"),
+        _final("cli", "create", True, 2, 10, "EXEC_OK", task_id="b"),
+        _final("cli", "create", False, 1, 10, "EXEC_OK", task_id="c"),
+    ]
+    block = compute_modality_metrics(events)["modalities"]["cli"]["overall"]
+    assert block["first_attempt_success"]["k"] == 1
+    assert block["success"]["k"] == 2
+    assert block["attempts_to_success"] == 1.5
+
+
+def test_modality_metrics_repair_rate_and_unsupported():
+    events = [
+        # a: falhou a execução e reparou; b: falhou e não reparou; c: nunca falhou
+        _attempt("cli", False, task_id="a", unsupported=True),
+        _attempt("cli", True, task_id="a", attempt=2),
+        _final("cli", "create", True, 2, 10, "EXEC_OK", task_id="a"),
+        _attempt("cli", False, task_id="b"),
+        _attempt("cli", False, task_id="b", attempt=2, unsupported=True),
+        _final("cli", "create", False, 2, 10, "BUDGET_EXHAUSTED", task_id="b"),
+        _attempt("cli", True, task_id="c"),
+        _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="c"),
+    ]
+    block = compute_modality_metrics(events)["modalities"]["cli"]["overall"]
+    assert (block["repair_rate"]["k"], block["repair_rate"]["n"]) == (1, 2)
+    assert block["unsupported_attempts"] == 2
+
+
+def test_modality_metrics_paired_mcnemar():
+    # 10 pares (task, rep): terraform acerta todos; cli erra 6 -> McNemar b=6, c=0
+    events = []
+    for i in range(10):
+        events.append(_final("terraform", "create", True, 1, 10, "EXEC_OK", task_id=f"t{i}"))
+        events.append(_final("cli", "create", i >= 6, 1, 30, "EXEC_OK", task_id=f"t{i}"))
+    cmp = compute_modality_metrics(events, n_boot=200)["comparisons"]
+    (tf_cli,) = cmp["overall"]["success"]
+    assert tf_cli["pair"] == "terraformxcli" and tf_cli["n_pairs"] == 10
+    assert (tf_cli["only_first"], tf_cli["only_second"]) == (6, 0)
+    assert tf_cli["mcnemar_p"] == pytest.approx(2 / 2**6)
+    assert tf_cli["holm_p"] == tf_cli["mcnemar_p"]  # um único par: Holm não muda
+    assert tf_cli["diff_mean"] == pytest.approx(-0.6)
+    assert cmp["overall"]["first_attempt_success"][0]["only_first"] == 6
+    assert cmp["overall"]["total_tokens"][0]["diff_mean"] == pytest.approx(20)
+    assert cmp["by_category"]["create"]["success"][0]["only_first"] == 6
+
+
+def test_modality_metrics_by_difficulty():
+    events = [
+        _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="task-108"),
+        _final("cli", "create", False, 1, 10, "EXEC_OK", task_id="task-375"),
+        _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="authored-x"),
+    ]
+    m = compute_modality_metrics(events, difficulty={"task-108": 2, "task-375": 4})
+    by_d = m["modalities"]["cli"]["overall"]["by_difficulty"]
+    assert set(by_d) == {"2", "4"}
+    assert (by_d["2"]["k"], by_d["4"]["k"]) == (1, 0)
 
 
 # ---------- resume ----------
@@ -311,15 +383,15 @@ def test_modality_resume_skips_completed(tmp_path, monkeypatch):
     run_dir = tmp_path / "runs" / "run1"
     run_dir.mkdir(parents=True)
     events = [
-        {"task_id": "task-108", "modality": "cli", "rep": 1, "event": "attempt"},
+        _attempt("cli", True, task_id="task-108"),
         {
             "task_id": "task-108",
             "modality": "cli",
             "rep": 1,
             "event": "final",
-            **_final("cli", "create", True, 1, 10, "EXEC_OK"),
+            **_final("cli", "create", True, 1, 10, "EXEC_OK", task_id="task-108"),
         },
-        {"task_id": "task-108", "modality": "boto3", "rep": 1, "event": "attempt"},
+        _attempt("boto3", True, task_id="task-108"),
     ]
     (run_dir / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
     orphan = run_dir / "task-108" / "1" / "boto3" / "attempt_1"
