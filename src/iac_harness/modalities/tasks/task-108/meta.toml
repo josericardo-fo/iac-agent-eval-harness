@@ -1,0 +1,7 @@
+# reference.tf (do IaC-Eval) usa us-west-1; o check do S3 lista buckets de todas as regiões.
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# expected_bucket_owner é parâmetro da requisição, não estado: o check não o confere.
+id = "task-108"
+category = "create"
+origin = "iac-eval-v2:aws/task-108"
+region = "us-east-1"

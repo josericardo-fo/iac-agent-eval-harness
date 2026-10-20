@@ -65,6 +65,8 @@ class Toolchain:
             "AWS_ACCESS_KEY_ID": "test",
             "AWS_SECRET_ACCESS_KEY": "test",
             "AWS_REGION": self.region,
+            # O boto3 só lê AWS_DEFAULT_REGION (AWS CLI v2 e Terraform leem AWS_REGION).
+            "AWS_DEFAULT_REGION": self.region,
             "AWS_ENDPOINT_URL": self.endpoint,
             "AWS_EC2_METADATA_DISABLED": "true",
             "TF_IN_AUTOMATION": "1",
@@ -110,9 +112,15 @@ class Toolchain:
             raise
 
     def versions(self, workdir: Path) -> dict[str, str]:
-        """Versões efetivas de terraform e opa, para o run_config."""
+        """Versões efetivas de terraform, opa, aws e boto3, para o run_config."""
         out: dict[str, str] = {}
-        for tool, args in (("terraform", ["terraform", "version"]), ("opa", ["opa", "version"])):
+        tools = (
+            ("terraform", ["terraform", "version"]),
+            ("opa", ["opa", "version"]),
+            ("aws", ["aws", "--version"]),
+            ("boto3", ["python3", "-c", "import boto3; print(boto3.__version__)"]),
+        )
+        for tool, args in tools:
             try:
                 proc = self.run(args, workdir, timeout_s=120)
                 first = proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else ""

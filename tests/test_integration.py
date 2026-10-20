@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,6 +15,7 @@ from iac_harness.cli import (
     build_gates,
     build_toolchain,
     load_config,
+    main,
     prevalidate_task,
 )
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
@@ -111,3 +113,19 @@ def test_reset_clears_state_and_seeds_default_vpc(floci, tmp_path):
 
     assert failing is None, failing.message
     assert statuses["SANDBOX"] == "PASS"
+
+
+def test_modality_prevalidate_one_task(floci, tmp_path):
+    """modality-prevalidate de ponta a ponta numa tarefa de modificação, nas três modalidades."""
+    text = (ROOT / "configs" / "modality-spike.toml").read_text()
+    config = tmp_path / "modality.toml"
+    config.write_text(text.replace('runs_dir = "runs"', f'runs_dir = "{tmp_path / "runs"}"'))
+
+    assert main(["modality-prevalidate", "--config", str(config), "--tasks", "mod-sg-https"]) == 0
+
+    (jsonl,) = (tmp_path / "runs").glob("*-modality-prevalidate/prevalidation.jsonl")
+    rows = [json.loads(line) for line in jsonl.read_text().splitlines()]
+    assert {r["modality"] for r in rows} == {"terraform", "cli", "boto3"}
+    for r in rows:
+        assert r["baseline_pass"] is False, r
+        assert r["ref_exec_ok"] and r["ref_check_pass"] is True, r

@@ -1,4 +1,4 @@
-"""CLI: prevalidate | run | metrics. Mapeamentos simples nome → classe, sem registry."""
+"""CLI: prevalidate | run | metrics | modality-prevalidate. Mapeamentos simples, sem registry."""
 
 from __future__ import annotations
 
@@ -23,6 +23,9 @@ from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.metrics import compute_metrics, load_events
+from iac_harness.modalities.execute import prevalidate_pair
+from iac_harness.modalities.loader import load_tasks
+from iac_harness.modalities.spec import MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.runner import COMMON_CHAIN, RunContext, SandboxGate, run_gates, run_task
 from iac_harness.toolchain import DEFAULT_ENDPOINT, DEFAULT_REGION, DEFAULT_TIMEOUT_S, Toolchain
@@ -453,6 +456,92 @@ def cmd_prevalidate_miac(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- modality-prevalidate ----------
+
+
+def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
+    """Tabela tarefa × modalidade: baseline_pass/ref_exec_ok/ref_check_pass (1/0/-)."""
+
+    def flag(value: Any) -> str:
+        return "-" if value is None else str(int(bool(value)))
+
+    cells = {
+        (r["task_id"], r["modality"]): (
+            flag(r["baseline_pass"]) + flag(r["ref_exec_ok"]) + flag(r["ref_check_pass"])
+            + ("" if r["valid"] else " !")
+        )
+        for r in rows
+    }  # fmt: skip
+    tasks = list(dict.fromkeys(r["task_id"] for r in rows))
+    width = max([len(t) for t in tasks] + [4])
+    lines = [
+        "células: baseline_pass ref_exec_ok ref_check_pass (esperado 011; '!' = inválida)",
+        f"{'task':<{width}}  " + "  ".join(f"{m:<10}" for m in modalities),
+    ]
+    for t in tasks:
+        lines.append(
+            f"{t:<{width}}  " + "  ".join(f"{cells.get((t, m), ''):<10}" for m in modalities)
+        )
+    return "\n".join(lines)
+
+
+def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    mod_cfg = cfg.get("modality", {})
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
+    tasks = load_tasks()
+    wanted = args.tasks or mod_cfg.get("tasks")
+    if wanted:
+        missing = set(wanted) - {t.task_id for t in tasks}
+        if missing:
+            raise SystemExit(f"tarefas não encontradas: {sorted(missing)}")
+        tasks = [t for t in tasks if t.task_id in set(wanted)]
+    modalities = mod_cfg.get("modalities", list(MODALITIES))
+    unknown = set(modalities) - set(MODALITIES)
+    if unknown:
+        raise SystemExit(f"modalidades desconhecidas: {sorted(unknown)}")
+    max_chars = cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS)
+    runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
+    run_id = new_run_id("modality-prevalidate")
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    (run_dir / "prevalidation_config.json").write_text(
+        json.dumps(
+            {
+                "config": cfg,
+                "tasks": [t.task_id for t in tasks],
+                "modalities": modalities,
+                **_git_provenance(),
+                "versions": {
+                    **toolchain.versions(run_dir),
+                    "toolchain_image": toolchain.image,
+                    "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
+                },
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    recorder = JsonlRecorder(run_dir / "prevalidation.jsonl")
+    rows = []
+    try:
+        for task in tasks:
+            for name in modalities:
+                executor.reset()
+                row = prevalidate_pair(
+                    task, MODALITIES[name], toolchain, executor, runs_dir, run_id, max_chars
+                )
+                recorder.record(row)
+                rows.append(row)
+                print(f"{task.task_id} × {name}: valid={row['valid']}", file=sys.stderr)
+    finally:
+        recorder.close()
+    print(_modality_table(rows, modalities), file=sys.stderr)
+    print(run_dir / "prevalidation.jsonl")
+    return 0
+
+
 # ---------- run ----------
 
 
@@ -741,6 +830,14 @@ def main(argv: list[str] | None = None) -> int:
         help="nas utilizáveis, aplica initial e depois expected no mesmo estado (exercita update)",
     )
     p_miac.set_defaults(func=cmd_prevalidate_miac)
+
+    p_mpre = sub.add_parser(
+        "modality-prevalidate",
+        help="checa referência e estado inicial de cada tarefa × modalidade (Terraform/CLI/boto3)",
+    )
+    p_mpre.add_argument("--config", type=Path, required=True)
+    p_mpre.add_argument("--tasks", nargs="+")
+    p_mpre.set_defaults(func=cmd_modality_prevalidate)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")
     common(p_run, config_required=False)  # obrigatório sem --resume (validado em cmd_run)

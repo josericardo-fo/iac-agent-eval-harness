@@ -1,0 +1,7 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia tabela nem atributo: o check aceita qualquer tabela com TTL
+# habilitado (o nome do atributo vai para details).
+id = "task-231"
+category = "create"
+origin = "iac-eval-v2:aws/task-231"
+region = "us-east-1"

@@ -1,0 +1,5 @@
+# Enunciado escrito do zero, neutro em relação à modalidade; o estado inicial é initial.tf.
+id = "mod-sg-https"
+category = "modify"
+origin = "harness"
+region = "us-east-1"

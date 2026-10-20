@@ -1,0 +1,6 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia a tabela: o check aceita qualquer tabela da região com PITR.
+id = "task-230"
+category = "create"
+origin = "iac-eval-v2:aws/task-230"
+region = "us-east-1"

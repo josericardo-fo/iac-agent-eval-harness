@@ -1,0 +1,5 @@
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+id = "task-234"
+category = "create"
+origin = "iac-eval-v2:aws/task-234"
+region = "us-east-1"
