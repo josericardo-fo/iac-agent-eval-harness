@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from collections.abc import Container
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from iac_harness.toolchain import DEFAULT_ENDPOINT, DEFAULT_REGION, DEFAULT_TIME
 from iac_harness.types import Artifact, CheckStatus, Stage, Task, TaskOracle
 from iac_harness.verifiers.opa import OpaVerifier
 from iac_harness.verifiers.terraform import PLAN_FILE, PlanVerifier, ValidateVerifier, error_blocks
-from iac_harness.workspace import OVERRIDE_FILENAME, create_workspace
+from iac_harness.workspace import OVERRIDE_FILENAME, create_workspace, pair_dir
 
 CONDITIONS: dict[str, Condition] = {"A": A, "B": B, "C": C}
 BACKENDS = {"anthropic": AnthropicBackend}
@@ -470,24 +471,78 @@ def _load_prevalidation(path: Path | None, allow_missing: bool) -> dict[str, dic
     return {r["task_id"]: r for r in rows}
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config)
-    pre = _load_prevalidation(args.prevalidation, args.no_prevalidation)
-    run_cfg = cfg["run"]
+def _build_run(cfg: dict[str, Any]) -> tuple[Toolchain, FlociExecutor, dict, IacEvalV2Adapter]:
+    """Montagem comum a run e resume: toolchain, executor, gates e adapter."""
     toolchain = build_toolchain(cfg)
     executor = build_executor(cfg, toolchain)
     gates = build_gates(cfg, toolchain, executor)
     adapter = IacEvalV2Adapter(DATA_DIR, cfg["dataset"]["revision"])
-    pairs = select_tasks(adapter.load(), args.tasks, args.limit)
-    conditions = [CONDITIONS[c] for c in run_cfg["conditions"]]
-    reps = args.reps or run_cfg.get("reps", 1)
+    return toolchain, executor, gates, adapter
+
+
+def _build_backend(cfg: dict[str, Any]) -> Any:
+    """Backend do agente; montado só depois de validadas tarefas e condições."""
     agent_cfg = cfg["agent"]
-    backend_cls = BACKENDS[agent_cfg["provider"]]
-    backend = backend_cls(
+    return BACKENDS[agent_cfg["provider"]](
         model=agent_cfg["model"],
         max_tokens=agent_cfg.get("max_tokens", DEFAULT_MAX_TOKENS),
         effort=agent_cfg.get("effort"),
     )
+
+
+def _run_pairs(
+    cfg: dict[str, Any],
+    executor: FlociExecutor,
+    gates: dict,
+    adapter: IacEvalV2Adapter,
+    backend: Any,
+    conditions: list[Condition],
+    pairs: list[tuple[Task, TaskOracle]],
+    reps: int,
+    pre: dict[str, dict[str, Any]],
+    runs_dir: Path,
+    run_id: str,
+    skip: Container[tuple[str, int]] = frozenset(),
+) -> None:
+    """Loop principal: roda cada (task, rep) fora de `skip`, gravando em events.jsonl (append)."""
+    ctx = RunContext(
+        run_id=run_id,
+        runs_dir=runs_dir,
+        dataset_version=adapter.version,
+        model_provider=cfg["agent"]["provider"],
+        max_feedback_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
+        override=lambda artifact: executor.override_for(artifact.files),
+    )
+    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
+    try:
+        for task, oracle in pairs:
+            p = pre.get(task.task_id, {})
+            for rep in range(1, reps + 1):
+                if (task.task_id, rep) in skip:
+                    continue
+                run_task(
+                    task, oracle, rep, conditions, backend, gates, recorder, ctx,
+                    harness_valid=p.get("harness_valid", True),
+                    sandbox_supported=p.get("sandbox_supported", True),
+                )  # fmt: skip
+                print(f"{task.task_id} rep {rep} ok", file=sys.stderr)
+    finally:
+        recorder.close()
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    if args.resume is not None:
+        return cmd_resume(args)
+    if args.config is None:
+        raise SystemExit("erro: informe --config (ou --resume RUN_DIR)")
+    cfg = load_config(args.config)
+    pre = _load_prevalidation(args.prevalidation, args.no_prevalidation)
+    run_cfg = cfg["run"]
+    toolchain, executor, gates, adapter = _build_run(cfg)
+    pairs = select_tasks(adapter.load(), args.tasks, args.limit)
+    conditions = [CONDITIONS[c] for c in run_cfg["conditions"]]
+    reps = args.reps or run_cfg.get("reps", 1)
+    backend = _build_backend(cfg)
     runs_dir = Path(run_cfg.get("runs_dir", "runs"))
     run_id = new_run_id(run_cfg["name"])
     (runs_dir / run_id).mkdir(parents=True, exist_ok=False)
@@ -510,28 +565,143 @@ def cmd_run(args: argparse.Namespace) -> int:
             ensure_ascii=False,
         )
     )
-    ctx = RunContext(
-        run_id=run_id,
-        runs_dir=runs_dir,
-        dataset_version=adapter.version,
-        model_provider=agent_cfg["provider"],
-        max_feedback_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
-        override=lambda artifact: executor.override_for(artifact.files),
+    _run_pairs(
+        cfg, executor, gates, adapter, backend, conditions, pairs, reps, pre, runs_dir, run_id
     )
-    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
-    try:
-        for task, oracle in pairs:
-            p = pre.get(task.task_id, {})
-            for rep in range(1, reps + 1):
-                run_task(
-                    task, oracle, rep, conditions, backend, gates, recorder, ctx,
-                    harness_valid=p.get("harness_valid", True),
-                    sandbox_supported=p.get("sandbox_supported", True),
-                )  # fmt: skip
-                print(f"{task.task_id} rep {rep} ok", file=sys.stderr)
-    finally:
-        recorder.close()
     print(runs_dir / run_id)
+    return 0
+
+
+# ---------- resume ----------
+
+# Opções que definem o run; no resume vêm do run_config.json e não podem ser repassadas.
+_RUN_DEFINING_OPTIONS = ("config", "tasks", "limit", "reps", "prevalidation", "no_prevalidation")
+
+
+def pair_completion(
+    events: list[dict[str, Any]], conditions: list[str]
+) -> tuple[set[tuple[str, int]], set[tuple[str, int]]]:
+    """(completos, incompletos): completo = tem um evento `final` para cada condição."""
+    finals: dict[tuple[str, int], set[str]] = {}
+    for e in events:
+        done = finals.setdefault((e["task_id"], e["rep"]), set())
+        if e["event"] == "final":
+            done.add(e["condition"])
+    complete = {k for k, done in finals.items() if set(conditions) <= done}
+    return complete, set(finals) - complete
+
+
+def discard_incomplete(
+    runs_dir: Path, run_id: str, conditions: list[str]
+) -> tuple[set[tuple[str, int]], set[tuple[str, int]]]:
+    """Move os eventos dos pares incompletos para events.discarded.jsonl e apaga seus artefatos.
+
+    events.jsonl é reescrito só com os pares completos (linhas originais preservadas). Uma
+    última linha truncada (queda no meio da gravação) também vai para o discarded; linha
+    inválida em outro ponto indica corrupção e aborta. Devolve (completos, descartados).
+    """
+    run_dir = runs_dir / run_id
+    events_path = run_dir / "events.jsonl"
+    text = events_path.read_text(encoding="utf-8") if events_path.exists() else ""
+    lines = [line for line in text.splitlines() if line.strip()]
+    events: list[dict[str, Any]] = []
+    truncated: list[str] = []
+    for i, line in enumerate(lines):
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            if i < len(lines) - 1:
+                raise SystemExit(
+                    f"erro: {events_path} corrompido (linha {i + 1} não é JSON válido: {exc})"
+                ) from None
+            truncated = [line]
+            print(f"aviso: última linha de {events_path} truncada; movida para o discarded",
+                  file=sys.stderr)  # fmt: skip
+    lines = lines[: len(events)]
+    complete, incomplete = pair_completion(events, conditions)
+    keyed = [((e["task_id"], e["rep"]), ln) for ln, e in zip(lines, events, strict=True)]
+    keep = [ln for key, ln in keyed if key in complete]
+    drop = [ln for key, ln in keyed if key in incomplete] + truncated
+    if drop:
+        # Discarded antes do replace, deduplicando por linha: se cair entre os dois passos, o
+        # próximo resume reencontra as mesmas linhas em events.jsonl e não as duplica. A ordem
+        # inversa (replace primeiro) perderia esses eventos de vez numa queda no meio.
+        discarded_path = run_dir / "events.discarded.jsonl"
+        seen: set[str] = set()
+        if discarded_path.exists():
+            seen = set(discarded_path.read_text(encoding="utf-8").splitlines())
+        with discarded_path.open("a", encoding="utf-8") as fh:
+            fh.writelines(ln + "\n" for ln in drop if ln not in seen)
+    new_text = "".join(ln + "\n" for ln in keep)
+    if new_text != text:  # também corrige um final sem "\n", que o próximo append colaria
+        tmp = events_path.with_suffix(".jsonl.tmp")
+        tmp.write_text(new_text, encoding="utf-8")
+        tmp.replace(events_path)
+    for task_id, rep in incomplete:
+        shutil.rmtree(pair_dir(runs_dir, run_id, task_id, rep), ignore_errors=True)
+    return complete, incomplete
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    # Presença, não veracidade: --reps 0 / --limit 0 também conflitam (0 == False, daí o `is`).
+    given = [
+        f"--{o.replace('_', '-')}"
+        for o in _RUN_DEFINING_OPTIONS
+        if getattr(args, o) is not None and getattr(args, o) is not False
+    ]
+    if given:
+        raise SystemExit(
+            f"erro: --resume não aceita {', '.join(given)} (a configuração vem do run_config.json)"
+        )
+    run_dir = Path(args.resume)
+    config_path = run_dir / "run_config.json"
+    if not config_path.is_file():
+        raise SystemExit(f"erro: {config_path} não encontrado")
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    cfg, reps = saved["config"], saved["reps"]
+    pre_path = Path(saved["prevalidation"]) if saved.get("prevalidation") else None
+    if pre_path is not None:
+        if not pre_path.is_file():
+            raise SystemExit(f"erro: pré-validação do run não encontrada: {pre_path}")
+        sha = hashlib.sha256(pre_path.read_bytes()).hexdigest()
+        if sha != saved["prevalidation_sha256"]:
+            raise SystemExit(
+                f"erro: {pre_path} mudou desde o início do run (sha256 {sha} != "
+                f"{saved['prevalidation_sha256']}); não dá para retomar com outra pré-validação"
+            )
+    pre = _load_prevalidation(pre_path, saved.get("no_prevalidation", False))
+    _, executor, gates, adapter = _build_run(cfg)
+    # select_tasks com lista vazia devolveria tudo; um run sem tarefas segue sem tarefas.
+    pairs = select_tasks(adapter.load(), saved["tasks"], None) if saved["tasks"] else []
+    conditions = [CONDITIONS[c] for c in cfg["run"]["conditions"]]
+    backend = _build_backend(cfg)
+    runs_dir, run_id = run_dir.parent, run_dir.name
+    complete, discarded = discard_incomplete(runs_dir, run_id, cfg["run"]["conditions"])
+    planned = [(t.task_id, rep) for t, _ in pairs for rep in range(1, reps + 1)]
+    pending = [p for p in planned if p not in complete]
+    # Par sem evento mas com diretório (queda antes do 1º registro): limpa para recriar.
+    for task_id, rep in pending:
+        shutil.rmtree(pair_dir(runs_dir, run_id, task_id, rep), ignore_errors=True)
+    skipped = len(planned) - len(pending)
+    saved.setdefault("resumes", []).append(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            **_git_provenance(),
+            "skipped_pairs": skipped,
+            "discarded_pairs": len(discarded),
+        }
+    )
+    config_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False))
+    print(
+        f"resume {run_id}: {skipped} pares completos pulados, "
+        f"{len(discarded)} incompletos descartados, {len(pending)} a rodar",
+        file=sys.stderr,
+    )
+    _run_pairs(
+        cfg, executor, gates, adapter, backend, conditions, pairs, reps, pre, runs_dir, run_id,
+        complete,
+    )  # fmt: skip
+    print(run_dir)
     return 0
 
 
@@ -551,8 +721,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="iac-harness")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    def common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--config", type=Path, required=True)
+    def common(p: argparse.ArgumentParser, config_required: bool = True) -> None:
+        p.add_argument("--config", type=Path, required=config_required)
         p.add_argument("--tasks", nargs="+")
         p.add_argument("--limit", type=int)
 
@@ -573,13 +743,19 @@ def main(argv: list[str] | None = None) -> int:
     p_miac.set_defaults(func=cmd_prevalidate_miac)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")
-    common(p_run)
+    common(p_run, config_required=False)  # obrigatório sem --resume (validado em cmd_run)
     p_run.add_argument("--reps", type=int)
     p_run.add_argument("--prevalidation", type=Path)
     p_run.add_argument(
         "--no-prevalidation",
         action="store_true",
         help="roda sem pré-validação (só smoke): assume harness_valid e sandbox_supported",
+    )
+    p_run.add_argument(
+        "--resume",
+        type=Path,
+        metavar="RUN_DIR",
+        help="retoma um run interrompido: pula pares (task, rep) completos e refaz os incompletos",
     )
     p_run.set_defaults(func=cmd_run)
 

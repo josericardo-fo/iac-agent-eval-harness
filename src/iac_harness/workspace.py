@@ -21,6 +21,11 @@ def _safe_name(value: str) -> str:
     return value.replace("/", "__")
 
 
+def pair_dir(runs_dir: Path, run_id: str, task_id: str, rep: int) -> Path:
+    """Diretório de artefatos de um par (task, rep): runs/<run_id>/<task>/<rep>/."""
+    return runs_dir / run_id / _safe_name(task_id) / str(rep)
+
+
 def inject_override(path: Path, content: str) -> None:
     """Escreve o override de provider; o conteúdo concreto vem de quem chama."""
     (path / OVERRIDE_FILENAME).write_text(content)
@@ -37,7 +42,7 @@ def create_workspace(
     override: str | None = None,
 ) -> Workspace:
     """Cria runs/<run_id>/<task>/<rep>/<cond>/<name>/ e grava os arquivos do artefato."""
-    path = runs_dir / run_id / _safe_name(task_id) / str(rep) / condition / name
+    path = pair_dir(runs_dir, run_id, task_id, rep) / condition / name
     path.mkdir(parents=True, exist_ok=False)
     root = path.resolve()
     for filename, content in artifact.files.items():
