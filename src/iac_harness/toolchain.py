@@ -13,7 +13,8 @@ DEFAULT_IMAGE = "iac-harness-toolchain:latest"
 DEFAULT_NETWORK = "iac-sandbox"
 DEFAULT_TIMEOUT_S = 600.0
 DEFAULT_ENDPOINT = "http://floci:4566"
-DEFAULT_ALLOWED_HOSTS = ("floci", "localhost", "127.0.0.1")
+# floci2: segunda instância do Floci na mesma rede interna (configs/miac.toml).
+DEFAULT_ALLOWED_HOSTS = ("floci", "floci2", "localhost", "127.0.0.1")
 DEFAULT_REGION = "us-east-1"
 
 # Variáveis do host que o modo local pode herdar (nada de credenciais).

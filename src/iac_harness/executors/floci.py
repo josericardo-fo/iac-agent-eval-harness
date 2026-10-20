@@ -57,6 +57,10 @@ RESTART_TIMEOUT_S = 60.0
 HEALTH_TIMEOUT_S = 60.0
 
 _PROVIDER_AWS_OPEN = re.compile(r'provider\s+"aws"\s*\{')
+# Artefato usa o provider awscc (Cloud Control): resource/data `awscc_*` ou bloco `provider`.
+_USES_AWSCC = re.compile(r'^\s*(?:(?:resource|data)\s+"awscc_|provider\s+"awscc")', re.MULTILINE)
+# Chaves do atributo `endpoints` do provider awscc 1.x.
+AWSCC_ENDPOINT_SERVICES = ("cloudcontrolapi", "iam", "sts")
 _ALIAS = re.compile(r'^\s*alias\s*=\s*"([^"]+)"', re.MULTILINE)
 
 
@@ -94,7 +98,7 @@ class FlociExecutor:
         self.container = container
         self._tc = toolchain
 
-    def override_tf(self, aliases: tuple[str, ...] = ()) -> str:
+    def override_tf(self, aliases: tuple[str, ...] = (), awscc: bool = False) -> str:
         """Conteúdo de zz_harness_override.tf.
 
         Não define `region`: o merge do override substituiria a região declarada pelo artefato
@@ -105,6 +109,11 @@ class FlociExecutor:
         Para o provider sem alias isso basta. Providers com alias não são cobertos por esse
         merge, então geramos um bloco override para cada alias encontrado no artefato
         (mesmo alias); ver `find_aliases`.
+
+        Com `awscc`, acrescenta `provider "awscc"` apontando o Cloud Control para o Floci. Um bloco
+        override sem bloco base no artefato é aceito pelo Terraform (vira a config do provider);
+        a região também vem do `AWS_REGION`. Só é emitido quando o artefato usa awscc, para não
+        mudar o override das tarefas que só usam aws.
         """
         endpoints = "\n".join(f'    {s} = "{self.endpoint}"' for s in ENDPOINT_SERVICES)
         block = (
@@ -122,6 +131,18 @@ class FlociExecutor:
         for alias in aliases:
             line = f'  alias                       = "{alias}"\n'
             blocks.append(block.format(alias=line, endpoints=endpoints))
+        if awscc:
+            cc_endpoints = "\n".join(
+                f'    {s:<15} = "{self.endpoint}"' for s in AWSCC_ENDPOINT_SERVICES
+            )
+            blocks.append(
+                'provider "awscc" {\n'
+                '  access_key              = "test"\n'
+                '  secret_key              = "test"\n'
+                "  skip_metadata_api_check = true\n"
+                f"  endpoints = {{\n{cc_endpoints}\n  }}\n"
+                "}\n"
+            )
         header = "# Gerado pelo harness: aponta todos os endpoints AWS para o Floci.\n"
         return header + "\n".join(blocks)
 
@@ -138,8 +159,13 @@ class FlociExecutor:
                     found.append(alias)
         return tuple(found)
 
+    @staticmethod
+    def uses_awscc(files: dict[str, str]) -> bool:
+        """Algum .tf do artefato usa o provider awscc."""
+        return any(n.endswith(".tf") and _USES_AWSCC.search(body) for n, body in files.items())
+
     def override_for(self, files: dict[str, str]) -> str:
-        return self.override_tf(self.find_aliases(files))
+        return self.override_tf(self.find_aliases(files), self.uses_awscc(files))
 
     @staticmethod
     def classify_error(output: str) -> CheckStatus:

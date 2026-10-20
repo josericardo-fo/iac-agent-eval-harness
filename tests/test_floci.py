@@ -36,6 +36,23 @@ def test_override_has_fake_credentials_and_endpoints():
     assert "region" not in text  # a região do artefato não pode ser sobrescrita
 
 
+def test_override_without_awscc_has_no_awscc_block():
+    ex = _executor()
+    assert 'provider "awscc"' not in ex.override_for({"main.tf": 'resource "aws_vpc" "v" {}\n'})
+    assert ex.override_for({"main.tf": 'resource "aws_vpc" "v" {}\n'}) == ex.override_tf()
+
+
+def test_override_adds_awscc_block_when_artifact_uses_it():
+    ex = _executor()
+    for body in ('resource "awscc_s3_bucket" "b" {}\n', 'provider "awscc" {\n}\n'):
+        assert ex.uses_awscc({"main.tf": body})
+        text = ex.override_for({"main.tf": body})
+        assert text.count('provider "awscc"') == 1
+        assert 'cloudcontrolapi = "http://floci:4566"' in text
+        assert 'sts             = "http://floci:4566"' in text
+    assert not ex.uses_awscc({"notes.md": 'resource "awscc_s3_bucket" "b" {}\n'})
+
+
 def test_override_generates_block_per_alias():
     files = {
         "main.tf": 'provider "aws" {\n  region = "us-west-2"\n}\n'

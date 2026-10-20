@@ -1,0 +1,25 @@
+source,initial,expected,utterance,source_repo,type
+s3.tf_0,"resource ""aws_s3_bucket"" ""b"" {}
+","resource ""aws_s3_bucket"" ""b"" {}
+resource ""random_id"" ""r"" {
+  byte_length = 4
+}
+",Add a random suffix.,repo,terraform
+s3.tf_0,"resource ""aws_s3_bucket"" ""b"" {}
+","resource ""aws_s3_bucket"" ""b"" {}
+resource ""random_id"" ""r"" {
+  byte_length = 4
+}
+",Add a random suffix.,repo,terraform
+cc.tf_0,"resource ""awscc_logs_log_group"" ""g"" {}
+","resource ""awscc_logs_log_group"" ""g"" {}
+",Rename.,repo,terraform
+mod.tf_0,"module ""vpc"" {
+  source = ""x""
+}
+resource ""aws_vpc"" ""v"" {}
+","resource ""aws_vpc"" ""v"" {}
+",Drop module.,repo,terraform
+q.yaml_0,"Resources: {}
+","Resources: {}
+",Add a queue.,repo,cloudformation

@@ -9,6 +9,8 @@ ARG OPA_VERSION=1.16.1
 ARG AWS_PROVIDER_VERSION=6.66.0
 ARG ARCHIVE_PROVIDER_VERSION=2.8.1
 ARG RANDOM_PROVIDER_VERSION=3.9.1
+# awscc (Cloud Control): amplia as triplas utilizáveis do Multi-IaC-Eval.
+ARG AWSCC_PROVIDER_VERSION=1.106.0
 ARG TARGETARCH
 
 RUN apt-get update \
@@ -31,7 +33,8 @@ RUN curl -fsSLo /usr/local/bin/opa \
     "https://github.com/open-policy-agent/opa/releases/download/v${OPA_VERSION}/opa_linux_${TARGETARCH}_static" \
     && chmod +x /usr/local/bin/opa
 
-# Filesystem mirror com os providers usados pelas referências do IaC-Eval v2.
+# Filesystem mirror com os providers usados pelas referências do IaC-Eval v2 (+ awscc do
+# Multi-IaC-Eval).
 RUN <<'EOF'
 set -eux
 mkdir -p /tmp/providers /opt/terraform-providers
@@ -41,6 +44,7 @@ terraform {
     aws     = { source = "hashicorp/aws", version = "${AWS_PROVIDER_VERSION}" }
     archive = { source = "hashicorp/archive", version = "${ARCHIVE_PROVIDER_VERSION}" }
     random  = { source = "hashicorp/random", version = "${RANDOM_PROVIDER_VERSION}" }
+    awscc   = { source = "hashicorp/awscc", version = "${AWSCC_PROVIDER_VERSION}" }
   }
 }
 TF
