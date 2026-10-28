@@ -140,13 +140,16 @@ def user_prompt(task: ModalityTask, modality: Modality) -> str:
     """Enunciado; em modify/delete acrescenta o initial.tf e a frase da modalidade.
 
     Na consulta, só a frase de onde sai a resposta: o initial.tf entregaria a resposta.
+    Com `hide_initial`, só o enunciado (mais a frase da resposta, se `answer`).
     """
-    if task.category == "query":
+    shows_initial = task.initial_tf is not None and not task.hide_initial
+    if task.category == "query" or (task.answer and not shows_initial):
         return QUERY_TEMPLATE.format(prompt=task.prompt.rstrip(), note=QUERY_NOTES[modality.name])
-    if task.initial_tf is None:
+    if not shows_initial:
         return task.prompt
+    note = MODIFY_NOTES[modality.name]
+    if task.wants_answer:
+        note += "\n\n" + QUERY_NOTES[modality.name]
     return MODIFY_TEMPLATE.format(
-        prompt=task.prompt.rstrip(),
-        initial=task.initial_tf.rstrip(),
-        note=MODIFY_NOTES[modality.name],
+        prompt=task.prompt.rstrip(), initial=task.initial_tf.rstrip(), note=note
     )

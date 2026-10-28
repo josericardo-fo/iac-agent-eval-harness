@@ -1,5 +1,7 @@
+import hashlib
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,7 +13,7 @@ from iac_harness.modalities import prompts
 from iac_harness.modalities.execute import _run_commands, truncate_middle
 from iac_harness.modalities.loader import load_tasks
 from iac_harness.modalities.metrics import compute_modality_metrics
-from iac_harness.modalities.runner import ModRunContext, run_pair
+from iac_harness.modalities.runner import ModRunContext, run_pair, uses_local_exec
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import AgentReply, Artifact, Usage
@@ -78,13 +80,13 @@ class ListRecorder:
         self.events.append(event)
 
 
-def _run(tmp_path, task_id, modality, replies, **tc_kwargs):
+def _run(tmp_path, task_id, modality, replies, task=None, **tc_kwargs):
     tc = ScriptedToolchain(**tc_kwargs)
     ex = FakeExec(tc)
     backend = ScriptedBackend(replies)
     rec = ListRecorder()
     ctx = ModRunContext("r", tmp_path, tc, ex, max_attempts=3)
-    final = run_pair(_task(task_id), MODALITIES[modality], 1, backend, rec, ctx)
+    final = run_pair(task or _task(task_id), MODALITIES[modality], 1, backend, rec, ctx)
     return final, backend, rec, tc, ex
 
 
@@ -121,6 +123,44 @@ def test_user_prompt_includes_initial_only_on_modify(name):
     text = prompts.user_prompt(modify, m)
     assert modify.prompt.strip() in text and modify.initial_tf.strip() in text
     assert prompts.MODIFY_NOTES[name] in text
+
+
+# sha256 do user_prompt antes dos campos hide_initial/answer: tarefas existentes não mudam.
+EXISTING_PROMPT_SHA256 = {
+    ("mod-s3-versioning", "terraform"):
+        "70aa472eece3cee785ced03c68311fc9cfbdcf06ec9da49338eac2a374e2b915",
+    ("mod-s3-versioning", "cli"):
+        "cd8dfaddc57138bfd20e355c4e68722d397b271c90e9ad69dbe363155467fac4",
+    ("query-sg-ssh-open", "terraform"):
+        "2668fe9bf82e627b60eb3d6d3743a49d617ef9fc2baf99c8e3dce8ac329ae228",
+    ("query-sg-ssh-open", "boto3"):
+        "fc88b3ee3714bb59b3b1b818612663e06f00ed7acd660573c4efb5032e42961c",
+}  # fmt: skip
+
+
+@pytest.mark.parametrize(("task_id", "name"), list(EXISTING_PROMPT_SHA256))
+def test_existing_prompts_are_byte_identical(task_id, name):
+    text = prompts.user_prompt(_task(task_id), MODALITIES[name])
+    assert hashlib.sha256(text.encode()).hexdigest() == EXISTING_PROMPT_SHA256[(task_id, name)]
+
+
+@pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
+def test_user_prompt_hide_initial_is_only_the_prompt(name):
+    task = replace(_task("mod-sg-https"), hide_initial=True)
+    assert prompts.user_prompt(task, MODALITIES[name]) == task.prompt
+    with_answer = prompts.user_prompt(replace(task, answer=True), MODALITIES[name])
+    assert with_answer == prompts.QUERY_TEMPLATE.format(
+        prompt=task.prompt.rstrip(), note=prompts.QUERY_NOTES[name]
+    )
+    assert task.initial_tf.strip() not in with_answer
+    assert prompts.MODIFY_NOTES[name] not in with_answer
+
+
+@pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
+def test_user_prompt_answer_on_create(name):
+    task = replace(_task("task-108"), answer=True)
+    text = prompts.user_prompt(task, MODALITIES[name])
+    assert text.startswith(task.prompt.rstrip()) and prompts.QUERY_NOTES[name] in text
 
 
 @pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
@@ -274,6 +314,40 @@ def test_initial_failure_is_harness_failure(tmp_path):
     assert backend.calls == []
 
 
+def test_missing_reference_task_still_runs_agent(tmp_path):
+    task = replace(
+        _task("mod-dynamodb-pitr"), hide_initial=True, missing_references=("terraform",),
+        references={k: v for k, v in _task("mod-dynamodb-pitr").references.items()
+                    if k != "terraform"},
+    )  # fmt: skip
+    final, backend, *_ = _run(tmp_path, None, "terraform", [{"main.tf": "x"}], task=task)
+    assert final["termination"] == "EXEC_OK" and len(backend.calls) == 1
+    assert backend.calls[0][0].prompt == task.prompt  # hide_initial: só o enunciado
+
+
+def test_uses_local_exec_detection():
+    tf = MODALITIES["terraform"]
+    hcl = (
+        'resource "null_resource" "x" {\n  provisioner "local-exec" {\n    command = "aws"\n  }\n}'
+    )
+    assert uses_local_exec(tf, hcl) is True
+    assert uses_local_exec(tf, 'resource "aws_s3_bucket" "b" {}') is False
+    # Menção em comentário ou string não conta; só o bloco do provisioner.
+    assert uses_local_exec(tf, '# sem local-exec\nresource "aws_s3_bucket" "b" {}') is False
+    assert uses_local_exec(tf, 'provisioner  "local-exec" {\n}') is True
+    assert uses_local_exec(tf, None) is None
+    assert uses_local_exec(MODALITIES["cli"], "local-exec") is None
+
+
+def test_attempt_event_records_uses_local_exec(tmp_path):
+    _, _, rec, *_ = _run(
+        tmp_path, "task-108", "terraform", [{"main.tf": 'provisioner "local-exec" {}'}]
+    )
+    assert rec.events[0]["uses_local_exec"] is True
+    _, _, rec, *_ = _run(tmp_path / "cli", "task-108", "cli", [{"run.sh": "aws ok"}])
+    assert rec.events[0]["uses_local_exec"] is None
+
+
 # ---------- métricas ----------
 
 
@@ -346,6 +420,26 @@ def test_modality_metrics_repair_rate_and_unsupported():
     block = compute_modality_metrics(events)["modalities"]["cli"]["overall"]
     assert (block["repair_rate"]["k"], block["repair_rate"]["n"]) == (1, 2)
     assert block["unsupported_attempts"] == 2
+
+
+def test_modality_metrics_local_exec_counts():
+    events = [
+        {**_attempt("terraform", False, task_id="a"), "uses_local_exec": True},
+        {**_attempt("terraform", True, task_id="a", attempt=2), "uses_local_exec": True},
+        _final("terraform", "create", True, 2, 10, "EXEC_OK", task_id="a"),
+        {**_attempt("terraform", True, task_id="b"), "uses_local_exec": False},
+        _final("terraform", "create", True, 1, 10, "EXEC_OK", task_id="b"),
+        {**_attempt("terraform", True, task_id="c"), "uses_local_exec": True},
+        _final("terraform", "modify", True, 1, 10, "EXEC_OK", task_id="c"),
+        _attempt("cli", True, task_id="a"),
+        _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="a"),
+    ]
+    mods = compute_modality_metrics(events)["modalities"]
+    create = mods["terraform"]["by_category"]["create"]
+    assert create["local_exec_attempts"] == 2 and create["local_exec_trajectories"] == 1
+    overall = mods["terraform"]["overall"]
+    assert overall["local_exec_attempts"] == 3 and overall["local_exec_trajectories"] == 2
+    assert mods["cli"]["overall"]["local_exec_attempts"] == 0
 
 
 def test_modality_metrics_paired_mcnemar():

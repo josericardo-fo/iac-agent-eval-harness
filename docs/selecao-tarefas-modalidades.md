@@ -78,3 +78,104 @@ As 7 sorteadas deram `011` no Floci nas 3 modalidades, então nenhuma precisou d
   - task-233 ("data encryption at rest"): a AWS criptografa toda tabela por padrão, então a
     tarefa equivale a "crie uma tabela";
   - task-230: não diz qual tabela (ver `desenho-modalidades.md`).
+
+## Tarefas só na AWS real
+
+Na AWS real, as 25 tarefas do emulador só repetem o que o Floci já mostrou. Por isso entram 7
+tarefas de criação do IaC-Eval v2 que **não rodam no Floci**, sorteadas com critério fixo. O
+resultado fica em `src/iac_harness/modalities/selection_real_aws.json`, gerado por
+`uv run python scripts/select_real_aws_tasks.py` (determinístico).
+
+### Critério
+
+Pool de partida: as 107 tarefas de `runs/prevalidation-merged` com `harness_valid` verdadeiro e
+`sandbox_supported` falso. Filtros de custo e de neutralidade, nesta ordem (sobram 37):
+
+- 8 excluídas porque o enunciado (sem o `## Intent`) cita "terraform" ou "HCL";
+- 3 excluídas por zip/Lambda (`data "archive_file"`, `aws_lambda_function` ou `filename =`);
+- 48 excluídas por serviço caro ou fora da lista: algum `resource` fora dos tipos gratuitos
+  enquanto parados (DAX/ElastiCache sem cluster, Glacier, SNS, SageMaker HumanTaskUI, VPC etc.)
+  ou cobrados por hora (RDS, Lightsail DB);
+- 7 excluídas por classe grande: RDS/Lightsail DB fora de `db.t3.micro`, `db.t4g.micro` e dos
+  bundles micro/nano;
+- 4 excluídas porque citam outra região (tabelas globais do DynamoDB ficam).
+
+### Sorteio
+
+- Só tarefas sem região ou com us-east-1 (32 das 37).
+- Serviço = primeiro tipo, em ordem alfabética, fora dos auxiliares (VPC, subnet, IAM, KMS, SNS,
+  alarme); no máximo 1 tarefa por serviço entre as sorteadas.
+- Estratos por `difficulty`: 1 → 3 tarefas, 2 → 3, ≥ 3 → 2.
+- Semente `20261028`. Para cada estrato, na ordem acima: ordenar os ids, embaralhar com
+  `random.Random(f"{SEED}-{estrato}")` e pegar as de serviço ainda não usado até a cota. O resto,
+  na ordem embaralhada, é a fila de substitutos.
+
+Resultado: task-367 (Lightsail DB), task-183 (SageMaker HumanTaskUI) e task-416 (RDS io1) no
+estrato 1; task-388 (Glacier + SNS), task-198 (ElastiCache user group) e task-228 (DAX parameter
+group) no estrato 2; task-229 (DAX subnet group) no estrato 3. O estrato 3 rende só 1 das 2: as
+outras candidatas dele são de serviços já sorteados. Por isso são 7, e não 8.
+Depois do gate, task-183 e task-388 foram substituídas por task-267 e task-069 (ver "Resultado
+do gate (28/10/2026)").
+
+### Gate e substituição
+
+Cada tarefa passa pelo `modality-prevalidate` na AWS real: o baseline (conta limpa) reprova e a
+referência passa em cada forma. Se uma tarefa falhar no gate (ex.: API descontinuada), entra a
+próxima da fila do mesmo estrato que não repita serviço, e o motivo fica registrado. Nunca há
+escolha à mão.
+
+O enunciado segue a mesma regra das outras tarefas do IaC-Eval: byte a byte, sem o `## Intent`.
+As adaptações das referências ficam no `meta.toml` de cada tarefa.
+
+### Resultado do gate (28/10/2026)
+
+`modality-prevalidate` na AWS real (`runs/20261028T012801-modality-prevalidate`; a task-228 veio
+do smoke `runs/20261028T012546-modality-prevalidate`). "Válida" = baseline reprova e referência
+passa.
+
+| Tarefa | Terraform | CLI | boto3 | Resultado |
+|---|---|---|---|---|
+| task-367 (Lightsail DB) | falha | falha | falha | bundle `micro_1_0` descontinuado; referência adaptada |
+| task-183 (SageMaker HumanTaskUI) | falha | falha | falha | serviço fechado a contas novas; substituída |
+| task-416 (RDS io1) | válida | válida | válida | |
+| task-388 (Glacier + SNS) | falha | falha | falha | API fechada a contas novas; substituída |
+| task-198 (ElastiCache user group) | válida | válida | válida | |
+| task-228 (DAX parameter group) | válida | válida | válida | |
+| task-229 (DAX subnet group) | válida | válida | válida | |
+| 5 do aws-bench | válida¹ | válida | válida | |
+| task-267 (IAM virtual MFA device)² | válida | válida | válida | substituta da task-183 |
+| task-069 (Kinesis Video stream)² | válida | válida | válida | substituta da task-388 |
+| task-367, referência adaptada³ | válida | válida | válida | |
+
+¹ Só `create-s3` e `lambda-versioned-alias-update` têm referência Terraform
+(`docs/datasets.md`).
+² Rerun na AWS real: `runs/20261028T024500-modality-prevalidate`.
+³ Em `runs/20261028T024500-modality-prevalidate`, a CLI estourou o timeout porque o Mac dormiu
+durante o run (não é erro do script); o rerun `runs/20261028T125920-modality-prevalidate` passou
+nas três formas.
+
+Achados (a AWS mudou depois que o dataset foi feito):
+
+- **task-183:** `CreateHumanTaskUi` responde "Amazon Augmented AI is no longer accepting new
+  customers." O Amazon A2I não aceita clientes novos.
+- **task-388:** `CreateVault` responde `NoLongerSupportedException` ("This API is no longer
+  supported for new accounts. Please use S3 Glacier storage classes instead."). Vaults do
+  Glacier não existem mais para contas novas.
+- **task-367:** `CreateRelationalDatabase` recusa o bundle `micro_1_0` ("invalid or
+  deprecated"), e o blueprint `mysql_8_0` também saiu. O enunciado não cita versão nem tamanho,
+  então a tarefa fica e a referência passa a usar as opções ativas em us-east-1: `micro_2_0` (o
+  mais barato, US$ 15/mês) e `mysql_8_4` (o único mysql). O motivo está no `meta.toml`.
+
+Substituições, pela regra acima (registradas em `replacements` no
+`selection_real_aws.json`; o sorteio não muda):
+
+- **Estrato 1:** task-183 → **task-267** (IAM virtual MFA device). A primeira da fila, task-368,
+  é Lightsail DB, serviço da task-367, que continua.
+- **Estrato 2:** task-388 → **task-069** (Kinesis Video stream). A primeira da fila, task-370,
+  também é Lightsail DB.
+
+As duas substitutas passaram no gate nas três modalidades (tabela acima).
+
+As 5 tarefas do aws-bench que completam o conjunto só na AWS real estão documentadas em
+`docs/datasets.md` (a sexta, `invalidate-cloudfront-cache`, está fora até decidir como passar o
+domínio e o id da distribuição, que só existem depois do initial).

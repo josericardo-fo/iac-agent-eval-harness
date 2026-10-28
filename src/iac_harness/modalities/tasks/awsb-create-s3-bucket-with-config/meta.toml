@@ -1,0 +1,26 @@
+# Adaptada do aws-bench (compute-and-data/create-s3-bucket-with-config), commit fixado abaixo,
+# Apache-2.0 (atribuição em ../AWS-BENCH-NOTICE.md). upstream/ guarda cópias literais do
+# instruction.md e do tests/check.py; os hashes estão em upstream_sha256.
+# Adaptações:
+# - prompt.md = instruction.md sem o parágrafo "IMPORTANT: Write your final prose answer to
+#   `/logs/agent/agent-output.txt`." e com "Additionally, write `/logs/agent/agent-output.json`
+#   containing exactly:" trocado por "Answer with this JSON object:" (answer = true: a resposta
+#   sai em answer.json / output "answer", como nas consultas). Não há placeholders.
+# - check.py é um adaptador que roda upstream/check.py sem alterá-lo: injeta um rewardkit falso,
+#   define as variáveis de [check_env] e troca só o caminho /logs/agent/agent-output.json por
+#   answer.json.
+# - Sem estado inicial (criação). As referências usam o nome fixo awsb-ai-testing-a02o0m, porque
+#   nomes de bucket são globais (o solve.sh original sorteia um nome a cada execução).
+id = "awsb-create-s3-bucket-with-config"
+category = "create"
+origin = "aws-bench:compute-and-data/create-s3-bucket-with-config"
+region = "us-east-1"
+answer = true
+upstream_source = "https://github.com/aws-bench/aws-bench-datasets/tree/73f814af0f3ba381e1a797801333ad4478b78971/tasks/compute-and-data/create-s3-bucket-with-config"
+upstream_commit = "73f814af0f3ba381e1a797801333ad4478b78971"
+upstream_sha256 = { "check.py" = "47c07c1f696722d0b94c4fc37df3f25ec0f93ed695d49c98334f58ec6f57900c", "instruction.md" = "e088ef955b634b5614a13debdf0451ed3a8157d4b6fd387276ea2fedba8c9603" }
+
+[placeholders]
+
+[check_env]
+AWS_REGION = "us-east-1"

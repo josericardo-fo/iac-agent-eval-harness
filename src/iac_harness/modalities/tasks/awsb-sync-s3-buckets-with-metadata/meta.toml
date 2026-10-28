@@ -1,0 +1,34 @@
+# Adaptada do aws-bench (compute-and-data/sync-s3-buckets-with-metadata), commit fixado abaixo,
+# Apache-2.0 (atribuição em ../AWS-BENCH-NOTICE.md). upstream/ guarda cópias literais do
+# instruction.md e do tests/check.py; os hashes estão em upstream_sha256.
+# Adaptações:
+# - prompt.md = instruction.md com os {{...}} trocados pelos valores de [placeholders] e sem o
+#   parágrafo "IMPORTANT: Write your final prose answer to `/logs/agent/agent-output.txt`.".
+# - check.py é um adaptador que roda upstream/check.py sem alterá-lo, com as variáveis de
+#   [check_env] (o [verifier.env] original com os nossos nomes) e um rewardkit falso.
+# - Estado inicial reduzido: em vez do cenário CDK inteiro (stack s3_mnbh73950), só os 2 buckets
+#   (versionados, SSE-S3, acesso público bloqueado, como no CDK) e o objeto sample.txt do
+#   pre_invoke/reset.py (text/plain, sem metadados). No CDK os nomes são gerados; aqui são fixos,
+#   com sufixo (nomes de bucket são globais). O agente não vê o initial.tf (hide_initial).
+# - Sem referência Terraform: copiar objetos existentes trocando os metadados é operação de
+#   dados; o provider aws não tem recurso de cópia/sync entre buckets (aws_s3_object_copy copia
+#   um objeto por chave fixa, sem listar a origem, e o enunciado pede sincronizar o conteúdo).
+id = "awsb-sync-s3-buckets-with-metadata"
+category = "modify"
+origin = "aws-bench:compute-and-data/sync-s3-buckets-with-metadata"
+region = "us-east-1"
+hide_initial = true
+missing_references = ["terraform"]
+missing_reason = "Sincronizar objetos existentes entre buckets substituindo metadados é operação do plano de dados; o Terraform não tem recurso nativo de sync (só local-exec)."
+upstream_source = "https://github.com/aws-bench/aws-bench-datasets/tree/73f814af0f3ba381e1a797801333ad4478b78971/tasks/compute-and-data/sync-s3-buckets-with-metadata"
+upstream_commit = "73f814af0f3ba381e1a797801333ad4478b78971"
+upstream_sha256 = { "check.py" = "685605d0d054bb09f9087361b3d6fc0c4b305a3b6fadfee05a1e7b794f621273", "instruction.md" = "f31f0a86432e9e8b1cf8d08238d227cc2a5740da43aea713edfb1c35d2c9cb5d" }
+
+[placeholders]
+"compute-and-data-s3-mnbh73950-us-east-1-SourceBucketName" = "awsb-sync-source-nv0qp1"
+"compute-and-data-s3-mnbh73950-us-east-1-DestinationBucketName" = "awsb-sync-destination-nv0qp1"
+
+[check_env]
+AWS_REGION = "us-east-1"
+SYNC_SOURCE_BUCKET = "awsb-sync-source-nv0qp1"
+DESTINATION_BUCKET = "awsb-sync-destination-nv0qp1"

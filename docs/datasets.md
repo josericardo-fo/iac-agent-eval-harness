@@ -34,6 +34,11 @@ com as mesmas funções e nomes (Wilson, McNemar exato + Holm, bootstrap pareado
     `wellcomecollection-platform-infra`, `pike-680235478471`; o `head-bucket` responde 403).
     Devem falhar com `BucketAlreadyExists`/`AccessDenied`. O benchmark supõe um namespace global
     vazio, que só existe no emulador. Não renomeamos (regra de não alterar o dataset).
+  - task-183 e task-388 não rodam em conta nova: o Amazon Augmented AI (HumanTaskUI) não aceita
+    clientes novos, e a API de vaults do Glacier foi fechada para contas novas. Substituídas no
+    sorteio da AWS real (`docs/selecao-tarefas-modalidades.md`).
+  - task-367 usa bundle (`micro_1_0`) e blueprint (`mysql_8_0`) do Lightsail descontinuados. A
+    referência foi adaptada para `micro_2_0`/`mysql_8_4`; o enunciado não cita versão.
 
 ### Tarefas autorais (modalidades)
 - **Fonte:** este repositório (`origin = "authored"`, ou `"harness"` nas 3 primeiras).
@@ -44,7 +49,59 @@ com as mesmas funções e nomes (Wilson, McNemar exato + Holm, bootstrap pareado
 - **Validação:** o estado inicial reprova e a referência passa nas 3 modalidades, no Floci e no
   LocalStack (`modality-prevalidate`).
 
-## Avaliados, sem uso por enquanto
+### aws-bench (AWS, 2026)
+- **Fonte:** https://github.com/aws-bench/aws-bench-datasets, commit
+  `73f814af0f3ba381e1a797801333ad4478b78971`, Apache-2.0. Atribuição e lista de arquivos
+  copiados em `src/iac_harness/modalities/tasks/AWS-BENCH-NOTICE.md`.
+- **Tarefas no dataset:** 134 (99 de consulta, julgadas por LLM; 35 de mudança, com `check.py`
+  em boto3 sobre o estado da conta).
+- **Em uso:** 5 tarefas de `compute-and-data`, só na AWS real (`tasks/awsb-<nome>/`):
+  - `create-s3-bucket-with-config` (criação, com resposta em JSON);
+  - `move-s3-contents-within-bucket`;
+  - `sync-s3-buckets-with-metadata`;
+  - `dynamodb-strip-ec2-fields-from-prod`;
+  - `lambda-versioned-alias-update`.
+
+  A sexta prevista, `invalidate-cloudfront-cache`, ainda não entrou. O enunciado cita o domínio
+  `dXXXX.cloudfront.net`, e o check precisa do `DistributionId`. A AWS só atribui os dois no
+  apply do estado inicial, e o `prompt.md` é fixo. Falta decidir como adaptar.
+- **Adaptações** (registradas também no cabeçalho do `meta.toml` de cada tarefa):
+  - **Arquivos originais:** `upstream/instruction.md` e `upstream/check.py` são cópias literais
+    do commit fixado. O sha256 de cada um fica no `meta.toml`, e
+    `tests/test_awsbench_tasks.py` confere.
+  - **Enunciado:** `prompt.md` é gerado do `instruction.md` por uma transformação
+    determinística (o teste confere):
+    - os `{{...}}` viram os nossos nomes (tabela `[placeholders]`);
+    - sai o parágrafo "IMPORTANT: Write your final prose answer to
+      `/logs/agent/agent-output.txt`.";
+    - "Additionally, write `/logs/agent/agent-output.json` containing exactly:" vira "Answer
+      with this JSON object:", com o mesmo bloco JSON (`answer = true`, como nas consultas).
+  - **Estado inicial:** um `initial.tf` reduzido no lugar do cenário CDK inteiro. Tem só os
+    recursos da tarefa e os dados do `pre_invoke/reset.py`:
+    - objetos S3 com o conteúdo literal;
+    - os 100 itens do DynamoDB, gerados uma vez pelo gerador determinístico e embutidos;
+    - a Lambda com o código inline do CDK.
+
+    O agente não vê o `initial.tf` (`hide_initial`), como no original, em que só recebe o
+    enunciado.
+  - **Nomes:** fixos, com prefixo `awsb-`. Os buckets têm sufixo aleatório fixo, porque os nomes
+    são globais.
+  - **Check:** o `upstream/check.py` roda sem modificação, por um `check.py` adaptador. O
+    adaptador:
+    - define as variáveis do `[verifier.env]` com os nossos nomes (`[check_env]`);
+    - injeta um `rewardkit` falso que registra os `@criterion`;
+    - troca no texto só o caminho `/logs/agent/agent-output.json` por `answer.json`.
+
+    `pass` só se todos os critérios passarem, e cada critério sai em `details`.
+  - **Sem referência Terraform** (`missing_references = ["terraform"]`) em `move-s3`, `sync-s3` e
+    `dynamodb-strip`. São operações do plano de dados sobre objetos e itens que já existem
+    (mover, copiar trocando metadados, remover atributos), e o provider aws não tem recurso
+    nativo para elas, só `local-exec`. Os prompts não mudam; nessas tarefas o gate vale para CLI e
+    boto3, e o uso de `local-exec` pelo agente é medido à parte. `create-s3` tem referência
+    Terraform. A da Lambda importa a função existente com um bloco `import` e muda só o valor da
+    variável de ambiente.
+
+
 
 ### Multi-IaC-Eval (Amazon Science)
 - **Fonte:** https://huggingface.co/datasets/AmazonScience/Multi-IaC-Eval, revisão
@@ -56,13 +113,6 @@ com as mesmas funções e nomes (Wilson, McNemar exato + Holm, bootstrap pareado
   similaridade e juiz LLM).
 
 ## Próximos
-
-### aws-bench (AWS, 2026)
-- **Fonte:** https://github.com/aws-bench/aws-bench-datasets, Apache-2.0.
-- **Tarefas:** 134 (99 de consulta, julgadas por LLM; 35 de mudança, com `check.py` em boto3
-  sobre o estado da conta).
-- **Plano:** usar as 35 de mudança no Floci/LocalStack, sem os arquivos de "steering" que mandam
-  usar CLI/SDK (ficam fora das instâncias). Contar quantas executam antes de decidir.
 
 ### Enhanced IaC-Eval (Nekrasov)
 - **Fonte:** https://zenodo.org/records/20272829, CC-BY-4.0.

@@ -1,0 +1,419 @@
+{
+  "seed": 20261028,
+  "inputs_sha256": {
+    "data/iac_eval_v2_defefc108d437f5659f40be66fc863833e9c96fb.csv": "d9cce5bd8a79525838991b41bc24d7f1b7653f62b5ba233f7326efa17e8113ed",
+    "runs/prevalidation-merged/prevalidation.jsonl": "05f83566a41944c171d090f5b8194b8ac6091ccec05374dc8102305ba7646aa0"
+  },
+  "rules": {
+    "a": "Pool: linhas de runs/prevalidation-merged com harness_valid verdadeiro e sandbox_supported falso (não rodam no Floci).",
+    "b": "Excluir enunciados (sem o Intent) que citam 'terraform' ou 'hcl'.",
+    "c": "Excluir reference_output com data \"archive_file\", aws_lambda_function ou filename =.",
+    "d": "Excluir reference_output com algum resource fora dos tipos gratuitos ou por hora.",
+    "e": "Excluir tipos por hora (RDS, Lightsail DB) fora das classes micro/nano.",
+    "f": "Excluir tarefas que citam outra região (DynamoDB global tables não são excluídas aqui).",
+    "g": "Sorteio: só tarefas sem região ou com us-east-1; serviço = primeiro tipo (ordem alfabética) fora dos auxiliares; no máximo 1 por serviço entre as sorteadas.",
+    "h": "Estratos por difficulty: 1 -> 3, 2 -> 3, >=3 -> 2.",
+    "i": "Por estrato, na ordem acima: candidatos ordenados, random.Random(f'{SEED}-{estrato}').shuffle, pega os de serviço ainda não usado; o resto vira fila de substitutos."
+  },
+  "excluded": {
+    "b": [
+      "aws/task-092",
+      "aws/task-093",
+      "aws/task-094",
+      "aws/task-098",
+      "aws/task-117",
+      "aws/task-123",
+      "aws/task-177",
+      "aws/task-181"
+    ],
+    "c": [
+      "aws/task-051",
+      "aws/task-152",
+      "aws/task-155"
+    ],
+    "d": [
+      "aws/task-043",
+      "aws/task-044",
+      "aws/task-045",
+      "aws/task-046",
+      "aws/task-047",
+      "aws/task-048",
+      "aws/task-049",
+      "aws/task-050",
+      "aws/task-058",
+      "aws/task-127",
+      "aws/task-132",
+      "aws/task-134",
+      "aws/task-140",
+      "aws/task-141",
+      "aws/task-142",
+      "aws/task-143",
+      "aws/task-146",
+      "aws/task-147",
+      "aws/task-148",
+      "aws/task-149",
+      "aws/task-169",
+      "aws/task-173",
+      "aws/task-174",
+      "aws/task-175",
+      "aws/task-176",
+      "aws/task-178",
+      "aws/task-179",
+      "aws/task-180",
+      "aws/task-182",
+      "aws/task-184",
+      "aws/task-185",
+      "aws/task-187",
+      "aws/task-193",
+      "aws/task-200",
+      "aws/task-209",
+      "aws/task-212",
+      "aws/task-214",
+      "aws/task-215",
+      "aws/task-216",
+      "aws/task-217",
+      "aws/task-218",
+      "aws/task-219",
+      "aws/task-227",
+      "aws/task-361",
+      "aws/task-376",
+      "aws/task-377",
+      "aws/task-378",
+      "aws/task-379"
+    ],
+    "e": [
+      "aws/task-325",
+      "aws/task-326",
+      "aws/task-409",
+      "aws/task-410",
+      "aws/task-411",
+      "aws/task-412",
+      "aws/task-414"
+    ],
+    "f": [
+      "aws/task-072",
+      "aws/task-385",
+      "aws/task-407",
+      "aws/task-441"
+    ]
+  },
+  "pool": {
+    "aws/task-069": {
+      "service": "kinesis_video_stream",
+      "sizes": [],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-138": {
+      "service": "elasticache_user",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-139": {
+      "service": "elasticache_user",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-160": {
+      "service": "cloudwatch_composite_alarm",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-163": {
+      "service": "dynamodb_contributor_insights",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-164": {
+      "service": "dynamodb_table",
+      "sizes": [],
+      "regions": [
+        "us-east-1",
+        "us-west-1",
+        "us-west-2"
+      ]
+    },
+    "aws/task-168": {
+      "service": "dynamodb_table",
+      "sizes": [],
+      "regions": [
+        "us-east-2"
+      ]
+    },
+    "aws/task-170": {
+      "service": "dax_parameter_group",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-171": {
+      "service": "dax_subnet_group",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-183": {
+      "service": "sagemaker_human_task_ui",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-198": {
+      "service": "elasticache_user",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-199": {
+      "service": "dynamodb_contributor_insights",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-220": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-221": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-222": {
+      "service": "dynamodb_table",
+      "sizes": [],
+      "regions": [
+        "us-east-1",
+        "us-east-2",
+        "us-west-2"
+      ]
+    },
+    "aws/task-223": {
+      "service": "dynamodb_table",
+      "sizes": [],
+      "regions": [
+        "us-east-1",
+        "us-east-2",
+        "us-west-2"
+      ]
+    },
+    "aws/task-225": {
+      "service": "dynamodb_table",
+      "sizes": [],
+      "regions": [
+        "us-east-1",
+        "us-west-1",
+        "us-west-2"
+      ]
+    },
+    "aws/task-228": {
+      "service": "dax_parameter_group",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-229": {
+      "service": "dax_subnet_group",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-267": {
+      "service": "iam_virtual_mfa_device",
+      "sizes": [],
+      "regions": []
+    },
+    "aws/task-367": {
+      "service": "lightsail_database",
+      "sizes": [
+        "micro_1_0"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-368": {
+      "service": "lightsail_database",
+      "sizes": [
+        "micro_1_0"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-369": {
+      "service": "lightsail_database",
+      "sizes": [
+        "micro_1_0"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-370": {
+      "service": "lightsail_database",
+      "sizes": [
+        "micro_1_0"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-371": {
+      "service": "lightsail_database",
+      "sizes": [
+        "micro_1_0"
+      ],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-380": {
+      "service": "glacier_vault",
+      "sizes": [],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-381": {
+      "service": "glacier_vault",
+      "sizes": [],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-386": {
+      "service": "glacier_vault",
+      "sizes": [],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-387": {
+      "service": "glacier_vault",
+      "sizes": [],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-388": {
+      "service": "glacier_vault",
+      "sizes": [],
+      "regions": [
+        "us-east-1"
+      ]
+    },
+    "aws/task-408": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": []
+    },
+    "aws/task-415": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": []
+    },
+    "aws/task-416": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": []
+    },
+    "aws/task-418": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": []
+    },
+    "aws/task-419": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": []
+    },
+    "aws/task-420": {
+      "service": "db_instance",
+      "sizes": [
+        "db.t3.micro"
+      ],
+      "regions": []
+    },
+    "aws/task-442": {
+      "service": "egress_only_internet_gateway",
+      "sizes": [],
+      "regions": []
+    }
+  },
+  "selected": {
+    "1": [
+      "aws/task-367",
+      "aws/task-183",
+      "aws/task-416"
+    ],
+    "2": [
+      "aws/task-388",
+      "aws/task-198",
+      "aws/task-228"
+    ],
+    "3": [
+      "aws/task-229"
+    ]
+  },
+  "substitutes": {
+    "1": [
+      "aws/task-368",
+      "aws/task-267",
+      "aws/task-415",
+      "aws/task-418",
+      "aws/task-199",
+      "aws/task-381",
+      "aws/task-408",
+      "aws/task-380",
+      "aws/task-419",
+      "aws/task-442",
+      "aws/task-163"
+    ],
+    "2": [
+      "aws/task-370",
+      "aws/task-069",
+      "aws/task-138",
+      "aws/task-420",
+      "aws/task-170",
+      "aws/task-160",
+      "aws/task-371",
+      "aws/task-369"
+    ],
+    "3": [
+      "aws/task-221",
+      "aws/task-386",
+      "aws/task-220",
+      "aws/task-139",
+      "aws/task-171",
+      "aws/task-387"
+    ]
+  },
+  "replacements": [
+    {
+      "stratum": "1",
+      "out": "aws/task-183",
+      "in": "aws/task-267",
+      "reason": "gate 28/10/2026 (runs/20261028T012801-modality-prevalidate): CreateHumanTaskUi -> ValidationException: Amazon Augmented AI is no longer accepting new customers."
+    },
+    {
+      "stratum": "2",
+      "out": "aws/task-388",
+      "in": "aws/task-069",
+      "reason": "gate 28/10/2026 (runs/20261028T012801-modality-prevalidate): CreateVault -> NoLongerSupportedException: This API is no longer supported for new accounts."
+    }
+  ]
+}

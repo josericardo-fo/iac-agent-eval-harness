@@ -1,0 +1,10 @@
+# Só roda na AWS real: no Floci, CreateParameterGroup do DAX dá "Unknown operation"
+# (runs/prevalidation-merged/prevalidation.jsonl).
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia o grupo nem os parâmetros (a referência ajusta query-ttl-millis e
+# record-ttl-millis): o check aceita qualquer parameter group do DAX fora dos "default*" da AWS.
+id = "task-228"
+category = "create"
+origin = "iac-eval-v2:aws/task-228"
+region = "us-east-1"

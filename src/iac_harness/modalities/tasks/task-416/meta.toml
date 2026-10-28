@@ -1,0 +1,14 @@
+# Só roda na AWS real: no Floci, CreateDBInstance falha com "No subnets available for DB subnet
+# group default" (runs/prevalidation-merged/prevalidation.jsonl).
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# Adaptações do reference.tf (a do CSV não roda na AWS real ou não seria removível):
+# - iops = 1000: io1 exige IOPS provisionado (mínimo 1000; 10 IOPS/GiB com 100 GiB);
+# - skip_final_snapshot = true: sem ele o destroy falha (exige final_snapshot_identifier);
+# - identifier = "basic-io1-db": nome fixo, igual nas 3 formas (o CSV deixava o Terraform gerar).
+# "basic" não é verificável: o check aceita qualquer instância RDS com storage io1 que não esteja
+# sendo apagada ou com falha. As referências CLI/boto3 esperam "available", como o provider.
+id = "task-416"
+category = "create"
+origin = "iac-eval-v2:aws/task-416"
+region = "us-east-1"

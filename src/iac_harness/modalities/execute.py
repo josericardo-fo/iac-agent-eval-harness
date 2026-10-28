@@ -14,7 +14,7 @@ from typing import Any
 
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS, TRUNCATION_MARK, strip_ansi
-from iac_harness.modalities.loader import ModalityTask
+from iac_harness.modalities.loader import UPSTREAM_DIRNAME, ModalityTask
 from iac_harness.modalities.spec import MODALITIES, Modality
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import Artifact, CheckStatus
@@ -159,8 +159,8 @@ def collect_answer(path: Path, modality: Modality) -> ExecResult:
 def with_answer(
     task: ModalityTask, modality: Modality, result: ExecResult, path: Path
 ) -> ExecResult:
-    """Na consulta com execução ok, coleta a resposta; se faltar, a execução vira falha."""
-    if not (result.ok and task.category == "query"):
+    """Na consulta (ou com `answer`) e execução ok, coleta a resposta; se faltar, vira falha."""
+    if not (result.ok and task.wants_answer):
         return result
     answer = collect_answer(path, modality)
     if answer.ok:
@@ -171,9 +171,14 @@ def with_answer(
 def inherits_state(task: ModalityTask, modality: Modality) -> bool:
     """Workspace Terraform herda o tfstate do initial só em modify/delete.
 
-    Na consulta, o apply só com data sources destruiria o estado inicial.
+    Na consulta, o apply só com data sources destruiria o estado inicial. Com `hide_initial`, o
+    agente não vê o initial.tf; herdar o tfstate faria o apply dele destruir o estado inicial.
     """
-    return modality.name == "terraform" and task.category in ("modify", "delete")
+    return (
+        modality.name == "terraform"
+        and task.category in ("modify", "delete")
+        and not task.hide_initial
+    )
 
 
 def apply_initial(
@@ -242,6 +247,11 @@ def _run_check_once(
     with tempfile.TemporaryDirectory(prefix="iac-check-") as tmp:
         tmp_dir = Path(tmp)
         (tmp_dir / CHECK_FILENAME).write_text(task.check)
+        if task.upstream:
+            # Check original do dataset, usado pelo check.py adaptador da tarefa.
+            (tmp_dir / UPSTREAM_DIRNAME).mkdir()
+            for filename, content in task.upstream.items():
+                (tmp_dir / UPSTREAM_DIRNAME / filename).write_text(content)
         if workspace is not None and (workspace / ANSWER_FILENAME).is_file():
             shutil.copy(workspace / ANSWER_FILENAME, tmp_dir / ANSWER_FILENAME)
         try:
@@ -266,14 +276,18 @@ def prevalidate_pair(
 ) -> dict[str, Any]:
     """Uma tarefa × modalidade: estado inicial → check (deve reprovar) → referência → check.
 
-    Quem chama faz o `executor.reset()` antes.
+    Quem chama faz o `executor.reset()` antes. Modalidade sem referência (`missing_references`)
+    não aplica nada: `ref_missing` True e `valid` None (nem válida nem inválida).
     """
     row: dict[str, Any] = {
         "task_id": task.task_id, "category": task.category, "modality": modality.name,
         "initial_ok": None, "initial_output": "", "baseline_pass": None, "baseline_details": {},
         "ref_exec_ok": None, "ref_output": "", "ref_unsupported_pattern": None,
-        "ref_check_pass": None, "ref_check_details": {}, "valid": False,
+        "ref_check_pass": None, "ref_check_details": {}, "ref_missing": False, "valid": False,
     }  # fmt: skip
+    if modality.name in task.missing_references:
+        row.update(ref_missing=True, valid=None)
+        return row
     inherit = None
     if task.initial_tf is not None:
         initial, initial_path = apply_initial(

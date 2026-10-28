@@ -1,0 +1,18 @@
+# Só roda na AWS real: no Floci, o apply falha com "Provider produced inconsistent final plan"
+# em user_ids ("testUserId" volta como "testuserid") (runs/prevalidation-merged/prevalidation.jsonl).
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# Adaptações do reference.tf:
+# - o CSV cria 1 usuário e o enunciado pede 3: entram app-user-2 e app-user-3 (user_name
+#   appuser2/appuser3, mesma access string e senha);
+# - user_id/user_group_id em minúsculas (testuserid, usergroupid): a AWS normaliza para
+#   minúsculas e o provider acusa plano inconsistente com "testUserId"/"userGroupId".
+# O grupo Redis precisa de um usuário com user_name "default"; a referência usa o testuserid do
+# CSV para isso (nunca o user_id "default" da conta, que o sweep preserva).
+# O check aceita qualquer user group com exatamente 3 usuários existentes (contando adições
+# pendentes), fora de remoção; o "default" da conta conta como usuário se estiver no grupo.
+# As referências CLI/boto3 esperam usuários e grupo ficarem "active", como o provider.
+id = "task-198"
+category = "create"
+origin = "iac-eval-v2:aws/task-198"
+region = "us-east-1"

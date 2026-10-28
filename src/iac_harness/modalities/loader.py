@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from iac_harness.modalities.spec import MODALITIES
 
 TASKS_DIR = Path(__file__).parent / "tasks"
 CATEGORIES = ("create", "modify", "delete", "query")
+UPSTREAM_DIRNAME = "upstream"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,16 @@ class ModalityTask:
     check: str  # código do check.py (roda fora do workspace)
     references: dict[str, str]  # nome da modalidade → conteúdo da referência
     initial_tf: str | None = None  # estado inicial (só em modify/delete/query)
+    hide_initial: bool = False  # o prompt não mostra o initial.tf (o agente descobre o estado)
+    answer: bool = False  # fora da consulta, também pede resposta em JSON
+    missing_references: tuple[str, ...] = ()  # modalidades sem arquivo de referência
+    missing_reason: str = ""  # por que faltam (obrigatório com missing_references)
+    upstream: dict[str, str] = field(default_factory=dict)  # upstream/: arquivo → conteúdo
+
+    @property
+    def wants_answer(self) -> bool:
+        """Se a tarefa pede resposta em JSON (consulta, ou `answer` nas demais)."""
+        return self.category == "query" or self.answer
 
 
 def load_task(path: Path) -> ModalityTask:
@@ -35,6 +46,18 @@ def load_task(path: Path) -> ModalityTask:
         raise ValueError(
             f"{path}: initial.tf é obrigatório em modify/delete/query e proibido em create"
         )
+    missing = tuple(meta.get("missing_references", ()))
+    unknown = set(missing) - set(MODALITIES)
+    if unknown:
+        raise ValueError(f"{path}: missing_references com modalidades inválidas {sorted(unknown)}")
+    if missing and not meta.get("missing_reason"):
+        raise ValueError(f"{path}: missing_reason é obrigatório com missing_references")
+    upstream_dir = path / UPSTREAM_DIRNAME
+    upstream = (
+        {p.name: p.read_text() for p in sorted(upstream_dir.iterdir()) if p.is_file()}
+        if upstream_dir.is_dir()
+        else {}
+    )
     return ModalityTask(
         task_id=meta["id"],
         category=meta["category"],
@@ -42,8 +65,17 @@ def load_task(path: Path) -> ModalityTask:
         region=meta["region"],
         prompt=(path / "prompt.md").read_text(),
         check=(path / "check.py").read_text(),
-        references={m.name: (path / m.reference).read_text() for m in MODALITIES.values()},
+        references={
+            m.name: (path / m.reference).read_text()
+            for m in MODALITIES.values()
+            if m.name not in missing
+        },
         initial_tf=initial.read_text() if initial.exists() else None,
+        hide_initial=meta.get("hide_initial", False),
+        answer=meta.get("answer", False),
+        missing_references=missing,
+        missing_reason=meta.get("missing_reason", ""),
+        upstream=upstream,
     )
 
 

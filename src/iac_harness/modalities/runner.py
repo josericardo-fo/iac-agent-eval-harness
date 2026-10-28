@@ -8,6 +8,7 @@ pelo Floci, que também recebe correção); a nota (check.py) roda uma vez no fi
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -35,6 +36,8 @@ from iac_harness.types import Artifact, Feedback, Stage, Task, Turn
 from iac_harness.workspace import RESPONSE_FILENAME, create_workspace
 
 DEFAULT_MAX_ATTEMPTS = 3
+# Provisioner local-exec no Terraform: o agente roda comandos (CLI/scripts) por fora do provider.
+LOCAL_EXEC_RE = re.compile(r'provisioner\s+"local-exec"')
 
 
 class ModTermination(StrEnum):
@@ -67,6 +70,13 @@ def _prepare(
         rep=rep, name=f"initial_{attempt}",
     )  # fmt: skip
     return initial, (path if inherits_state(task, modality) else None)
+
+
+def uses_local_exec(modality: Modality, content: str | None) -> bool | None:
+    """Se o main.tf tem bloco `provisioner "local-exec"`; None fora do Terraform ou sem arquivo."""
+    if modality.name != "terraform" or content is None:
+        return None
+    return bool(LOCAL_EXEC_RE.search(content))
 
 
 def _answer(path: Path, max_chars: int) -> str | None:
@@ -158,6 +168,7 @@ def run_pair(
                 "format_ok": not format_fail,
                 "exec_ok": result.ok,
                 "unsupported": result.unsupported,
+                "uses_local_exec": uses_local_exec(modality, content),
                 "output": result.output,
                 "raw_output": result.raw,
                 "feedback_sent": feedback_sent,
@@ -167,7 +178,7 @@ def run_pair(
                 "duration_s": round(time.monotonic() - start, 3),
                 "artifact_path": str(path),
                 "artifact_hash": artifact_hash,
-                "answer": _answer(path, ctx.max_chars) if task.category == "query" else None,
+                "answer": (_answer(path, ctx.max_chars) if task.wants_answer else None),
             }
         )
         if step is not None:

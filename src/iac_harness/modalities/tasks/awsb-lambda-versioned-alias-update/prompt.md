@@ -1,0 +1,1 @@
+Update my Lambda function awsb-validation-function to query the new validation table awsb-latest-3hg2h54 instead of the old one awsb-old-whg34h5b. The new table has enhanced data with status, reason, compliance, and timestamp fields.

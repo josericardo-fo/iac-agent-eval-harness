@@ -1,5 +1,6 @@
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -9,11 +10,14 @@ from iac_harness.modalities.execute import (
     ANSWER_ERROR,
     CHECK_SETTLE_INTERVAL_S,
     CHECK_SETTLE_WINDOW_S,
+    ExecResult,
     collect_answer,
+    inherits_state,
     parse_check_output,
     prevalidate_pair,
     run_artifact,
     run_check,
+    with_answer,
 )
 from iac_harness.modalities.loader import TASKS_DIR, load_task, load_tasks
 from iac_harness.modalities.spec import MODALITIES
@@ -28,6 +32,11 @@ EXPECTED_TASKS = {
     "mod-secret-tag",
     "del-s3-bucket", "del-sqs-dev", "del-iam-user",
     "query-sg-ssh-open", "query-dynamodb-ondemand",
+    # só na AWS real (docs/selecao-tarefas-modalidades.md)
+    "task-367", "task-267", "task-416", "task-069", "task-198", "task-228", "task-229",
+    "awsb-create-s3-bucket-with-config", "awsb-move-s3-contents-within-bucket",
+    "awsb-sync-s3-buckets-with-metadata", "awsb-dynamodb-strip-ec2-fields-from-prod",
+    "awsb-lambda-versioned-alias-update",
 }  # fmt: skip
 
 
@@ -51,7 +60,7 @@ def test_load_tasks_has_all_with_required_files():
     assert {t.task_id for t in tasks} == EXPECTED_TASKS
     for t in tasks:
         assert t.prompt.strip() and t.check.strip()
-        assert set(t.references) == set(MODALITIES)
+        assert set(t.references) == set(MODALITIES) - set(t.missing_references)
         assert all(body.strip() for body in t.references.values())
         assert (t.category != "create") == (t.initial_tf is not None)
         assert "## Intent" not in t.prompt
@@ -135,7 +144,7 @@ def test_run_artifact_truncates_output(tmp_path):
 
 def test_check_runs_outside_workspace(tmp_path):
     tc = RecordingToolchain(stdout='{"pass": true, "details": {"a": 1}}\n')
-    task = load_tasks()[0]
+    task = _task("mod-s3-versioning")  # sem upstream/: só o check vai ao diretório
     assert run_check(tc, task) == (True, {"a": 1})
     args, workdir, files = tc.seen[0]
     assert args == ["python3", "check.py", task.region]
@@ -351,3 +360,101 @@ def test_prevalidate_pair_on_aws_does_not_retry_baseline(monkeypatch, tmp_path):
     assert row["baseline_pass"] is False and row["baseline_details"] == {}
     assert row["ref_check_pass"] is True and row["ref_check_details"] == {"check_attempts": 1}
     assert row["valid"]
+
+
+# ---------- tarefas só na AWS real (hide_initial, answer, missing_references, upstream) ----------
+
+
+def _copy_task(tmp_path, task_id="mod-s3-versioning", extra_meta="", skip=()):
+    src = TASKS_DIR / task_id
+    dst = tmp_path / task_id
+    dst.mkdir()
+    for p in src.iterdir():
+        if p.is_file() and p.name not in skip:
+            (dst / p.name).write_text(p.read_text())
+    meta = dst / "meta.toml"
+    meta.write_text(meta.read_text() + extra_meta)
+    return dst
+
+
+def test_load_task_new_fields_default_off():
+    task = _task("mod-s3-versioning")
+    assert not task.hide_initial and not task.answer
+    assert task.missing_references == () and task.missing_reason == "" and task.upstream == {}
+
+
+def test_load_task_reads_new_fields_and_upstream(tmp_path):
+    meta = (
+        "hide_initial = true\nanswer = true\n"
+        'missing_references = ["terraform"]\nmissing_reason = "sem recurso nativo"\n'
+    )
+    dst = _copy_task(tmp_path, extra_meta=meta, skip=("reference.tf",))
+    (dst / "upstream").mkdir()
+    (dst / "upstream" / "check.py").write_text("print('orig')")
+    task = load_task(dst)
+    assert task.hide_initial and task.answer
+    assert task.missing_references == ("terraform",)
+    assert task.missing_reason == "sem recurso nativo"
+    assert set(task.references) == {"cli", "boto3"}
+    assert task.upstream == {"check.py": "print('orig')"}
+
+
+def test_load_task_requires_missing_reason(tmp_path):
+    dst = _copy_task(tmp_path, extra_meta='missing_references = ["terraform"]\n')
+    with pytest.raises(ValueError, match="missing_reason"):
+        load_task(dst)
+
+
+def test_load_task_rejects_unknown_missing_modality(tmp_path):
+    meta = 'missing_references = ["pulumi"]\nmissing_reason = "x"\n'
+    with pytest.raises(ValueError, match="missing_references"):
+        load_task(_copy_task(tmp_path, extra_meta=meta))
+
+
+def test_load_task_still_requires_reference_of_other_modalities(tmp_path):
+    meta = 'missing_references = ["terraform"]\nmissing_reason = "x"\n'
+    with pytest.raises(FileNotFoundError):
+        load_task(_copy_task(tmp_path, extra_meta=meta, skip=("reference.tf", "reference.sh")))
+
+
+def test_inherits_state_false_with_hide_initial():
+    task = _task("mod-s3-versioning")
+    assert inherits_state(task, MODALITIES["terraform"])
+    assert not inherits_state(replace(task, hide_initial=True), MODALITIES["terraform"])
+
+
+def test_with_answer_applies_when_answer_flag(tmp_path):
+    task = replace(_task("mod-s3-versioning"), answer=True)
+    res = with_answer(task, MODALITIES["cli"], ExecResult(True, "ok"), tmp_path)
+    assert not res.ok and res.output == ANSWER_ERROR["cli"]
+    (tmp_path / "answer.json").write_text('{"x": 1}')
+    assert with_answer(task, MODALITIES["cli"], ExecResult(True, "ok"), tmp_path).ok
+    plain = _task("mod-s3-versioning")
+    assert with_answer(plain, MODALITIES["cli"], ExecResult(True, "ok"), tmp_path / "x").ok
+
+
+def test_prevalidate_pair_skips_modality_without_reference(tmp_path):
+    task = replace(_task("mod-s3-versioning"), missing_references=("terraform",))
+    tc = RecordingToolchain()
+    row = prevalidate_pair(task, MODALITIES["terraform"], tc, FlociExecutor(tc), tmp_path, "r")
+    assert row["ref_missing"] is True and row["valid"] is None
+    assert tc.seen == []  # nada aplicado
+    tc2 = RecordingToolchain(stdout='{"pass": false, "details": {}}')
+    row2 = prevalidate_pair(task, MODALITIES["cli"], tc2, FlociExecutor(tc2), tmp_path, "r")
+    assert row2["ref_missing"] is False and row2["initial_ok"]
+
+
+def test_run_check_writes_upstream_files():
+    seen = {}
+
+    class UpstreamToolchain(RecordingToolchain):
+        def run(self, args, workdir, timeout_s=None):
+            up = Path(workdir) / "upstream"
+            seen.update({p.name: p.read_text() for p in up.iterdir()})
+            return super().run(args, workdir, timeout_s)
+
+    tc = UpstreamToolchain(stdout='{"pass": true, "details": {}}')
+    task = replace(load_tasks()[0], upstream={"check.py": "orig", "instruction.md": "doc"})
+    assert run_check(tc, task)[0]
+    assert tc.seen[0][2] == {"check.py", "upstream"}
+    assert seen == {"check.py": "orig", "instruction.md": "doc"}

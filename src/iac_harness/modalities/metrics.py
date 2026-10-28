@@ -47,6 +47,7 @@ def _block(
     rows: list[Row],
     failed_exec: set[tuple[str, str, int]],
     unsupported: Counter[tuple[str, str, int]],
+    local_exec: Counter[tuple[str, str, int]],
     difficulty: dict[str, int] | None,
     prices: PriceTable,
 ) -> dict[str, Any]:
@@ -81,6 +82,9 @@ def _block(
         "by_difficulty": {str(d): _rate(sum(v), len(v)) for d, v in sorted(by_difficulty.items())},
         "repair_rate": _rate(sum(map(_success, repaired)), len(repaired)),
         "unsupported_attempts": sum(unsupported[k] for k in keys),
+        # Terraform com provisioner local-exec (tentativas e trajetórias com alguma tentativa)
+        "local_exec_attempts": sum(local_exec[k] for k in keys),
+        "local_exec_trajectories": sum(1 for k in keys if local_exec[k]),
         "tokens": {
             **tok,
             **{f"mean_{f}": (v / n if n else None) for f, v in tok.items()},
@@ -162,6 +166,9 @@ def compute_modality_metrics(
     unsupported = Counter(
         (e["task_id"], e["modality"], e["rep"]) for e in attempts if e.get("unsupported")
     )
+    local_exec = Counter(
+        (e["task_id"], e["modality"], e["rep"]) for e in attempts if e.get("uses_local_exec")
+    )
     categories = sorted({e["category"] for e in finals})
     modalities = [m for m in MODALITIES if any(e["modality"] == m for e in finals)]
     modalities += sorted({e["modality"] for e in finals} - set(modalities))
@@ -170,7 +177,7 @@ def compute_modality_metrics(
         return [e for e in finals if e["modality"] == mod and cat in (None, e["category"])]
 
     def block(r: list[Row]) -> dict[str, Any]:
-        return _block(r, failed_exec, unsupported, difficulty, prices)
+        return _block(r, failed_exec, unsupported, local_exec, difficulty, prices)
 
     return {
         "n_trajectories": len(finals),

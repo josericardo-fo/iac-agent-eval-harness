@@ -1,0 +1,1 @@
+Sync files between the S3 buckets awsb-sync-source-nv0qp1 and awsb-sync-destination-nv0qp1, replacing each object's metadata with a single entry `migrated=true` and setting ACL such that bucket owner has full control.

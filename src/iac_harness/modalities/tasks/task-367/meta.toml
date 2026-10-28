@@ -1,0 +1,18 @@
+# Só roda na AWS real: no Floci, CreateRelationalDatabase é "recognized by Amazon Lightsail but
+# is not implemented in Floci" (runs/prevalidation-merged/prevalidation.jsonl).
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# Adaptação do reference.tf (e das referências CLI/boto3): o CSV usa bundle_id = "micro_1_0" e
+# blueprint_id = "mysql_8_0", e a AWS real recusa: "The relationalDatabaseBundleId: micro_1_0 is
+# invalid or deprecated" (gate de 28/10/2026, runs/20261028T012801-modality-prevalidate).
+# Trocados pelas opções ativas mais próximas em us-east-1: micro_2_0 (o bundle mais barato,
+# US$ 15/mês) e mysql_8_4 (o único blueprint mysql). O enunciado não cita versão nem tamanho, então
+# a tarefa continua; a referência desatualizada do dataset é um achado (docs/datasets.md).
+# Ambíguo: não nomeia banco, engine, bundle nem AZ; a referência usa mysql_8_4, micro_2_0 e
+# us-east-1a. O check aceita qualquer banco gerenciado (relational database) do Lightsail na
+# região que não esteja sendo apagado ou com falha.
+# As referências CLI/boto3 esperam o estado "available", como o provider faz no apply.
+id = "task-367"
+category = "create"
+origin = "iac-eval-v2:aws/task-367"
+region = "us-east-1"

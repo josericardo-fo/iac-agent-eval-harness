@@ -1,0 +1,47 @@
+# Modalidades só na AWS real (us-east-1): 7 tarefas do IaC-Eval que não rodam no Floci
+# (docs/selecao-tarefas-modalidades.md, "Tarefas só na AWS real") + 5 do aws-bench
+# (docs/datasets.md).
+[run]
+name = "modality-real-aws-only"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # IaC-Eval v2, sorteio com a semente 20261028 (task-267 e task-069 substituem task-183 e task-388)
+  "task-367", "task-267", "task-416", "task-069", "task-198", "task-228", "task-229",
+  # aws-bench
+  "awsb-create-s3-bucket-with-config", "awsb-move-s3-contents-within-bucket",
+  "awsb-sync-s3-buckets-with-metadata", "awsb-dynamodb-strip-ec2-fields-from-prod",
+  "awsb-lambda-versioned-alias-update",
+  # awsb-invalidate-cloudfront-cache: pendente (domínio e id só existem depois do initial)
+]
+modalities = ["terraform", "cli", "boto3"]
+
+[agent]
+provider = "anthropic"
+# ID aceito pelo gateway atual (middleware); a API direta usa "claude-sonnet-5-5".
+model = "Haiku 5.5"
+max_tokens = 8192
+# effort = "medium"   # opcional; só é enviado quando definido
+
+[feedback]
+# Truncagem da saída de execução (a mesma do feedback do agente).
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: o run recusa qualquer outra identidade (root, outra conta).
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"   # docker | local
+image = "iac-harness-toolchain:latest"
+# Timeout por comando (terraform, bash run.sh, python3 main.py, check.py).
+timeout_s = 1800   # RDS, Lightsail DB, CloudFront e a limpeza levam minutos
+
+# US$ por milhão de tokens: [entrada, saída]. Confirme os valores vigentes antes de reportar custo.
+[prices]
+"Haiku 5.5" = [0.10, 0.50]

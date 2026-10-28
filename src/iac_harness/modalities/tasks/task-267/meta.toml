@@ -1,0 +1,15 @@
+# Só roda na AWS real: no Floci, CreateVirtualMFADevice dá "Operation CreateVirtualMFADevice is
+# not supported" (runs/prevalidation-merged/prevalidation.jsonl).
+# Substitui a task-183 (SageMaker HumanTaskUI), reprovada no gate da AWS real em 28/10/2026:
+# "Amazon Augmented AI is no longer accepting new customers" nas 3 formas
+# (runs/20261028T012801-modality-prevalidate). É a próxima da fila do estrato 1 que não repete
+# serviço: a task-368 (Lightsail DB) foi pulada porque a task-367 continua
+# (docs/selecao-tarefas-modalidades.md, "Resultado do gate (28/10/2026)").
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia o dispositivo: o check aceita qualquer MFA virtual da conta, fora o do
+# root. A referência CLI grava o QR code em qrcode.png (o --outfile é obrigatório).
+id = "task-267"
+category = "create"
+origin = "iac-eval-v2:aws/task-267"
+region = "us-east-1"

@@ -1,0 +1,36 @@
+# Adaptada do aws-bench (compute-and-data/move-s3-contents-within-bucket), commit fixado abaixo,
+# Apache-2.0 (atribuição em ../AWS-BENCH-NOTICE.md). upstream/ guarda cópias literais do
+# instruction.md e do tests/check.py; os hashes estão em upstream_sha256.
+# Adaptações:
+# - prompt.md = instruction.md com os {{...}} trocados pelos valores de [placeholders] e sem o
+#   parágrafo "IMPORTANT: Write your final prose answer to `/logs/agent/agent-output.txt`.".
+#   O caminho de origem errado ("sourc/") é proposital no original e foi mantido.
+# - check.py é um adaptador que roda upstream/check.py sem alterá-lo, com as variáveis de
+#   [check_env] (o [verifier.env] original com os nossos nomes) e um rewardkit falso.
+# - Estado inicial reduzido: em vez do cenário CDK inteiro (stack s3_oeimf302d), só o bucket
+#   (versionado, SSE-S3, acesso público bloqueado, como no CDK) e os 4 objetos do
+#   pre_invoke/reset.py, com o Content-Type que o reset.py deriva da extensão. Nome com sufixo
+#   fixo (nomes de bucket são globais). O agente não vê o initial.tf (hide_initial).
+# - Sem referência Terraform: mover objetos é operação de dados; o provider aws não tem recurso
+#   que copie e apague objetos existentes.
+id = "awsb-move-s3-contents-within-bucket"
+category = "modify"
+origin = "aws-bench:compute-and-data/move-s3-contents-within-bucket"
+region = "us-east-1"
+hide_initial = true
+missing_references = ["terraform"]
+missing_reason = "Mover objetos existentes é operação do plano de dados; o Terraform não tem recurso nativo que copie e apague objetos (só local-exec)."
+upstream_source = "https://github.com/aws-bench/aws-bench-datasets/tree/73f814af0f3ba381e1a797801333ad4478b78971/tasks/compute-and-data/move-s3-contents-within-bucket"
+upstream_commit = "73f814af0f3ba381e1a797801333ad4478b78971"
+upstream_sha256 = { "check.py" = "ae2b0ed3e7c1b17906cde286dc13fe5d3157e8882905d0f4fffe2c4bd7bca287", "instruction.md" = "dc1a17de48d57de32b99da3cbf940f5a4c7b0de83d74f4f2edb1fb5281d1f464" }
+
+[placeholders]
+"compute-and-data-s3-oeimf302d-us-east-1-BucketName" = "awsb-test-bucket-9779dr"
+"compute-and-data-s3-oeimf302d-us-east-1-WrongSourceFolderPath" = "sourc/"
+"compute-and-data-s3-oeimf302d-us-east-1-DestinationFolderPath" = "destination/"
+
+[check_env]
+AWS_REGION = "us-east-1"
+MOVE_DATA_BUCKET = "awsb-test-bucket-9779dr"
+SOURCE_PATH = "sourc/"
+DESTINATION_PATH = "destination/"

@@ -1,0 +1,34 @@
+# Adaptada do aws-bench (compute-and-data/lambda-versioned-alias-update), commit fixado abaixo,
+# Apache-2.0 (atribuição em ../AWS-BENCH-NOTICE.md). upstream/ guarda cópias literais do
+# instruction.md e do tests/check.py; os hashes estão em upstream_sha256.
+# Adaptações:
+# - prompt.md = instruction.md com os {{...}} trocados pelos valores de [placeholders] e sem o
+#   parágrafo "IMPORTANT: Write your final prose answer to `/logs/agent/agent-output.txt`.".
+# - check.py é um adaptador que roda upstream/check.py sem alterá-lo, com as variáveis de
+#   [check_env] (o [verifier.env] original com os nossos nomes) e um rewardkit falso.
+# - Estado inicial reduzido: em vez do cenário CDK inteiro (stack dynamodb_zx5kclfft), só as 2
+#   tabelas vazias (como no CDK), a função com o código inline do CDK (python3.11, timeout 30 s,
+#   OLD_TABLE_NAME = tabela antiga) e uma role iac-harness-awsb-validation com as gerenciadas
+#   AWSLambdaBasicExecutionRole e AmazonDynamoDBReadOnlyAccess. O CDK dá à role uma política
+#   inline só com dynamodb:GetItem na tabela antiga; a política IAM do harness nega
+#   PutRolePolicy, e a leitura gerenciada também cobre a tabela nova. Nomes fixos com prefixo
+#   awsb- no lugar dos nomes com conta/região. O agente não vê o initial.tf (hide_initial).
+# - reference.tf: a função existe fora do estado da referência; um bloco import a traz e o apply
+#   só troca o valor de OLD_TABLE_NAME (mesmo código via archive_file, mesma role via data).
+id = "awsb-lambda-versioned-alias-update"
+category = "modify"
+origin = "aws-bench:compute-and-data/lambda-versioned-alias-update"
+region = "us-east-1"
+hide_initial = true
+upstream_source = "https://github.com/aws-bench/aws-bench-datasets/tree/73f814af0f3ba381e1a797801333ad4478b78971/tasks/compute-and-data/lambda-versioned-alias-update"
+upstream_commit = "73f814af0f3ba381e1a797801333ad4478b78971"
+upstream_sha256 = { "check.py" = "ec3915ff40c56e448d707e2793287df44ff533eac9dec8a9c5c4661d8fb3deb1", "instruction.md" = "7254625659abcc45b9b1cbbeea0ee7563ce760953093ca0164be5f91d19a9317" }
+
+[placeholders]
+"compute-and-data-dynamodb-zx5kclfft-us-east-1-ValidationFunctionName" = "awsb-validation-function"
+"compute-and-data-dynamodb-zx5kclfft-us-east-1-NewTableName" = "awsb-latest-3hg2h54"
+"compute-and-data-dynamodb-zx5kclfft-us-east-1-OldTableName" = "awsb-old-whg34h5b"
+
+[check_env]
+EXPECTED_FUNCTION = "awsb-validation-function"
+EXPECTED_NEW_TABLE = "awsb-latest-3hg2h54"

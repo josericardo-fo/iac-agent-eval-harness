@@ -1,0 +1,33 @@
+# Adaptada do aws-bench (compute-and-data/dynamodb-strip-ec2-fields-from-prod), commit fixado
+# abaixo, Apache-2.0 (atribuição em ../AWS-BENCH-NOTICE.md). upstream/ guarda cópias literais do
+# instruction.md e do tests/check.py; os hashes estão em upstream_sha256.
+# Adaptações:
+# - prompt.md = instruction.md com o {{...}} trocado pelo valor de [placeholders] e sem o
+#   parágrafo "IMPORTANT: Write your final prose answer to `/logs/agent/agent-output.txt`.".
+# - check.py é um adaptador que roda upstream/check.py sem alterá-lo, com as variáveis de
+#   [check_env] (o [verifier.env] original com o nosso nome) e um rewardkit falso.
+# - Estado inicial reduzido: em vez do cenário CDK inteiro (stack dynamodb_fyu89ikhg), só a
+#   tabela (chave id, GSI EnvironmentIndex environment/ec2_instance_type, como no CDK) e os 100
+#   itens gerados uma vez pelo gerador determinístico do pre_invoke/reset.py e embutidos no
+#   initial.tf. Diferenças: PAY_PER_REQUEST (o CDK usa o provisionado padrão) e sem
+#   point-in-time recovery (custo; a tarefa não depende disso). O agente não vê o initial.tf
+#   (hide_initial).
+# - Sem referência Terraform: remover atributos de itens existentes é operação de dados; o
+#   aws_dynamodb_table_item só gerencia itens criados pela própria configuração (importá-los e
+#   reescrevê-los não é "remover campos" e exigiria conhecer cada item de antemão).
+id = "awsb-dynamodb-strip-ec2-fields-from-prod"
+category = "modify"
+origin = "aws-bench:compute-and-data/dynamodb-strip-ec2-fields-from-prod"
+region = "us-east-1"
+hide_initial = true
+missing_references = ["terraform"]
+missing_reason = "Remover atributos de itens existentes do DynamoDB é operação do plano de dados; o Terraform não tem recurso nativo para isso (só local-exec)."
+upstream_source = "https://github.com/aws-bench/aws-bench-datasets/tree/73f814af0f3ba381e1a797801333ad4478b78971/tasks/compute-and-data/dynamodb-strip-ec2-fields-from-prod"
+upstream_commit = "73f814af0f3ba381e1a797801333ad4478b78971"
+upstream_sha256 = { "check.py" = "ad752a982921a62c15eda5fb41a1bdd29a3538bc76be7a659d52b1178b3e3c05", "instruction.md" = "f57f87acb2ed10d9cc2ab3d39cd756cd4c91c5ede5f084dc692761ecf5453f75" }
+
+[placeholders]
+"compute-and-data-dynamodb-fyu89ikhg-us-east-1-TableName" = "awsb-table-1getshy"
+
+[check_env]
+EXPECTED_TABLE = "awsb-table-1getshy"

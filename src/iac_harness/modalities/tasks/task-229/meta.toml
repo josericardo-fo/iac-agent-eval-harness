@@ -1,0 +1,11 @@
+# Só roda na AWS real: no Floci, CreateSubnetGroup do DAX dá "Unknown operation"
+# (runs/prevalidation-merged/prevalidation.jsonl).
+# reference.tf (do IaC-Eval) não declara provider; a região vem do AWS_REGION (us-east-1).
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não nomeia o grupo nem as subnets (a referência cria VPC 192.168.0.0/22 e 2
+# subnets): o check aceita qualquer subnet group do DAX fora do "default*" da AWS, com pelo
+# menos 1 subnet.
+id = "task-229"
+category = "create"
+origin = "iac-eval-v2:aws/task-229"
+region = "us-east-1"

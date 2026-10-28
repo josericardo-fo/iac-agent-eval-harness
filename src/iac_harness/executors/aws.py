@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from iac_harness.executors.aws_sweep import ORDER
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import CheckStatus
@@ -91,16 +92,30 @@ class RealAwsExecutor(FlociExecutor):
     def _load_baseline(self, snapshot: bool) -> bool:
         """Carrega o baseline de `baseline_file`; sem arquivo e com `snapshot`, tira e grava.
 
+        Baseline gravado antes de novas categorias do sweep (ORDER) levanta erro: categoria
+        ausente valeria como vazia e o sweep apagaria tudo dela, e preenchê-la com um inventário
+        da conta naquele momento tornaria baseline as sobras de uma conta suja. O operador
+        estende o arquivo à mão, a partir de um inventário (só leitura) da conta limpa.
+
         Devolve se há baseline.
         """
         if self._baseline is None:
             if self.baseline_file.is_file():
                 self._baseline = json.loads(self.baseline_file.read_text())
+                self._check_baseline(self._baseline)
             elif snapshot:
                 self._baseline = self._run_sweep(["inventory"], "inventário AWS")
                 self.baseline_file.parent.mkdir(parents=True, exist_ok=True)
                 self.baseline_file.write_text(json.dumps(self._baseline, indent=2))
         return self._baseline is not None
+
+    def _check_baseline(self, baseline: dict[str, list[str]]) -> None:
+        missing = [c for c in ORDER if c not in baseline]
+        if missing:
+            raise RuntimeError(
+                f"baseline {self.baseline_file} sem as categorias {missing}: estenda-o à mão a"
+                " partir de um inventário (só leitura) da conta limpa (README, seção AWS real)"
+            )
 
     def reset(self) -> None:
         """Apaga tudo o que não estava no baseline (arquivo; sem ele, tirado agora e gravado).

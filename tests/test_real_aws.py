@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 
 from iac_harness.cli import build_executor, build_toolchain, final_cleanup
+from iac_harness.executors import aws_sweep
 from iac_harness.executors.aws import RealAwsExecutor
-from iac_harness.executors.aws_sweep import ORDER, plan_deletions
+from iac_harness.executors.aws_sweep import ORDER, inventory, plan_deletions
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.modalities.execute import run_artifact
 from iac_harness.modalities.spec import MODALITIES
@@ -113,17 +114,22 @@ class _AwsToolchain(_StsToolchain):
         return subprocess.CompletedProcess(args, 0, json.dumps(out) + "\n", "")
 
 
+def _full_baseline(**items):
+    """Baseline com todas as categorias do ORDER (categoria ausente levanta erro)."""
+    return {c: items.get(c, []) for c in ORDER}
+
+
 def _modes(tc):
     return [c[2] for c in tc.calls if c[0] == "python3"]
 
 
 def test_baseline_is_loaded_from_existing_file(iac_env, tmp_path):
     baseline_file = tmp_path / "aws-baseline.json"
-    baseline_file.write_text(json.dumps({"s3_buckets": ["clean-account"]}))
+    baseline_file.write_text(json.dumps(_full_baseline(s3_buckets=["clean-account"])))
     tc = _AwsToolchain(ARN)
     RealAwsExecutor(tc, expected_arn=ARN, baseline_file=baseline_file).reset()
     assert _modes(tc) == ["sweep"]  # sem inventário novo
-    assert tc.sent_baseline == {"s3_buckets": ["clean-account"]}
+    assert tc.sent_baseline == _full_baseline(s3_buckets=["clean-account"])
 
 
 def test_baseline_file_is_created_when_missing(iac_env, tmp_path):
@@ -137,7 +143,7 @@ def test_baseline_file_is_created_when_missing(iac_env, tmp_path):
 
 def test_cleanup_sweeps_when_baseline_exists(iac_env, tmp_path):
     baseline_file = tmp_path / "aws-baseline.json"
-    baseline_file.write_text(json.dumps({"s3_buckets": []}))
+    baseline_file.write_text(json.dumps(_full_baseline()))
     tc = _AwsToolchain(ARN)
     RealAwsExecutor(tc, expected_arn=ARN, baseline_file=baseline_file).cleanup()
     assert _modes(tc) == ["sweep"]
@@ -218,6 +224,180 @@ def test_plan_deletions_only_outside_baseline():
     }
     assert list(plan) == [c for c in ORDER if c in plan]  # ordem de dependência
     assert plan_deletions(baseline, baseline) == {}
+
+
+class _FakeClient:
+    """Responde a paginators e chamadas diretas com as respostas configuradas por operação."""
+
+    def __init__(self, responses):
+        self.responses = responses
+
+    def get_paginator(self, op):
+        client = self
+
+        class _Paginator:
+            def paginate(self, **kwargs):
+                key = (op, tuple(kwargs.get("AlarmTypes", ())))
+                return [client.responses.get(key, client.responses.get(op, {}))]
+
+        return _Paginator()
+
+    def __getattr__(self, op):
+        return lambda **kwargs: self.responses.get(op, {})
+
+
+class _FakeSession:
+    def __init__(self, responses):
+        self.responses = responses
+
+    def client(self, service, **kwargs):
+        return _FakeClient(self.responses.get(service, {}))
+
+
+def test_inventory_excludes_aws_defaults():
+    responses = {
+        "elasticache": {
+            "describe_users": {"Users": [{"UserId": "default"}, {"UserId": "agent-user"}]},
+            "describe_user_groups": {"UserGroups": [{"UserGroupId": "agent-group"}]},
+        },
+        "dax": {
+            "describe_subnet_groups": {
+                "SubnetGroups": [{"SubnetGroupName": "default"}, {"SubnetGroupName": "mine"}]
+            },
+            "describe_parameter_groups": {
+                "ParameterGroups": [
+                    {"ParameterGroupName": "default.dax1.0"},
+                    {"ParameterGroupName": "pg"},
+                ]
+            },
+        },
+        "iam": {
+            "list_roles": {
+                "Roles": [{"RoleName": "iac-harness-awsb-fn"}, {"RoleName": "AWSServiceRole"}]
+            },
+        },
+        "cloudfront": {
+            "list_distributions": {"DistributionList": {"Items": [{"Id": "E1"}]}},
+            "list_origin_access_controls": {"OriginAccessControlList": {"Items": [{"Id": "O1"}]}},
+        },
+        "cloudwatch": {
+            ("describe_alarms", ("CompositeAlarm",)): {"CompositeAlarms": [{"AlarmName": "c"}]},
+            ("describe_alarms", ("MetricAlarm",)): {"MetricAlarms": [{"AlarmName": "m"}]},
+        },
+        "lambda": {"list_functions": {"Functions": [{"FunctionName": "fn"}]}},
+        "glacier": {"list_vaults": {"VaultList": [{"VaultName": "v"}]}},
+        "sagemaker": {"list_human_task_uis": {"HumanTaskUiSummaries": [{"HumanTaskUiName": "u"}]}},
+        "lightsail": {"get_relational_databases": {"relationalDatabases": [{"name": "db"}]}},
+    }
+    inv = inventory(_FakeSession(responses))
+    assert set(ORDER) == set(inv)
+    assert inv["elasticache_users"] == ["agent-user"]
+    assert inv["dax_subnet_groups"] == ["mine"] and inv["dax_parameter_groups"] == ["pg"]
+    assert inv["iam_roles"] == ["iac-harness-awsb-fn"]
+    assert inv["cloudfront_distributions"] == ["E1"] and inv["cloudfront_oacs"] == ["O1"]
+    assert inv["cloudwatch_composite_alarms"] == ["c"] and inv["cloudwatch_metric_alarms"] == ["m"]
+    # Baseline sem as categorias novas: ainda assim nenhum default entra no plano.
+    plan = plan_deletions(inv, {})
+    assert "default" not in plan["elasticache_users"]
+    assert not any(n.startswith("default") for n in plan["dax_subnet_groups"])
+
+
+def test_inventory_lists_unassigned_mfa_devices_and_kinesis_video_streams():
+    root_mfa = "arn:aws:iam::123:mfa/root-account-mfa-device"
+    responses = {
+        "iam": {
+            "list_virtual_mfa_devices": {
+                "VirtualMFADevices": [
+                    {"SerialNumber": "arn:aws:iam::123:mfa/example"},
+                    {"SerialNumber": root_mfa, "User": {"Arn": "arn:aws:iam::123:root"}},
+                    {
+                        "SerialNumber": "arn:aws:iam::123:mfa/u",
+                        "User": {"Arn": "arn:aws:iam::123:user/u"},
+                    },
+                ]
+            },
+        },
+        "kinesisvideo": {
+            "list_streams": {"StreamInfoList": [{"StreamARN": "arn:kv:s1", "StreamName": "s1"}]}
+        },
+        "cloudfront": {
+            "list_distributions": {"DistributionList": {}},
+            "list_origin_access_controls": {"OriginAccessControlList": {}},
+        },
+    }
+    inv = inventory(_FakeSession(responses))
+    assert inv["iam_virtual_mfa_devices"] == ["arn:aws:iam::123:mfa/example"]
+    assert inv["kinesis_video_streams"] == ["arn:kv:s1"]
+    # Mesmo com baseline vazio, dispositivo atribuído (root ou usuário) nunca entra no plano.
+    plan = plan_deletions(inv, {})
+    assert plan["iam_virtual_mfa_devices"] == ["arn:aws:iam::123:mfa/example"]
+
+
+def test_kinesis_video_stream_deleter_uses_arn_and_waits_until_gone(monkeypatch):
+    class Kv:
+        def __init__(self):
+            self.streams = ["arn:kv:s1"]
+            self.deleted = []
+
+        def delete_stream(self, StreamARN):
+            self.deleted.append(StreamARN)
+
+        def get_paginator(self, op):
+            kv = self
+
+            class _Paginator:
+                def paginate(self, **kwargs):
+                    listed = [{"StreamARN": a} for a in kv.streams]
+                    kv.streams = []  # some na segunda leitura
+                    return [{"StreamInfoList": listed}]
+
+            return _Paginator()
+
+    kv = Kv()
+
+    class Session(_FakeSession):
+        def client(self, service, **kwargs):
+            return kv if service == "kinesisvideo" else super().client(service, **kwargs)
+
+    monkeypatch.setattr(aws_sweep.time, "sleep", lambda s: None)
+    aws_sweep._deleters(Session({}))["kinesis_video_streams"]("arn:kv:s1")
+    assert kv.deleted == ["arn:kv:s1"] and kv.streams == []
+
+
+def test_plan_deletions_filters_roles_by_prefix():
+    plan = plan_deletions({"iam_roles": ["iac-harness-x", "OrganizationAccountAccessRole"]}, {})
+    assert plan == {"iam_roles": ["iac-harness-x"]}
+
+
+@pytest.mark.parametrize(
+    ("first", "then"),
+    [
+        ("elasticache_user_groups", "elasticache_users"),
+        ("cloudfront_distributions", "cloudfront_oacs"),
+        ("cloudfront_distributions", "s3_buckets"),
+        ("lambda_functions", "iam_roles"),
+        ("dax_subnet_groups", "ec2_subnets"),
+        ("dax_subnet_groups", "ec2_vpcs"),
+        ("glacier_vaults", "sns_topics"),
+        ("iam_virtual_mfa_devices", "iam_users"),
+        ("cloudwatch_composite_alarms", "cloudwatch_metric_alarms"),
+        ("cloudwatch_metric_alarms", "sns_topics"),
+    ],
+)
+def test_order_respects_dependencies(first, then):
+    assert ORDER.index(first) < ORDER.index(then)
+
+
+def test_baseline_missing_categories_raises_without_touching_file(iac_env, tmp_path):
+    baseline_file = tmp_path / "aws-baseline.json"
+    old = {c: [] for c in ORDER if c not in ("lambda_functions", "iam_roles")}
+    baseline_file.write_text(json.dumps(old))
+
+    tc = _AwsToolchain(ARN)
+    with pytest.raises(RuntimeError, match="iam_roles"):
+        RealAwsExecutor(tc, expected_arn=ARN, baseline_file=baseline_file).reset()
+    assert _modes(tc) == []  # nem inventário nem sweep
+    assert json.loads(baseline_file.read_text()) == old
 
 
 def test_build_wires_aws_kind(iac_env):

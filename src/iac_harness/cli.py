@@ -535,7 +535,8 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
 
     cells = {
         (r["task_id"], r["modality"]): (
-            flag(r["baseline_pass"]) + flag(r["ref_exec_ok"]) + flag(r["ref_check_pass"])
+            "sem ref" if r.get("ref_missing")
+            else flag(r["baseline_pass"]) + flag(r["ref_exec_ok"]) + flag(r["ref_check_pass"])
             + ("" if r["valid"] else " !")
         )
         for r in rows
@@ -543,7 +544,8 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
     tasks = list(dict.fromkeys(r["task_id"] for r in rows))
     width = max([len(t) for t in tasks] + [4])
     lines = [
-        "células: baseline_pass ref_exec_ok ref_check_pass (esperado 011; '!' = inválida)",
+        "células: baseline_pass ref_exec_ok ref_check_pass (esperado 011; '!' = inválida;"
+        " 'sem ref' = modalidade sem referência)",
         f"{'task':<{width}}  " + "  ".join(f"{m:<10}" for m in modalities),
     ]
     for t in tasks:
@@ -616,6 +618,12 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
         recorder.close()
         final_cleanup(executor)
     print(_modality_table(rows, modalities), file=sys.stderr)
+    no_ref = sum(1 for r in rows if r.get("ref_missing"))
+    print(
+        f"válidas: {sum(1 for r in rows if r['valid'])}, "
+        f"inválidas: {sum(1 for r in rows if r['valid'] is False)}, sem referência: {no_ref}",
+        file=sys.stderr,
+    )
     print(run_dir / "prevalidation.jsonl")
     return 0
 

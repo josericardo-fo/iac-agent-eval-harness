@@ -1,0 +1,16 @@
+# Só roda na AWS real: no Floci, CreateStream do Kinesis Video dá "UnknownOperationException:
+# Unknown operation: POST /createStream" (runs/prevalidation-merged/prevalidation.jsonl).
+# Substitui a task-388 (Glacier vault + SNS), reprovada no gate da AWS real em 28/10/2026:
+# "NoLongerSupportedException: This API is no longer supported for new accounts" nas 3 formas
+# (runs/20261028T012801-modality-prevalidate). É a próxima da fila do estrato 2 que não repete
+# serviço: a task-370 (Lightsail DB) foi pulada porque a task-367 continua
+# (docs/selecao-tarefas-modalidades.md, "Resultado do gate (28/10/2026)").
+# reference.tf (do IaC-Eval) declara provider "aws" com region = "us-east-1", a mesma do harness;
+# fica como está.
+# Enunciado copiado do IaC-Eval v2 sem o bloco "## Intent"; não cita Terraform, sem adaptação.
+# O enunciado não fixa nome nem parâmetros: o check aceita qualquer stream do Kinesis Video na
+# região que não esteja sendo apagado. As referências CLI/boto3 esperam "ACTIVE", como o provider.
+id = "task-069"
+category = "create"
+origin = "iac-eval-v2:aws/task-069"
+region = "us-east-1"
