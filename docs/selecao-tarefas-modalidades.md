@@ -179,3 +179,33 @@ As duas substitutas passaram no gate nas três modalidades (tabela acima).
 As 5 tarefas do aws-bench que completam o conjunto só na AWS real estão documentadas em
 `docs/datasets.md` (a sexta, `invalidate-cloudfront-cache`, está fora até decidir como passar o
 domínio e o id da distribuição, que só existem depois do initial).
+
+### Agente na AWS real (28/10/2026)
+
+`modality-run` com Haiku 5.5, N = 1, nas 12 tarefas × 3 formas
+(`runs/20261028T133701-modality-real-aws-only`; caiu uma vez na limpeza da task-198 e foi
+retomado com `--resume`). Inventário do root ao final: nada fora do baseline.
+
+| Forma | Criar (8) | Modificar (4) | Total | Tokens médios |
+|---|---|---|---|---|
+| Terraform | 7 | 2 | 9/12 | 4,8k |
+| CLI | 6 | 2 | 8/12 | 6,2k |
+| boto3 | 5 | 3 | 8/12 | 5,5k |
+
+Nenhuma diferença pareada é significativa (McNemar + Holm, p = 1,0). Falhas por origem:
+
+- **task-416 (3 formas), limite do ambiente:** o agente escolheu `db.m5.large` para o io1 e a
+  política `iac-harness-scoped-v2` (só RDS micro) negou `CreateDBInstance`; as 3 tentativas
+  foram gastas pedindo a liberação. A referência passa porque usa `db.t3.micro`. Achado: a trava
+  de custo restringe o espaço de soluções do agente.
+- **task-198 (CLI e boto3), agente:** o Redis exige um usuário com nome `default` no grupo
+  (`DefaultUserRequired`). O Terraform corrigiu na 2ª tentativa trocando um dos 3 usuários; CLI
+  e boto3 acrescentaram o `default` como 4º membro e o grupo ficou com 4 usuários, não 3.
+- **task-367 (boto3), agente:** `KeyError` ao ler o blueprint escolhido pela API.
+- **awsb-move-s3 (Terraform e CLI), enunciado:** o caminho dado está errado de propósito; o
+  agente não descobriu o certo.
+- **awsb-lambda-alias (Terraform) e awsb-dynamodb-strip (CLI), agente:** solução executou, mas o
+  estado ficou errado (falha silenciosa).
+
+`local-exec`: o Terraform o usou em 3 das 5 tarefas do aws-bench (dynamodb-strip, move-s3,
+sync-s3), as que não têm recurso nativo; ali o Terraform resolve chamando a CLI por baixo.
