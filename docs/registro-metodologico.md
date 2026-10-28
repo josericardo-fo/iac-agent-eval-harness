@@ -95,7 +95,10 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 **A1. "Haiku: Terraform pior em consultar (4/6 × 6/6)" é efeito do emulador.**
 - As duas falhas são do `query-sg-ssh-open` (reps 2 e 3), e nas duas a resposta lista os 5 grupos.
 - Na rep 3, o código usa os filtros `ip-permission.*`, que o Floci ignora (limitação já listada em `desenho-modalidades.md`).
-- Na rep 2, a lógica filtra as regras certas, mas o Floci devolve todas.
+- Na rep 2, a lógica filtra as regras certas, mas o Floci devolve todas. Revisão (28/10): o
+  código separa entrada e saída só pelo filtro `is-egress`, que não consta da documentação de
+  `DescribeSecurityGroupRules`; a falha fica como agente/emulador até o run da AWS real
+  (`selecao-tarefas-modalidades.md`, "Falhas por origem no Floci").
 - Conclusão: não sustenta "Terraform pior em consultar". Conferir no run da AWS real (`modality-real-aws-agent`, que tem a tarefa).
 
 **A2. "Terraform melhor em criar (36/36 × 29 × 28)" vem de 2 tarefas de premissa ambígua.**
@@ -130,13 +133,63 @@ McNemar por tarefa (maioria das reps) + Holm; diferença do bootstrap pareado po
 
 Com 2 a 12 tarefas por categoria, o McNemar por tarefa quase não tem poder (com 2 discordantes, o menor p é 0,5). Por isso o bootstrap é o teste a relatar. ICs com um limite exatamente em 0 vêm de pares sem nenhuma tarefa a favor do outro lado.
 
+### Checks sem conferência de efeito colateral (28/10/2026)
+
+Auditoria dos 37 `check.py` (O3; ABC [2] O.g.2). "Sim" = o check confere tudo o que o enunciado
+manda manter; "parcial" = confere uma parte; "não" = só confere o alvo. Resultado: 3 sim,
+3 parcial, 31 não.
+
+| Tarefa | Tipo | Confere? | O que uma conferência de efeito colateral veria |
+|---|---|---|---|
+| del-iam-user | remover | sim | (já confere o grupo `del-ops` e a ReadOnlyAccess) |
+| del-s3-bucket | remover | sim | (já confere o `del-keep-bucket`) |
+| del-sqs-dev | remover | sim | (já confere as 2 filas prod) |
+| mod-secret-tag | modificar | parcial | Confere segredo único e a tag Team. Falta: mesmo ARN (não recriado) e valor do segredo intacto. |
+| mod-sg-https | modificar | parcial | Confere grupo único e a regra 80. Falta: mesmo `GroupId` e nenhuma outra regra aberta. |
+| awsb-dynamodb-strip-ec2-fields-from-prod¹ | modificar | parcial | Confere os 7 registros alvo. Falta: os outros 93 registros intactos. |
+| mod-dynamodb-pitr | modificar | não | Tabela não recriada (mesma data de criação e chave) e nenhuma tabela nova. |
+| mod-dynamodb-ttl | modificar | não | Idem. |
+| mod-iam-user-policy | modificar | não | Mesmo `UserId`, nenhuma outra política anexada, nenhum usuário novo. |
+| mod-s3-encryption | modificar | não | Bucket não recriado (mesma data de criação) e nenhum bucket novo. |
+| mod-s3-versioning | modificar | não | Idem. |
+| mod-sqs-retention | modificar | não | Mesma fila (não recriada), outros atributos iguais, nenhuma fila nova. |
+| awsb-lambda-versioned-alias-update¹ | modificar | não | Tabela antiga ainda existe; código e role da função iguais. |
+| awsb-move-s3-contents-within-bucket¹ | modificar | não | `destination/placeholder.txt` mantido; conteúdo dos arquivos movidos igual ao original. |
+| awsb-sync-s3-buckets-with-metadata¹ | modificar | não | Objetos do bucket de origem intactos (conteúdo e metadados). |
+| query-dynamodb-ondemand | consultar | não | Estado igual ao inicial (o enunciado proíbe criar, mudar ou remover). |
+| query-sg-ssh-open | consultar | não | Idem. |
+| 20 tarefas de criação² | criar | não | Nada fora do recurso pedido foi criado ou mudado. |
+
+¹ Só na AWS real; o check é o do aws-bench, copiado sem alteração.
+² task-069, 108, 110, 115, 118, 130, 198, 201, 228, 229, 230, 231, 233, 234, 267, 367, 373,
+375, 416 e awsb-create-s3-bucket-with-config.
+
+**O que se viu nos runs atuais.** Nenhum caso de efeito colateral apareceu. Busca feita nos
+artefatos dos dois runs do Floci e do run da AWS real: nenhum plano Terraform de modificar ou
+consultar tem `destroy`, e nenhum script CLI/boto3 dessas tarefas chama `delete`/`create` de
+tabela, bucket, fila, usuário, segredo, SG ou VPC. A busca é por padrão de texto, não uma
+prova. Única remoção nas tarefas de modificar: `awsb-move-s3` (mover = copiar e apagar, como
+pedido).
+
+**Recomendação (não aplicada).**
+- Onde importa: as 12 de modificar. É onde recriar o recurso ou mexer no vizinho é plausível
+  (ex.: Terraform que força replace, script que cria outro recurso com o mesmo nome). As de
+  consultar vêm logo depois, porque o enunciado proíbe mudar o estado. As de criar partem de
+  conta vazia e importam menos.
+- Não mudar nenhum `check.py` agora: mudaria a nota das tarefas e quebraria a comparação com os
+  runs existentes. Se a conferência entrar, que seja numa versão nova dos checks, antes de um
+  run novo, e relatada como métrica à parte (ex.: `collateral_ok`) ao lado de `state_pass`, sem
+  alterar a nota atual.
+- Nos checks do aws-bench, a regra do projeto é não editar o upstream; a conferência ficaria no
+  adaptador.
+
 ## 4. Plano
 
 **Reanalisar (sem custo, só os dados existentes)**
 1. ~~Bootstrap como teste principal; McNemar por tarefa~~: feito em 28/10 (`mcnemar_unit = "task_majority"`).
 2. ~~Relatar com e sem task-115/230 e `query-sg-ssh-open`~~: feito em 28/10 (`--exclude-tasks`; números acima).
-3. Separar as falhas por origem nas tabelas (agente, enunciado, emulador, harness, permissão), como já foi feito na AWS real.
-4. Listar os checks sem conferência de efeito colateral (O3).
+3. ~~Separar as falhas por origem nas tabelas (agente, enunciado, emulador, harness, permissão)~~: feito em 28/10 (`selecao-tarefas-modalidades.md`, "Falhas por origem no Floci").
+4. ~~Listar os checks sem conferência de efeito colateral (O3)~~: feito em 28/10 (§3, "Checks sem conferência de efeito colateral").
 5. Opcional: pass^3 por forma no emulador (consistência, τ-bench).
 
 **Re-rodar (custo baixo; decidir com o usuário)**

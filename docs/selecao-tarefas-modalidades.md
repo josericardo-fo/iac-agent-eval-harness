@@ -215,3 +215,72 @@ Falhas por origem:
 
 `local-exec`: o Terraform o usou em 3 das 5 tarefas do aws-bench (dynamodb-strip, move-s3,
 sync-s3), as que não têm recurso nativo; ali o Terraform resolve chamando a CLI por baixo.
+
+## Falhas por origem no Floci (28/10/2026)
+
+Cada execução reprovada dos dois runs no emulador, classificada pela mesma regra da AWS real.
+A origem vem da leitura do artefato e da saída de cada tentativa (`events.jsonl`, evento
+`attempt`). Quando a leitura não basta para separar duas origens, a linha leva as duas.
+
+### Haiku (`runs/20261027T150905-modality-haiku`, N = 3)
+
+| Origem | Terraform | CLI | boto3 |
+|---|---|---|---|
+| agente | 1 | 0 | 0 |
+| agente/enunciado | 0 | 0 | 2 |
+| agente/emulador | 1 | 0 | 0 |
+| enunciado | 0 | 6 | 6 |
+| emulador | 1 | 0 | 0 |
+| harness | 0 | 1 | 0 |
+| **Total de falhas (de 75)** | **3** | **7** | **8** |
+
+- **del-s3-bucket, Terraform rep 1, agente.** O agente pôs `force_destroy = true` no bucket
+  `del-logs-old` e deixou o recurso na configuração. O apply só apagou objetos e versionamento;
+  o bucket ficou (falha silenciosa). Artefato:
+  `del-s3-bucket/1/terraform/attempt_1/main.tf`.
+- **task-115, CLI e boto3, reps 1–3, enunciado.** As 6 execuções procuram o bucket
+  `pike-680235478471`, não acham e param sem criar ("não existe ou não está acessível"). O
+  Terraform cria o bucket e passa. Saídas em `task-115/<rep>/{cli,boto3}/attempt_*`.
+- **task-230, CLI e boto3, reps 1–3, enunciado.** "the DynamoDB table" não existe; os scripts
+  pedem o nome da tabela (`TABLE_NAME`) ou dizem "nenhuma tabela encontrada". Saídas em
+  `task-230/<rep>/{cli,boto3}/attempt_*`.
+- **task-231, boto3 rep 3, agente/enunciado.** Mesmo padrão da task-230: o script exige
+  `--table` e depois diz que não há tabela. Mas o enunciado não diz "a tabela", e as outras
+  8 execuções da tarefa criaram uma e passaram. Artefato: `task-231/3/boto3/attempt_*`.
+- **task-373, boto3 rep 3, agente/enunciado.** O script supõe que a instância
+  `app-instance-01` já existe e para quando não a acha. "attaches ... to a Lightsail Instance"
+  admite as duas leituras; as outras 8 execuções criaram a instância. Artefato:
+  `task-373/3/boto3/attempt_*`.
+- **query-sg-ssh-open, Terraform rep 3, emulador.** O código usa os filtros `ip-permission.*`,
+  que o Floci ignora (`desenho-modalidades.md` §7); a resposta lista os 5 grupos. Artefato:
+  `query-sg-ssh-open/3/terraform/attempt_2/main.tf`.
+- **query-sg-ssh-open, Terraform rep 2, agente/emulador.** O código filtra as regras com
+  `is-egress = false` e não confere `is_egress` em cada regra. O Floci ignorou o filtro, as
+  regras de saída (`-1`, `0.0.0.0/0`) entraram e a resposta listou os 5 grupos. Só que
+  `is-egress` não está entre os filtros documentados de `DescribeSecurityGroupRules` (só
+  `group-id`, `security-group-rule-id` e `tag:`). Na AWS real, o mesmo código pode falhar ou dar
+  erro; o run `modality-real-aws-agent`, que tem a tarefa, decide. Artefato:
+  `query-sg-ssh-open/2/terraform/attempt_2/main.tf` e o `terraform.tfstate` ao lado.
+- **task-130, CLI rep 2, harness.** As 3 tentativas pararam em 8192 tokens de saída
+  (`max_tokens`), sem o bloco `run.sh`, e a execução virou `FORMAT_FAIL`. Saídas em
+  `task-130/2/cli/attempt_*` (ver A4 em `registro-metodologico.md`).
+
+### Sonnet (`runs/20261020T184924-modality-spike`, N = 3)
+
+| Origem | Terraform | CLI | boto3 |
+|---|---|---|---|
+| enunciado | 0 | 0 | 3 |
+| **Total de falhas (de 75)** | **0** | **0** | **3** |
+
+- **task-230, boto3 reps 1–3, enunciado.** O script lista as tabelas, não acha nenhuma,
+  imprime "No DynamoDB tables found" e sai com sucesso na 1ª tentativa (falha silenciosa).
+  Saídas em `task-230/<rep>/boto3/attempt_1`.
+
+### Leitura revisada
+
+Nenhuma modalidade é melhor que outra em nenhum tipo de caso, com os dois modelos. As diferenças
+vistas no Floci vêm de duas fontes: as task-115 e task-230 (enunciado que pressupõe um recurso
+inexistente: o Terraform cria, CLI e boto3 procuram e falham) e o `query-sg-ssh-open` (Floci).
+Tirando essas tarefas, sobram 4 falhas no Haiku (1 do agente, 2 agente/enunciado e 1 do
+harness) e nenhuma no Sonnet. Os números com e sem essas tarefas estão em
+`registro-metodologico.md` §3 ("Números da reanálise").
