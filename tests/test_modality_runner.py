@@ -443,7 +443,7 @@ def test_modality_metrics_local_exec_counts():
 
 
 def test_modality_metrics_paired_mcnemar():
-    # 10 pares (task, rep): terraform acerta todos; cli erra 6 -> McNemar b=6, c=0
+    # N=1, 10 tarefas: terraform acerta todos; cli erra 6 -> McNemar b=6, c=0 (igual ao por rep)
     events = []
     for i in range(10):
         events.append(_final("terraform", "create", True, 1, 10, "EXEC_OK", task_id=f"t{i}"))
@@ -454,10 +454,58 @@ def test_modality_metrics_paired_mcnemar():
     assert (tf_cli["only_first"], tf_cli["only_second"]) == (6, 0)
     assert tf_cli["mcnemar_p"] == pytest.approx(2 / 2**6)
     assert tf_cli["holm_p"] == tf_cli["mcnemar_p"]  # um único par: Holm não muda
+    assert tf_cli["mcnemar_unit"] == "task_majority"
     assert tf_cli["diff_mean"] == pytest.approx(-0.6)
     assert cmp["overall"]["first_attempt_success"][0]["only_first"] == 6
     assert cmp["overall"]["total_tokens"][0]["diff_mean"] == pytest.approx(20)
     assert cmp["by_category"]["create"]["success"][0]["only_first"] == 6
+
+
+def test_modality_metrics_mcnemar_collapses_reps_by_majority():
+    # N=3, terraform vs cli: a = 2/3 vs 0/3 (um par discordante, não dois); b = 1/3 vs 0/3
+    # (ambos falham na maioria: concordante)
+    tf_ok = {"a": [True, True, False], "b": [True, False, False]}
+    events = []
+    for t, oks in tf_ok.items():
+        for r, ok in enumerate(oks, start=1):
+            events.append(_final("terraform", "create", ok, 1, 10, "EXEC_OK", task_id=t, rep=r))
+            events.append(_final("cli", "create", False, 1, 10, "EXEC_OK", task_id=t, rep=r))
+    (tf_cli,) = compute_modality_metrics(events, n_boot=200)["comparisons"]["overall"]["success"]
+    assert tf_cli["n_pairs"] == 2
+    assert (tf_cli["only_first"], tf_cli["only_second"]) == (1, 0)
+    assert tf_cli["mcnemar_p"] == pytest.approx(1.0)
+    assert tf_cli["diff_mean"] == pytest.approx(-0.5)  # bootstrap continua usando a taxa por tarefa
+
+
+def _metrics_run(tmp_path, events):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    (run_dir / "run_config.json").write_text(json.dumps({"config": {}}))
+    return run_dir
+
+
+def test_modality_metrics_cli_exclude_tasks(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "_modality_difficulty", dict)
+    events = [
+        _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="a"),
+        _final("cli", "create", False, 1, 10, "EXEC_OK", task_id="b"),
+    ]
+    run_dir = _metrics_run(tmp_path, events)
+    assert main(["modality-metrics", str(run_dir), "--exclude-tasks", "b"]) == 0
+    m = json.loads(capsys.readouterr().out)
+    assert m["excluded_tasks"] == ["b"] and m["n_tasks"] == 1
+    assert m["modalities"]["cli"]["overall"]["success"]["k"] == 1
+    argv = ["modality-metrics", str(run_dir), "--exclude-tasks", "b", "--format", "table"]
+    assert main(argv) == 0
+    assert "tarefas excluídas: b" in capsys.readouterr().out
+
+
+def test_modality_metrics_cli_exclude_unknown_task_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_modality_difficulty", dict)
+    run_dir = _metrics_run(tmp_path, [_final("cli", "create", True, 1, 10, "EXEC_OK", task_id="a")])
+    with pytest.raises(SystemExit, match="não encontradas no run"):
+        main(["modality-metrics", str(run_dir), "--exclude-tasks", "taks-a"])
 
 
 def test_modality_metrics_by_difficulty():

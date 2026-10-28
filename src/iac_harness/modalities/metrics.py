@@ -24,7 +24,6 @@ from iac_harness.metrics import (
 from iac_harness.modalities.spec import MODALITIES
 
 Row = dict[str, Any]
-Key = tuple[str, int]  # (task_id, rep): unidade de pareamento entre modalidades
 
 
 def _success(e: Row) -> bool:
@@ -41,6 +40,14 @@ def _per_task(rows: list[Row], value: Callable[[Row], float]) -> dict[str, float
     for e in rows:
         by_task[e["task_id"]].append(value(e))
     return {t: statistics.fmean(v) for t, v in by_task.items()}
+
+
+def _task_majority(rows: list[Row], ok: Callable[[Row], bool]) -> dict[str, bool]:
+    """task_id → maioria das reps com sucesso (empate, só possível com N par, conta como falha)."""
+    by_task: dict[str, list[bool]] = defaultdict(list)
+    for e in rows:
+        by_task[e["task_id"]].append(ok(e))
+    return {t: sum(v) * 2 > len(v) for t, v in by_task.items()}
 
 
 def _block(
@@ -110,15 +117,23 @@ def _block(
 def _comparisons(
     rows_by_mod: dict[str, list[Row]], n_boot: int, seed: int
 ) -> dict[str, list[dict[str, Any]]]:
-    """Pares de modalidades pareados por (task_id, rep); Holm dentro de cada métrica do bloco."""
+    """Pares de modalidades pareados por tarefa; Holm dentro de cada métrica do bloco.
+
+    O teste principal é o bootstrap pareado, que reamostra tarefas. O McNemar também usa a tarefa
+    como unidade (`mcnemar_unit`): as reps da mesma tarefa não são observações independentes
+    (Miller 2024, arXiv 2411.00640 §2.2), então cada (tarefa, modalidade) vira um único desfecho
+    binário = maioria das reps com sucesso (`sucessos * 2 > n_reps`). Com N=1 é o desfecho da
+    própria trajetória; com N par, empate conta como falha. `n_pairs`, `only_first` e
+    `only_second` contam tarefas.
+    """
     pairs = list(combinations([m for m in MODALITIES if m in rows_by_mod], 2))
     out: dict[str, list[dict[str, Any]]] = {}
     for name, ok in (("success", _success), ("first_attempt_success", _first_attempt)):
-        outcome = {m: {(e["task_id"], e["rep"]): ok(e) for e in r} for m, r in rows_by_mod.items()}
+        outcome = {m: _task_majority(r, ok) for m, r in rows_by_mod.items()}
         per_task = {m: _per_task(r, lambda e, ok=ok: float(ok(e))) for m, r in rows_by_mod.items()}
         cmps: list[dict[str, Any]] = []
         for x, y in pairs:
-            keys: list[Key] = sorted(set(outcome[x]) & set(outcome[y]))
+            keys = sorted(set(outcome[x]) & set(outcome[y]))
             only_x = sum(1 for k in keys if outcome[x][k] and not outcome[y][k])
             only_y = sum(1 for k in keys if outcome[y][k] and not outcome[x][k])
             diff, lo, hi = paired_bootstrap(per_task[x], per_task[y], n_boot, seed)
@@ -129,6 +144,7 @@ def _comparisons(
                     "only_first": only_x,
                     "only_second": only_y,
                     "mcnemar_p": mcnemar_exact(only_x, only_y),
+                    "mcnemar_unit": "task_majority",
                     "diff_mean": diff,
                     "diff_ci95": [lo, hi],
                 }

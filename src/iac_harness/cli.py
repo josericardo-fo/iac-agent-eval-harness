@@ -833,10 +833,18 @@ def cmd_modality_metrics(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
     prices = {m: tuple(p) for m, p in cfg.get("prices", {}).items()}
-    metrics = compute_modality_metrics(
-        load_events(run_dir / "events.jsonl"), prices, difficulty=_modality_difficulty()
-    )
+    events = load_events(run_dir / "events.jsonl")
+    excluded = sorted(set(args.exclude_tasks or ()))
+    # guarda contra erro de digitação: só exclui tarefas que existem no run
+    missing = set(excluded) - {e["task_id"] for e in events if "task_id" in e}
+    if missing:
+        raise SystemExit(f"tarefas não encontradas no run: {sorted(missing)}")
+    events = [e for e in events if e.get("task_id") not in excluded]
+    metrics = compute_modality_metrics(events, prices, difficulty=_modality_difficulty())
+    metrics["excluded_tasks"] = excluded
     if args.format == "table":
+        if excluded:
+            print(f"tarefas excluídas: {', '.join(excluded)}")
         print(_modality_metrics_table(metrics))
     else:
         print(json.dumps(metrics, indent=2, ensure_ascii=False))
@@ -1177,6 +1185,12 @@ def main(argv: list[str] | None = None) -> int:
     p_mmet = sub.add_parser("modality-metrics", help="métricas de um modality-run")
     p_mmet.add_argument("run_dir", type=Path)
     p_mmet.add_argument("--format", choices=("json", "table"), default="json")
+    p_mmet.add_argument(
+        "--exclude-tasks",
+        nargs="+",
+        metavar="TASK",
+        help="remove essas tarefas (task_id) antes de calcular as métricas",
+    )
     p_mmet.set_defaults(func=cmd_modality_metrics)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")

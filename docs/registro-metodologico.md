@@ -1,0 +1,195 @@
+# Registro metodológico do teste de modalidades
+
+Criado em 28/10/2026. Liga cada decisão de método a uma técnica consolidada, diz onde seguimos,
+onde adaptamos e onde a decisão é nossa, e marca o que fazer com ela. As referências foram
+conferidas na fonte (lista no fim); o que não foi possível conferir está dito.
+
+**Como ler.**
+
+- **Base:** **Segue** = faz como a referência; **Adapta** = parte da referência e muda um ponto
+  (motivo dito); **Própria** = sem precedente direto, justificada por achado ou pelos critérios
+  do projeto (justo, reproduzível, realista).
+- **Ação:** **Manter**; **Reanalisar** (os dados existentes bastam, custo zero); **Re-rodar**
+  (precisa de run novo); **Declarar** (só escrever como limitação).
+
+## 1. Decisões
+
+### Desenho
+
+| # | Decisão | Base | Referência | Ação |
+|---|---|---|---|---|
+| D1 | Comparar Terraform × CLI × boto3 por tipo de caso | Adapta | Yang et al. [1] compararam SDK, CLI, IaC e portal no Azure, com 11 tarefas de VM e um agente diferente para o portal. Aqui: o mesmo modelo nas 3 formas, AWS, 4 tipos de caso. Não é replicação, é a mesma pergunta com controle. | Manter. Escrever "replica a pergunta", não "replica o estudo". |
+| D2 | Desenho pareado: as mesmas tarefas e repetições nas 3 formas | Segue | Miller [8] §4.2: diferença pareada por questão reduz a variância "de graça". | Manter |
+| D3 | Prompt-base comum + bloco mínimo e simétrico por forma, versionado (`mod-v3`) | Adapta | SWE-agent [6]: a interface muda o resultado (18,0% × 11,0%), então é variável confundida. Terminal-Bench [5] usa um scaffold neutro. Yang et al. [1] variam o prompt (8 tentativas com prompts diferentes); aqui ele é fixo. | Manter. Declarar a sensibilidade ao texto (Sclar et al. [10]). |
+| D4 | Fora do escopo: ClickOps e monitoramento | Própria | O emulador não tem console; não há oráculo para monitoramento. | Manter |
+| D5 | Mesmo `max_tokens` (8192) nas 3 formas | Própria | Justiça: o mesmo orçamento. | Reanalisar a task-130 (ver A4). |
+
+### Tarefas
+
+| # | Decisão | Base | Referência | Ação |
+|---|---|---|---|---|
+| T1 | Sorteio com semente e critério escrito antes, sem escolha à mão; substituição pela fila | Própria (boa prática) | Evita escolher tarefas que favorecem uma forma. É o ponto mais forte do método. | Manter |
+| T2 | Enunciado byte a byte, sem editar o dataset; tarefas ambíguas ficam como achado | Própria | Regra do projeto. O ABC [2] T.7/T.10 pede verificar a tarefa e inspecionar quem falha sempre. Aqui: verificado e mantido, com relato. | Manter. Relatar com e sem as tarefas de premissa ambígua (A2). |
+| T3 | Excluir enunciados que citam "terraform"/"HCL" | Própria | Justiça entre formas: o pedido não pode nomear uma delas. | Manter |
+| T4 | Gate: o estado inicial reprova e a referência passa em cada forma | Segue | ABC [2] T.8/T.9 (tarefa resolvível, solver oráculo) e R.13 (agente trivial). O estado inicial reprovando faz o papel do "agente que não faz nada". Terminal-Bench [5] §2.3 (Solvability). | Manter |
+| T5 | Tarefas autorais de modificar, remover e consultar | Própria | O IaC-Eval só tem criação; Yang et al. [1] acham a diferença justamente em updates. | Manter. Declarar a autoria (risco de viés de quem escreve). |
+| T6 | Adaptar a referência (nunca o enunciado) quando ela não realiza o pedido ou a API saiu | Própria | Registrado no `meta.toml`. O agente nunca vê a referência (ABC [2] T.5). | Manter |
+
+### Oráculo
+
+| # | Decisão | Base | Referência | Ação |
+|---|---|---|---|---|
+| O1 | A nota é o estado final via API (`check.py`), não o artefato | Segue | AppWorld [3] §3.2, τ-bench [4] §3 e Terminal-Bench [5] §2.1 ("testam o estado final, não os comandos"). | Manter |
+| O2 | O check aceita qualquer solução que deixe o estado certo (ex.: qualquer tabela com PITR na task-230) | Segue | ABC [2] O.g.1 (todas as saídas válidas); AppWorld [3] (conjunto de estados válidos). | Manter |
+| O3 | Efeito colateral (mexer no que não devia) | Parcial | ABC [2] O.g.2 e AppWorld [3] (C_expect/C_allow) pedem isso. Hoje só os checks de remoção e alguns de modificação conferem o que deve continuar igual (ex.: `del-sqs-dev` confere as filas prod). | Reanalisar: listar os checks sem essa conferência e decidir se vale incluir. |
+| O4 | Resposta de consulta por `output` (Terraform) ou `answer.json` | Segue | τ-bench [4]: r_output. | Manter |
+| O5 | Na AWS real, o check reprovado é refeito por até 60 s | Adapta | ABC [2] O.f.2 (tirar o não determinismo). É igual nas 3 formas, só depois da solução, nunca no baseline. | Manter |
+| O6 | `success` (execução ok + estado) e `state_pass` (só estado) lado a lado | Própria | `state_pass` é o comparável com [3][4][5]; `success` é o critério mais estrito do protocolo. | Manter |
+
+### Protocolo do agente
+
+| # | Decisão | Base | Referência | Ação |
+|---|---|---|---|---|
+| P1 | Script inteiro + correção pelo erro, até 3 tentativas; a nota nunca volta ao agente | Adapta | Reflexion (protocolo [14]) e SWE-agent [6] (feedback informativo e conciso); ABC [2] T.5 (isolar o agente do gabarito). Não é um agente com várias ferramentas: é uma geração por tentativa. | Manter. Declarar que mede "gerar e corrigir", não exploração livre. |
+| P2 | Erro truncado em começo + fim | Segue | mini-swe-agent (corte no meio da saída longa). | Manter |
+| P3 | Terraform modifica herdando o tfstate; CLI/boto3 recebem o `initial.tf` como descrição | Adapta | Yang et al. [1] dizem que o IaC falhou por não levar o estado ao modelo. Aqui o estado é dado, o que testa o mecanismo. | Manter. Declarar a assimetria inerente à forma. |
+
+### Ambiente
+
+| # | Decisão | Base | Referência | Ação |
+|---|---|---|---|---|
+| E1 | Emulador (Floci) como base, com reset por restart e versões fixadas | Segue | ABC [2] T.1, T.4 e T.6 (versões, limpeza, ambiente congelado). | Manter |
+| E2 | LocalStack como segunda opinião só para as referências | Própria | Separa o efeito do emulador do efeito da tarefa. | Manter |
+| E3 | AWS real só num subconjunto | Adapta | ABC [2] T.6 desaconselha recurso externo dinâmico. Os achados confirmam o porquê (APIs fechadas, nomes de bucket de outra conta). A real entra como validade externa, não como base. | Manter |
+| E4 | Trava de custo (IAM) e task-416 como "bloqueio de permissão" | Própria | ABC [2] R.8/R.11 (relatar o impacto de falhas inevitáveis). Separada dos erros do agente, com totais com e sem ela. | Manter |
+
+### Estatística
+
+| # | Decisão | Base | Referência | Ação |
+|---|---|---|---|---|
+| S1 | McNemar exato + Holm entre os 3 pares | Adapta | Dietterich [9] recomenda McNemar para comparar dois classificadores no mesmo conjunto (conferido só o resumo). Holm [11]. **Problema:** os pares são (tarefa, rep), e com N=3 cada tarefa entra 3 vezes. As repetições não são independentes (Miller [8] §2.2: o erro padrão ingênuo chega a ser ~3× menor). | **Reanalisar** (A3) |
+| S2 | Bootstrap pareado reamostrando tarefas | Segue | Miller [8] (agrupar por questão). Já está implementado e é o teste certo para N>1. | Manter, como teste principal. |
+| S3 | Intervalo de Wilson | Segue | Wilson [12]; Brown, Cai e DasGupta [13]. ABC [2] R.10. | Manter |
+| S4 | N=3 no emulador; N=1 na AWS real | Adapta | Terminal-Bench [5]: ≥ 5 runs com IC 95%. Miller [8] §3.1: repetir reduz variância. N=1 só permite leitura exploratória. | Declarar N=1 como exploratório; ver R1. |
+| S5 | pass@k só com k ≤ N | Segue | Chen et al. (protocolo [13]): n ≥ k. τ-bench [4]: pass^k, que mede consistência (todas as k tentativas acertam). | Opcional: relatar pass^3 no emulador (A5). |
+
+## 2. Auditoria pelo ABC [2]
+
+| Item | Situação |
+|---|---|
+| T.1 versões / T.4 limpeza / T.6 ambiente congelado | Atende (digest, lock, `prompt_version`; reset; emulador fixo) |
+| T.5 agente isolado do gabarito | Atende (referência e check fora do workspace; nota não volta) |
+| T.7 verificar tarefa / T.8 resolvível / T.9 oráculo | Atende (gate de pré-validação) |
+| T.10 inspecionar outliers | Parcial. Feito para algumas tarefas; faltava para as que decidem as manchetes (A1, A2). |
+| O.g.1 todas as saídas válidas | Atende |
+| O.g.2 efeito colateral | Parcial (O3) |
+| O.g.3 mudança trivial não passa | Atende (o baseline reprova) |
+| R.5 relação entre construto e medida | Falta escrever: mede "gerar e corrigir um artefato numa forma", não "agente de nuvem" em geral |
+| R.7–R.9, R.11 falhas conhecidas e impacto | Atende em boa parte (listas do Floci, achados do dataset); falta a leitura das manchetes com essas falhas |
+| R.10 significância e IC | Atende, com a ressalva S1 |
+| R.13 agente trivial | Atende (baseline do estado inicial) |
+| R.3 contaminação | Declarar (dataset público desde 2024; mais Terraform que boto3 nos dados de treino, cf. MultiPL-E [14]) |
+
+## 3. Achados que mudam a leitura dos resultados
+
+**A1. "Haiku: Terraform pior em consultar (4/6 × 6/6)" é efeito do emulador.**
+- As duas falhas são do `query-sg-ssh-open` (reps 2 e 3), e nas duas a resposta lista os 5 grupos.
+- Na rep 3, o código usa os filtros `ip-permission.*`, que o Floci ignora (limitação já listada em `desenho-modalidades.md`).
+- Na rep 2, a lógica filtra as regras certas, mas o Floci devolve todas.
+- Conclusão: não sustenta "Terraform pior em consultar". Conferir no run da AWS real (`modality-real-aws-agent`, que tem a tarefa).
+
+**A2. "Terraform melhor em criar (36/36 × 29 × 28)" vem de 2 tarefas de premissa ambígua.**
+- 12 das 15 falhas de CLI e boto3 em criação são das task-115 e task-230. Os enunciados pressupõem um recurso que não existe (bucket `pike-…`, "the DynamoDB table").
+- O Terraform cria o recurso e passa; CLI e boto3 procuram o recurso, não acham e falham.
+- Sem as duas: 30/30, 29/30 e 28/30, um empate.
+- Conclusão: o achado real é "diante de enunciado que pressupõe um recurso inexistente, a forma declarativa cria e a imperativa falha". Esse achado vale para o toolkit; "Terraform cria melhor" não se sustenta.
+
+**A3. McNemar com repetições como pares independentes (S1).**
+- Os p-values atuais tratam 3 reps da mesma tarefa como 3 observações.
+- O efeito é tornar o teste otimista. Hoje nada deu significativo, então a conclusão não muda.
+- Mesmo assim, o teste precisa ser corrigido antes de qualquer resultado positivo.
+
+**A4. task-130 CLI rep 2: estouro de `max_tokens` nas 3 tentativas.**
+- Conta hoje como `FORMAT_FAIL` do agente, mas é limite do harness (o HANDOFF já classifica assim).
+
+### Números da reanálise (28/10/2026)
+
+McNemar por tarefa (maioria das reps) + Holm; diferença do bootstrap pareado por tarefa (segunda − primeira) com IC 95%. Comando: `uv run iac-harness modality-metrics <run> [--exclude-tasks ...]`.
+
+| Run | Criar (TF / CLI / boto3) | Consultar | Total | Leitura |
+|---|---|---|---|---|
+| Haiku, Floci, N=3 | 36/36, 29/36, 28/36 | 4/6, 6/6, 6/6 | 72, 68, 67 de 75 | Holm = 1 em tudo. Único IC sem o zero: criar TF×boto3, −0,22 [−0,44; −0,03]. |
+| ↳ sem task-115/230 | 30/30, 29/30, 28/30 | — | 66, 68, 67 de 69 | Criar: 0 tarefas discordantes. O IC acima vinha só dessas 2 tarefas. |
+| ↳ sem query-sg-ssh-open | — | 3/3 nas 3 | — | A desvantagem do TF em consultar vinha só dessa tarefa. |
+| Sonnet, Floci, N=3 | 36/36, 36/36, 33/36 | 6/6 nas 3 | 75, 75, 72 de 75 | As 3 falhas do boto3 são task-115/230; sem elas, 100% em tudo. |
+| Haiku, AWS real, N=1 | 7/8, 6/8, 5/8 | — | 9, 8, 8 de 12 | Holm = 1; ICs largos (±0,25 a ±0,75). Exploratório. |
+
+**Conclusão:** com o protocolo atual, nenhuma modalidade é melhor que outra em nenhum tipo de caso. As diferenças vistas vêm de duas fontes:
+- um padrão de comportamento: enunciado que pressupõe um recurso inexistente (o Terraform cria; CLI e boto3 falham);
+- uma limitação do emulador.
+
+Com 2 a 12 tarefas por categoria, o McNemar por tarefa quase não tem poder (com 2 discordantes, o menor p é 0,5). Por isso o bootstrap é o teste a relatar. ICs com um limite exatamente em 0 vêm de pares sem nenhuma tarefa a favor do outro lado.
+
+## 4. Plano
+
+**Reanalisar (sem custo, só os dados existentes)**
+1. ~~Bootstrap como teste principal; McNemar por tarefa~~: feito em 28/10 (`mcnemar_unit = "task_majority"`).
+2. ~~Relatar com e sem task-115/230 e `query-sg-ssh-open`~~: feito em 28/10 (`--exclude-tasks`; números acima).
+3. Separar as falhas por origem nas tabelas (agente, enunciado, emulador, harness, permissão), como já foi feito na AWS real.
+4. Listar os checks sem conferência de efeito colateral (O3).
+5. Opcional: pass^3 por forma no emulador (consistência, τ-bench).
+
+**Re-rodar (custo baixo; decidir com o usuário)**
+- R1. Tarefas só na AWS real com N=3 em vez de N=1 (S4). Hoje 9 × 8 × 8 com N=1 não sustenta nenhuma comparação.
+- R2. task-130 nas 3 formas com `max_tokens` maior, igual para todas (A4). Só vale se a tarefa importar para a conclusão.
+- R3. Opcional: robustez do prompt, com um parafraseado do bloco de modalidade numa amostra (D3, Sclar [10]).
+
+**Não precisa re-rodar**
+- Os runs de Sonnet e Haiku no emulador: o protocolo e o prompt (`mod-v3`) são os mesmos, e os problemas são de leitura, não de coleta.
+- O A/B/C da Semana 6: tem protocolo e referências próprias (`protocolo.md`).
+
+**Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
+
+## Referências (conferidas em 28/10/2026)
+
+[1] Yang, Z. et al. (2025). Cloud Infrastructure Management in the Age of AI Agents. ACM SIGOPS
+OSR 59(1). https://doi.org/10.1145/3759441.3759443 (lido o preprint arXiv:2506.12270).
+
+[2] Zhu, Y. et al. (2025). Establishing Best Practices for Building Rigorous Agentic Benchmarks
+(ABC). arXiv:2507.02825, §4.
+
+[3] Trivedi, H. et al. (2024). AppWorld. ACL 2024. https://doi.org/10.18653/v1/2024.acl-long.850
+
+[4] Yao, S. et al. (2024). τ-bench. arXiv:2406.12045.
+
+[5] Merrill, M. A. et al. (2026). Terminal-Bench. arXiv:2601.11868.
+
+[6] Yang, J. et al. (2024). SWE-agent: Agent-Computer Interfaces Enable Automated Software
+Engineering. NeurIPS 2024. arXiv:2405.15793. mini-swe-agent:
+https://github.com/SWE-agent/mini-swe-agent
+
+[7] Chen, M. et al. (2021). Evaluating Large Language Models Trained on Code. arXiv:2107.03374.
+
+[8] Miller, E. (2024). Adding Error Bars to Evals. arXiv:2411.00640.
+
+[9] Dietterich, T. G. (1998). Approximate Statistical Tests for Comparing Supervised
+Classification Learning Algorithms. Neural Computation 10(7). (Conferido só o resumo.)
+
+[10] Sclar, M. et al. (2024). Quantifying Language Models' Sensitivity to Spurious Features in
+Prompt Design. ICLR 2024. arXiv:2310.11324.
+
+[11] Holm, S. (1979). A Simple Sequentially Rejective Multiple Test Procedure. Scandinavian
+Journal of Statistics 6(2).
+
+[12] Wilson, E. B. (1927). Probable Inference, the Law of Succession, and Statistical Inference.
+JASA 22(158).
+
+[13] Brown, L. D., Cai, T. T., DasGupta, A. (2001). Interval Estimation for a Binomial Proportion.
+Statistical Science 16(2).
+
+[14] Cassano, F. et al. (2022). MultiPL-E. arXiv:2208.08227.
+
+[1]–[10] e [14] foram conferidas na fonte. [11]–[13] são as citações clássicas de Holm e Wilson,
+não reabertas nesta revisão.
+
+As referências do A/B/C (Jouini, Nekrasov, IaC-Eval, Reflexion etc.) estão em `protocolo.md` §15.
