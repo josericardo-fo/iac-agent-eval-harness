@@ -33,6 +33,7 @@ ORDER = (
     "elasticache_user_groups", "elasticache_users",
     "dax_subnet_groups", "dax_parameter_groups",
     "sagemaker_human_task_uis", "glacier_vaults", "kinesis_video_streams",
+    "ec2_nat_gateways", "ec2_elastic_ips",
     "ec2_network_interfaces", "ec2_security_groups", "ec2_subnets",
     "ec2_internet_gateways", "ec2_route_tables", "ec2_vpcs", "rds_subnet_groups",
     "s3_buckets", "dynamodb_tables", "sqs_queues", "sns_topics", "secrets", "kms_keys",
@@ -100,6 +101,15 @@ def _cloudfront_items(fn: Any, list_key: str) -> list[Any]:
         kwargs["Marker"] = page["NextMarker"]
 
 
+def _nat_gateways(ec2: Any) -> list[str]:
+    """NAT gateways ainda existentes (os `deleted` continuam listados por um tempo)."""
+    return [
+        n["NatGatewayId"]
+        for n in _pages(ec2, "describe_nat_gateways", "NatGateways")
+        if n["State"] != "deleted"
+    ]
+
+
 def inventory(session: Any) -> dict[str, list[str]]:
     ec2 = session.client("ec2")
     vpcs = _pages(ec2, "describe_vpcs", "Vpcs")
@@ -154,6 +164,10 @@ def inventory(session: Any) -> dict[str, list[str]]:
             keys.append(k["KeyId"])
     return {
         "ec2_instances": instances,
+        "ec2_nat_gateways": _nat_gateways(ec2),
+        "ec2_elastic_ips": [
+            a["AllocationId"] for a in ec2.describe_addresses().get("Addresses", [])
+        ],
         "ec2_network_interfaces": enis,
         "ec2_security_groups": sgs,
         "ec2_subnets": subnets,
@@ -269,6 +283,11 @@ def inventory(session: Any) -> dict[str, list[str]]:
 
 
 # ---------- remoção (boto3) ----------
+
+
+def _error_code(exc: Exception) -> str:
+    """Código de erro de um ClientError do botocore ("" para outras exceções)."""
+    return getattr(exc, "response", {}).get("Error", {}).get("Code", "")
 
 
 def _poll_gone(list_fn: Any, item: str) -> None:
@@ -432,6 +451,25 @@ def _deleters(session: Any) -> dict[str, Any]:
             lambda: [s["StreamARN"] for s in _pages(kv, "list_streams", "StreamInfoList")], arn
         )
 
+    def nat_gateway(i: str) -> None:
+        # O EIP do NAT só é liberado depois que o NAT chega a `deleted` (leva ~1 min).
+        ec2.delete_nat_gateway(NatGatewayId=i)
+        _poll_gone(lambda: _nat_gateways(ec2), i)
+
+    def elastic_ip(allocation_id: str) -> None:
+        addr = ec2.describe_addresses(AllocationIds=[allocation_id])["Addresses"][0]
+        if addr.get("AssociationId"):
+            ec2.disassociate_address(AssociationId=addr["AssociationId"])
+        ec2.release_address(AllocationId=allocation_id)
+
+    def network_interface(i: str) -> None:
+        try:
+            ec2.delete_network_interface(NetworkInterfaceId=i)
+        except Exception as exc:
+            # Some sozinha com o término da instância: já apagada não é falha.
+            if _error_code(exc) != "InvalidNetworkInterfaceID.NotFound":
+                raise
+
     def igw(i: str) -> None:
         g = ec2.describe_internet_gateways(InternetGatewayIds=[i])["InternetGateways"][0]
         for a in g.get("Attachments", []):
@@ -487,7 +525,9 @@ def _deleters(session: Any) -> dict[str, Any]:
         ),
         "glacier_vaults": glacier_vault,
         "kinesis_video_streams": kinesis_video_stream,
-        "ec2_network_interfaces": lambda i: ec2.delete_network_interface(NetworkInterfaceId=i),
+        "ec2_nat_gateways": nat_gateway,
+        "ec2_elastic_ips": elastic_ip,
+        "ec2_network_interfaces": network_interface,
         "ec2_security_groups": lambda i: ec2.delete_security_group(GroupId=i),
         "ec2_subnets": lambda i: ec2.delete_subnet(SubnetId=i),
         "ec2_internet_gateways": igw,

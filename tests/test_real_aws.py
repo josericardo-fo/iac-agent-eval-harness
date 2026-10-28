@@ -364,6 +364,74 @@ def test_kinesis_video_stream_deleter_uses_arn_and_waits_until_gone(monkeypatch)
     assert kv.deleted == ["arn:kv:s1"] and kv.streams == []
 
 
+def test_inventory_lists_live_nat_gateways_and_elastic_ips():
+    responses = {
+        "ec2": {
+            "describe_nat_gateways": {
+                "NatGateways": [
+                    {"NatGatewayId": "nat-live", "State": "available"},
+                    {"NatGatewayId": "nat-going", "State": "deleting"},
+                    {"NatGatewayId": "nat-gone", "State": "deleted"},
+                ]
+            },
+            "describe_addresses": {"Addresses": [{"AllocationId": "eipalloc-1"}]},
+        },
+        "cloudfront": {
+            "list_distributions": {"DistributionList": {}},
+            "list_origin_access_controls": {"OriginAccessControlList": {}},
+        },
+    }
+    inv = inventory(_FakeSession(responses))
+    assert inv["ec2_nat_gateways"] == ["nat-live", "nat-going"]
+    assert inv["ec2_elastic_ips"] == ["eipalloc-1"]
+
+
+def test_plan_deletes_nat_then_eip_before_network():
+    current = {
+        "ec2_vpcs": ["vpc-1"],
+        "ec2_internet_gateways": ["igw-1"],
+        "ec2_subnets": ["subnet-1"],
+        "ec2_network_interfaces": ["eni-1"],
+        "ec2_elastic_ips": ["eipalloc-1"],
+        "ec2_nat_gateways": ["nat-1"],
+    }
+    assert list(plan_deletions(current, {})) == [
+        "ec2_nat_gateways",
+        "ec2_elastic_ips",
+        "ec2_network_interfaces",
+        "ec2_subnets",
+        "ec2_internet_gateways",
+        "ec2_vpcs",
+    ]
+
+
+def test_eni_delete_not_found_is_not_a_failure():
+    class NotFound(Exception):
+        response = {"Error": {"Code": "InvalidNetworkInterfaceID.NotFound"}}
+
+    class Denied(Exception):
+        response = {"Error": {"Code": "UnauthorizedOperation"}}
+
+    class Ec2(_FakeClient):
+        def __init__(self, exc):
+            super().__init__({})
+            self.exc = exc
+
+        def delete_network_interface(self, NetworkInterfaceId):
+            raise self.exc
+
+    def session(exc):
+        class Session(_FakeSession):
+            def client(self, service, **kwargs):
+                return Ec2(exc) if service == "ec2" else super().client(service, **kwargs)
+
+        return Session({})
+
+    aws_sweep._deleters(session(NotFound()))["ec2_network_interfaces"]("eni-gone")
+    with pytest.raises(Denied):
+        aws_sweep._deleters(session(Denied()))["ec2_network_interfaces"]("eni-x")
+
+
 def _fake_sweep_env(monkeypatch, groups, fail_times):
     """Inventário em memória de user groups; o deleter falha `fail_times[item]` vezes antes."""
     calls = []
@@ -415,6 +483,12 @@ def test_plan_deletions_filters_roles_by_prefix():
         ("iam_virtual_mfa_devices", "iam_users"),
         ("cloudwatch_composite_alarms", "cloudwatch_metric_alarms"),
         ("cloudwatch_metric_alarms", "sns_topics"),
+        ("ec2_instances", "ec2_nat_gateways"),
+        ("ec2_nat_gateways", "ec2_elastic_ips"),
+        ("ec2_elastic_ips", "ec2_network_interfaces"),
+        ("ec2_elastic_ips", "ec2_subnets"),
+        ("ec2_elastic_ips", "ec2_internet_gateways"),
+        ("ec2_elastic_ips", "ec2_vpcs"),
     ],
 )
 def test_order_respects_dependencies(first, then):
