@@ -1,0 +1,51 @@
+# Modalidades com Claude Haiku 5.5 (Semana 8): mesmas 25 tarefas e config do modality-spike, só o modelo muda.
+[run]
+name = "modality-haiku"
+reps = 3
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # criação: 5 originais + 7 sorteadas (docs/selecao-tarefas-modalidades.md)
+  "task-108", "task-115", "task-230", "task-231", "task-234",
+  "task-110", "task-118", "task-130", "task-201", "task-233", "task-373", "task-375",
+  # modificação
+  "mod-s3-versioning", "mod-dynamodb-pitr", "mod-sg-https",
+  "mod-s3-encryption", "mod-sqs-retention", "mod-iam-user-policy", "mod-dynamodb-ttl",
+  "mod-secret-tag",
+  # remoção
+  "del-s3-bucket", "del-sqs-dev", "del-iam-user",
+  # consulta
+  "query-sg-ssh-open", "query-dynamodb-ondemand",
+]
+modalities = ["terraform", "cli", "boto3"]
+
+[agent]
+provider = "anthropic"
+# ID aceito pelo gateway atual (middleware); a API direta usa "claude-sonnet-5-5".
+model = "Haiku 5.5"
+max_tokens = 8192
+# effort = "medium"   # opcional; só é enviado quando definido
+
+[feedback]
+# Truncagem da saída de execução (a mesma do feedback do agente).
+max_chars = 2000
+
+[sandbox]
+# endpoint: como a toolchain (no container) enxerga o Floci.
+endpoint = "http://floci:4566"
+# host_endpoint: como o harness (no host) enxerga o Floci.
+host_endpoint = "http://127.0.0.1:4566"
+# container: reiniciado a cada reset (o reset nativo do Floci apaga a VPC default).
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"   # docker | local
+image = "iac-harness-toolchain:latest"
+# Timeout por comando (terraform, bash run.sh, python3 main.py, check.py).
+timeout_s = 180
+
+# US$ por milhão de tokens: [entrada, saída]. Confirme os valores vigentes antes de reportar custo.
+[prices]
+"Haiku 5.5" = [0.10, 0.50]
