@@ -364,6 +364,39 @@ def test_kinesis_video_stream_deleter_uses_arn_and_waits_until_gone(monkeypatch)
     assert kv.deleted == ["arn:kv:s1"] and kv.streams == []
 
 
+def _fake_sweep_env(monkeypatch, groups, fail_times):
+    """Inventário em memória de user groups; o deleter falha `fail_times[item]` vezes antes."""
+    calls = []
+
+    def delete(item):
+        calls.append(item)
+        if fail_times.get(item, 0) > 0:
+            fail_times[item] -= 1
+            raise RuntimeError(f"{item} has status creating")
+        groups.remove(item)
+
+    monkeypatch.setattr(aws_sweep, "inventory", lambda s: {"elasticache_user_groups": list(groups)})
+    monkeypatch.setattr(aws_sweep, "_deleters", lambda s: {"elasticache_user_groups": delete})
+    monkeypatch.setattr(aws_sweep.time, "sleep", lambda s: None)
+    return calls
+
+
+def test_sweep_retries_transient_delete_failure(monkeypatch):
+    calls = _fake_sweep_env(monkeypatch, ["ug"], {"ug": 1})
+    result = aws_sweep.sweep(None, {"elasticache_user_groups": []})
+    assert calls == ["ug", "ug"]
+    assert result == {"deleted": {"elasticache_user_groups": ["ug"]}, "failed": {}, "remaining": {}}
+
+
+def test_sweep_permanent_failure_ends_in_failed_and_remaining(monkeypatch):
+    calls = _fake_sweep_env(monkeypatch, ["ug"], {"ug": 10**6})
+    result = aws_sweep.sweep(None, {"elasticache_user_groups": []})
+    assert len(calls) == aws_sweep.SETTLE_TRIES  # 1ª passada + uma por espera
+    assert result["deleted"] == {}
+    assert "creating" in result["failed"]["elasticache_user_groups"]["ug"]
+    assert result["remaining"] == {"elasticache_user_groups": ["ug"]}
+
+
 def test_plan_deletions_filters_roles_by_prefix():
     plan = plan_deletions({"iam_roles": ["iac-harness-x", "OrganizationAccountAccessRole"]}, {})
     assert plan == {"iam_roles": ["iac-harness-x"]}

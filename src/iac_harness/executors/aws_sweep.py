@@ -510,23 +510,38 @@ def _deleters(session: Any) -> dict[str, Any]:
 
 
 def sweep(session: Any, baseline: dict[str, list[str]]) -> dict[str, Any]:
-    """Apaga o que não está no baseline e relê o inventário até estabilizar."""
+    """Apaga o que não está no baseline e relê o inventário até estabilizar.
+
+    Itens que falharam (ex.: recurso ainda em "creating") são tentados de novo a cada
+    releitura; os que já foram apagados só aguardam sumir do inventário.
+    """
     deleters = _deleters(session)
     deleted: dict[str, list[str]] = {}
     failed: dict[str, dict[str, str]] = {}
-    for category, items in plan_deletions(inventory(session), baseline).items():
-        for item in items:
-            try:
-                deleters[category](item)
-                deleted.setdefault(category, []).append(item)
-            except Exception as exc:  # noqa: BLE001 (registra e segue; o restante é conferido)
-                failed.setdefault(category, {})[item] = f"{type(exc).__name__}: {exc}"[:500]
+
+    def delete_all(plan: dict[str, list[str]]) -> None:
+        for category, items in plan.items():
+            for item in items:
+                if item in deleted.get(category, []):
+                    continue
+                try:
+                    deleters[category](item)
+                    deleted.setdefault(category, []).append(item)
+                    if item in failed.get(category, {}):
+                        del failed[category][item]
+                        if not failed[category]:
+                            del failed[category]
+                except Exception as exc:  # noqa: BLE001 (registra e segue; o restante é conferido)
+                    failed.setdefault(category, {})[item] = f"{type(exc).__name__}: {exc}"[:500]
+
+    delete_all(plan_deletions(inventory(session), baseline))
     remaining: dict[str, list[str]] = {}
     for attempt in range(SETTLE_TRIES):
         remaining = plan_deletions(inventory(session), baseline)
         if not remaining or attempt == SETTLE_TRIES - 1:
             break
         time.sleep(SETTLE_SLEEP_S)
+        delete_all(remaining)
     return {"deleted": deleted, "failed": failed, "remaining": remaining}
 
 
