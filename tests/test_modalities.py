@@ -7,6 +7,8 @@ import pytest
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.modalities.execute import (
     ANSWER_ERROR,
+    CHECK_SETTLE_INTERVAL_S,
+    CHECK_SETTLE_WINDOW_S,
     collect_answer,
     parse_check_output,
     prevalidate_pair,
@@ -287,3 +289,65 @@ def test_run_check_receives_answer_json(tmp_path):
     tc = RecordingToolchain(stdout='{"pass": true, "details": {}}')
     run_check(tc, _task("query-dynamodb-ondemand"), tmp_path)
     assert tc.seen[0][2] == {"check.py", "answer.json"}
+
+
+class SequenceCheckToolchain(RecordingToolchain):
+    """Devolve uma saída por chamada do check.py (a última se repete); demais comandos vazios."""
+
+    def __init__(self, check_outputs: list[str], target: str = "aws") -> None:
+        super().__init__()
+        self.target = target
+        self.check_outputs = check_outputs
+        self.check_runs = 0
+
+    def run(self, args, workdir, timeout_s=None):
+        if args[:2] == ["python3", "check.py"]:
+            self.stdout = self.check_outputs[min(self.check_runs, len(self.check_outputs) - 1)]
+            self.check_runs += 1
+        else:
+            self.stdout = ""
+        return super().run(args, workdir, timeout_s)
+
+
+def _record_sleeps(monkeypatch) -> list[float]:
+    sleeps: list[float] = []
+    monkeypatch.setattr("iac_harness.modalities.execute.time.sleep", sleeps.append)
+    return sleeps
+
+
+def test_run_check_settle_on_aws_retries_until_pass(monkeypatch):
+    sleeps = _record_sleeps(monkeypatch)
+    fail = '{"pass": false, "details": {"n": 0}}'
+    tc = SequenceCheckToolchain([fail, fail, '{"pass": true, "details": {"n": 1}}'])
+    passed, details = run_check(tc, load_tasks()[0], settle=True)
+    assert passed and details == {"n": 1, "check_attempts": 3}
+    assert sleeps == [CHECK_SETTLE_INTERVAL_S] * 2
+
+
+def test_run_check_settle_on_aws_gives_up_after_window(monkeypatch):
+    sleeps = _record_sleeps(monkeypatch)
+    tc = SequenceCheckToolchain(['{"pass": false, "details": {"last": true}}'])
+    passed, details = run_check(tc, load_tasks()[0], settle=True)
+    attempts = 1 + CHECK_SETTLE_WINDOW_S // CHECK_SETTLE_INTERVAL_S
+    assert not passed and details == {"last": True, "check_attempts": attempts}
+    assert tc.check_runs == attempts == 7
+    assert sum(sleeps) == CHECK_SETTLE_WINDOW_S
+
+
+def test_run_check_settle_on_emulator_runs_once(monkeypatch):
+    sleeps = _record_sleeps(monkeypatch)
+    tc = SequenceCheckToolchain(['{"pass": false, "details": {}}'], target="emulator")
+    assert run_check(tc, load_tasks()[0], settle=True) == (False, {})
+    assert tc.check_runs == 1 and sleeps == []
+
+
+def test_prevalidate_pair_on_aws_does_not_retry_baseline(monkeypatch, tmp_path):
+    sleeps = _record_sleeps(monkeypatch)
+    tc = SequenceCheckToolchain(['{"pass": false, "details": {}}', '{"pass": true, "details": {}}'])
+    row = prevalidate_pair(
+        _task("task-234"), MODALITIES["cli"], tc, FlociExecutor(tc), tmp_path, "r"
+    )
+    assert tc.check_runs == 2 and sleeps == []
+    assert row["baseline_pass"] is False and row["baseline_details"] == {}
+    assert row["ref_check_pass"] is True and row["ref_check_details"] == {"check_attempts": 1}
+    assert row["valid"]

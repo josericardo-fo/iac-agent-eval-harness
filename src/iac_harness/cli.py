@@ -20,6 +20,7 @@ from iac_harness.agents.prompts import PROMPT_VERSION
 from iac_harness.conditions import A, B, C, Condition
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
 from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
+from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
 from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
@@ -41,7 +42,7 @@ from iac_harness.workspace import OVERRIDE_FILENAME, create_workspace, pair_dir
 CONDITIONS: dict[str, Condition] = {"A": A, "B": B, "C": C}
 BACKENDS = {"anthropic": AnthropicBackend}
 EXECUTORS: dict[str, type[FlociExecutor]] = {
-    cls.KIND: cls for cls in (FlociExecutor, LocalStackExecutor)
+    cls.KIND: cls for cls in (FlociExecutor, LocalStackExecutor, RealAwsExecutor)
 }
 DATA_DIR = Path("data")
 MIRROR_DIR = "/opt/terraform-providers"  # filesystem mirror dentro da imagem da toolchain
@@ -66,16 +67,43 @@ def build_toolchain(cfg: dict[str, Any]) -> Toolchain:
         endpoint=sb.get("endpoint", DEFAULT_ENDPOINT),
         region=sb.get("region", DEFAULT_REGION),
         timeout_s=tc.get("timeout_s", DEFAULT_TIMEOUT_S),
+        # `[sandbox] kind = "aws"`: credenciais IAC_AWS_*, sem endpoint, rede com internet.
+        target="aws" if sb.get("kind") == RealAwsExecutor.KIND else "emulator",
     )
 
 
-def build_executor(cfg: dict[str, Any], toolchain: Toolchain) -> FlociExecutor:
+def build_executor(
+    cfg: dict[str, Any], toolchain: Toolchain, *, allow_real_aws: bool = False
+) -> FlociExecutor:
+    """`allow_real_aws` só nos comandos de modalidade, que fazem a limpeza final num `finally`."""
     sb = cfg.get("sandbox", {})
     kind = sb.get("kind", FlociExecutor.KIND)
     if kind not in EXECUTORS:
         raise SystemExit(f"[sandbox] kind desconhecido: {kind!r} (use um de {sorted(EXECUTORS)})")
+    if kind == RealAwsExecutor.KIND:
+        if not allow_real_aws:
+            raise SystemExit(
+                f"[sandbox] kind = {kind!r} só é aceito pelos comandos modality-* "
+                "(este comando não faz a limpeza final da conta)"
+            )
+        kwargs = {k: sb[k] for k in ("expected_arn", "baseline_file") if k in sb}
+        return RealAwsExecutor(toolchain, **kwargs)
     kwargs = {k: sb[k] for k in ("endpoint", "host_endpoint", "container") if k in sb}
     return EXECUTORS[kind](toolchain, **kwargs)
+
+
+def final_cleanup(executor: FlociExecutor) -> None:
+    """Limpeza ao fim do run (chamada num `finally`): na AWS real, apaga as sobras do último par.
+
+    Se a limpeza falhar, o erro vai ao stderr; só sobe quando não há exceção original a preservar.
+    """
+    pending = sys.exc_info()[1] is not None
+    try:
+        executor.cleanup()
+    except Exception as exc:
+        print(f"falha na limpeza final ({executor.NAME}): {exc}", file=sys.stderr)
+        if not pending:
+            raise
 
 
 def build_gates(cfg: dict[str, Any], toolchain: Toolchain, executor: FlociExecutor) -> dict:
@@ -152,7 +180,18 @@ def _emulator_image(container: str) -> tuple[str | None, str | None, str | None]
 
 
 def _sandbox_provenance(executor: FlociExecutor) -> dict[str, Any]:
-    """Emulador usado no run de modalidades: tipo (`[sandbox] kind`), imagem e ID."""
+    """Emulador usado no run de modalidades: tipo (`[sandbox] kind`), imagem e ID.
+
+    Na AWS real: conta, ARN e região (a guarda de identidade roda aqui, antes de tudo).
+    """
+    if isinstance(executor, RealAwsExecutor):
+        identity = executor.identity()
+        return {
+            "sandbox_kind": executor.KIND,
+            "aws_account": identity["account"],
+            "aws_arn": identity["arn"],
+            "aws_region": executor.region,
+        }
     image, image_id, digests = _emulator_image(executor.container)
     return {
         "sandbox_kind": executor.KIND,
@@ -536,7 +575,7 @@ def _select_modality_run(
 def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
+    executor = build_executor(cfg, toolchain, allow_real_aws=True)
     tasks, modalities = _select_modality_run(cfg, args.tasks)
     max_chars = cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS)
     runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
@@ -575,6 +614,7 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
                 print(f"{task.task_id} × {name}: valid={row['valid']}", file=sys.stderr)
     finally:
         recorder.close()
+        final_cleanup(executor)
     print(_modality_table(rows, modalities), file=sys.stderr)
     print(run_dir / "prevalidation.jsonl")
     return 0
@@ -659,6 +699,7 @@ def _modality_loop(
                     )
     finally:
         recorder.close()
+        final_cleanup(executor)  # modality-run e --resume passam por aqui
 
 
 def cmd_modality_run(args: argparse.Namespace) -> int:
@@ -675,7 +716,7 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
+    executor = build_executor(cfg, toolchain, allow_real_aws=True)
     (run_dir / "run_config.json").write_text(
         json.dumps(
             {
@@ -743,7 +784,7 @@ def cmd_modality_resume(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
+    executor = build_executor(cfg, toolchain, allow_real_aws=True)
     _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, toolchain, executor, complete)
     print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)

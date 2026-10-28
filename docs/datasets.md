@@ -29,6 +29,11 @@ com as mesmas funções e nomes (Wilson, McNemar exato + Holm, bootstrap pareado
   - task-230 não diz qual tabela;
   - task-108 usa `expected_bucket_owner` de outra conta;
   - task-233 pede o que a AWS já faz por padrão.
+  - task-108, 110, 115 e 118 não passam na AWS real sem alterar o dataset: usam nomes de bucket
+    S3 que já pertencem a outras contas (`sample`, `your-bucket-name`,
+    `wellcomecollection-platform-infra`, `pike-680235478471`; o `head-bucket` responde 403).
+    Devem falhar com `BucketAlreadyExists`/`AccessDenied`. O benchmark supõe um namespace global
+    vazio, que só existe no emulador. Não renomeamos (regra de não alterar o dataset).
 
 ### Tarefas autorais (modalidades)
 - **Fonte:** este repositório (`origin = "authored"`, ou `"harness"` nas 3 primeiras).

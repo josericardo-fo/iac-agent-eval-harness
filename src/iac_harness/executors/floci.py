@@ -210,6 +210,9 @@ class FlociExecutor:
         self._restart()
         self._seed_default_vpcs()
 
+    def cleanup(self) -> None:
+        """Limpeza ao fim do run: nada a fazer no emulador (o próximo reset reinicia)."""
+
     def _restart(self) -> None:
         """`docker restart` do container e espera o health (`HEALTH_PATH`) responder 200."""
         proc = subprocess.run(

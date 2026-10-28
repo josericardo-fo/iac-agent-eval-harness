@@ -80,3 +80,40 @@ Para rodar sem Docker (dev), use `toolchain.mode = "local"` com `terraform` e `o
 endpoint do Floci deve então ser alcançável do host (por exemplo `http://127.0.0.1:4566`).
 
 A chave da Anthropic vem da variável de ambiente (modelo em `.env.example`).
+
+### AWS real (modalidades)
+
+`[sandbox] kind = "aws"` troca o emulador pela conta AWS real (`configs/modality-real-aws.toml`, e
+`configs/modality-real-aws-msk.toml` só para a task-201). A toolchain usa as credenciais
+`IAC_AWS_ACCESS_KEY_ID`/`IAC_AWS_SECRET_ACCESS_KEY` do ambiente (passadas ao container só pelo
+nome, nunca na linha de comando), sem `AWS_ENDPOINT_URL` e na rede `bridge`. Antes de tudo,
+`aws sts get-caller-identity` precisa devolver `[sandbox] expected_arn`; senão o comando aborta.
+
+O reset tira um inventário (baseline) na primeira chamada e, a cada tentativa, apaga tudo o que
+não está nele (`executors/aws_sweep.py`, rodado na toolchain): EC2, RDS sem snapshot final,
+Lightsail, MSK, S3 (com versões), DynamoDB, SQS, SNS, Secrets Manager sem recuperação, chaves KMS
+do cliente (exclusão agendada em 7 dias) e usuários/grupos IAM `del-*`/`mod-*`. Recursos da VPC
+default ficam intactos. Se sobrar algo fora do baseline, o comando aborta.
+Ao fim de `modality-prevalidate`/`modality-run` (inclusive com erro), uma limpeza final apaga o
+que o último par criou.
+
+O baseline fica em `[sandbox] baseline_file` (padrão `runs/aws-baseline.json`) e representa a
+conta limpa: é reaproveitado entre runs e no `--resume`, para que as sobras de um run que caiu
+sejam apagadas. Apagar o arquivo faz o próximo run tirar um inventário novo da conta; só faça isso
+com a conta limpa, ou as sobras viram baseline e nunca são apagadas.
+
+Premissas:
+- não crie nada em `us-east-1` (nem usuários/grupos IAM `del-*`/`mod-*`) durante um run real: o
+  que aparecer fora do baseline é apagado;
+- custa dinheiro: RDS, EC2 e sobretudo MSK cobram por hora; confira o Cost Explorer depois de
+  cada run (orçamento da conta: US$ 20 com alertas);
+- a task-201 (MSK) roda à parte, e as tarefas 108, 110, 115 e 118 falham por desenho
+  (`docs/datasets.md`).
+
+```bash
+set -a; source .env; set +a   # IAC_AWS_* (a CLI não lê .env)
+uv run iac-harness modality-prevalidate --config configs/modality-real-aws.toml \
+    --tasks mod-sqs-retention del-s3-bucket
+```
+
+O resultado de cada limpeza (apagados, falhas, restantes) sai no stderr como `aws sweep: {...}`.

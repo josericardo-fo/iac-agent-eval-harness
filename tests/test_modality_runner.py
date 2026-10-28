@@ -211,7 +211,9 @@ def test_long_output_keeps_error_at_the_end(tmp_path):
     tc = ScriptedToolchain(fail_runs=1, error=error, stdout="x" * 10_000)
     workdir = tmp_path / "attempt_1"
     workdir.mkdir()
-    result = _run_commands(tc, MODALITIES["cli"].command, workdir, 2000)
+    result = _run_commands(
+        tc, FlociExecutor.classify_error, MODALITIES["cli"].command, workdir, 2000
+    )
     assert not result.ok
     assert error in result.output and "characters omitted" in result.output
     assert result.output.startswith("exit code 1") and len(result.output) < 2100

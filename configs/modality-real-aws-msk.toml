@@ -1,0 +1,37 @@
+# Modalidades na AWS real (us-east-1): só task-201 (MSK, lento e caro), rodada à parte.
+[run]
+name = "modality-real-aws-msk"
+reps = 3
+runs_dir = "runs"
+
+[modality]
+tasks = ["task-201"]
+modalities = ["terraform", "cli", "boto3"]
+
+[agent]
+provider = "anthropic"
+# ID aceito pelo gateway atual (middleware); a API direta usa "claude-sonnet-5-5".
+model = "Sonnet 5.5"
+max_tokens = 8192
+# effort = "medium"   # opcional; só é enviado quando definido
+
+[feedback]
+# Truncagem da saída de execução (a mesma do feedback do agente).
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: o run recusa qualquer outra identidade (root, outra conta).
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"   # docker | local
+image = "iac-harness-toolchain:latest"
+# Timeout por comando (terraform, bash run.sh, python3 main.py, check.py).
+timeout_s = 1800   # RDS, EC2 e a limpeza levam minutos
+
+# US$ por milhão de tokens: [entrada, saída]. Confirme os valores vigentes antes de reportar custo.
+[prices]
+"Sonnet 5.5" = [3.0, 15.0]

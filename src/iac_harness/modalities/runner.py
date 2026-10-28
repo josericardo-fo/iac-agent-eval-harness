@@ -178,7 +178,7 @@ def run_pair(
     if termination is ModTermination.INITIAL_FAIL:
         check_pass, details = False, {"error": "initial.tf não aplicou"}
     else:
-        check_pass, details = run_check(ctx.toolchain, task, path)
+        check_pass, details = run_check(ctx.toolchain, task, path, settle=True)
     final = {
         **base,
         "event": "final",

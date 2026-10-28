@@ -1,4 +1,8 @@
-"""Execução de terraform/opa: em container na rede `iac-sandbox` (padrão) ou local (dev)."""
+"""Execução de terraform/opa: em container na rede `iac-sandbox` (padrão) ou local (dev).
+
+Alvo `emulator` (padrão): credenciais `test` e endpoint do emulador. Alvo `aws`: credenciais
+`IAC_AWS_*` do ambiente, sem endpoint, na rede `bridge` (com internet).
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,13 @@ DEFAULT_ENDPOINT = "http://floci:4566"
 # localstack: emulador alternativo (configs/modality-spike-localstack.toml).
 DEFAULT_ALLOWED_HOSTS = ("floci", "floci2", "localstack", "localhost", "127.0.0.1")
 DEFAULT_REGION = "us-east-1"
+TARGETS = ("emulator", "aws")
+# Alvo aws: rede com internet e credenciais vindas destas variáveis do host.
+AWS_NETWORK = "bridge"
+AWS_CREDENTIAL_VARS = {
+    "AWS_ACCESS_KEY_ID": "IAC_AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY": "IAC_AWS_SECRET_ACCESS_KEY",
+}
 
 # Variáveis do host que o modo local pode herdar (nada de credenciais).
 _LOCAL_PASSTHROUGH = ("PATH", "HOME", "TF_CLI_CONFIG_FILE", "TF_PLUGIN_CACHE_DIR")
@@ -49,10 +60,23 @@ class Toolchain:
         timeout_s: float = DEFAULT_TIMEOUT_S,
         endpoint: str = DEFAULT_ENDPOINT,
         region: str = DEFAULT_REGION,
+        target: str = "emulator",
     ) -> None:
         if mode not in ("docker", "local"):
             raise ValueError(f"toolchain.mode inválido: {mode!r} (use 'docker' ou 'local')")
-        check_endpoint_allowed(endpoint)
+        if target not in TARGETS:
+            raise ValueError(f"toolchain.target inválido: {target!r} (use um de {TARGETS})")
+        if target == "aws":
+            missing = [v for v in AWS_CREDENTIAL_VARS.values() if not os.environ.get(v)]
+            if missing:
+                raise RuntimeError(
+                    f"alvo aws sem credenciais: defina {', '.join(missing)} "
+                    "(ex.: set -a; source .env; set +a)"
+                )
+            network = AWS_NETWORK
+        else:
+            check_endpoint_allowed(endpoint)
+        self.target = target
         self.endpoint = endpoint
         self.region = region
         self.mode = mode
@@ -61,7 +85,18 @@ class Toolchain:
         self.timeout_s = timeout_s
 
     def sandbox_env(self) -> dict[str, str]:
-        """Variáveis de AWS/Terraform enviadas à ferramenta; credenciais do host nunca entram."""
+        """Variáveis de AWS/Terraform enviadas à ferramenta; credenciais do host nunca entram.
+
+        No alvo aws, só entram as `IAC_AWS_*` (renomeadas), sem `AWS_ENDPOINT_URL`.
+        """
+        if self.target == "aws":
+            return {
+                **{k: os.environ[v] for k, v in AWS_CREDENTIAL_VARS.items()},
+                "AWS_REGION": self.region,
+                "AWS_DEFAULT_REGION": self.region,
+                "AWS_EC2_METADATA_DISABLED": "true",
+                "TF_IN_AUTOMATION": "1",
+            }
         return {
             "AWS_ACCESS_KEY_ID": "test",
             "AWS_SECRET_ACCESS_KEY": "test",
@@ -97,16 +132,20 @@ class Toolchain:
                 timeout=timeout,
             )
         name = f"iac-harness-{uuid.uuid4().hex[:12]}"
+        env = self.sandbox_env()
+        # Segredo nunca na linha de comando: `-e NOME` e o valor no env do cliente docker.
+        secrets = AWS_CREDENTIAL_VARS if self.target == "aws" else {}
         cmd = [
             "docker", "run", "--rm", "--name", name,
             "--network", self.network,
-            *(a for k, v in self.sandbox_env().items() for a in ("-e", f"{k}={v}")),
+            *(a for k, v in env.items() for a in ("-e", k if k in secrets else f"{k}={v}")),
             "-v", f"{workdir}:/work",
             "-w", "/work",
             self.image, *args,
         ]  # fmt: skip
+        kwargs = {"env": {**os.environ, **{k: env[k] for k in secrets}}} if secrets else {}
         try:
-            return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, **kwargs)
         except subprocess.TimeoutExpired:
             # Matar o cliente docker não para o container.
             subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)

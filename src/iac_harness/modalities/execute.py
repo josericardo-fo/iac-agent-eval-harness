@@ -6,6 +6,8 @@ import json
 import shutil
 import subprocess
 import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,9 @@ ANSWER_ERROR = {
     "cli": f"{ANSWER_FILENAME} was not produced or is not valid JSON.",
     "boto3": f"{ANSWER_FILENAME} was not produced or is not valid JSON.",
 }
+# Consistência eventual na AWS real: o check pós-solução é refeito até passar dentro da janela.
+CHECK_SETTLE_WINDOW_S = 60
+CHECK_SETTLE_INTERVAL_S = 10
 
 
 @dataclass(frozen=True)
@@ -58,9 +63,16 @@ def truncate_middle(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
 
 
 def _run_commands(
-    toolchain: Toolchain, commands: tuple[tuple[str, ...], ...], path: Path, max_chars: int
+    toolchain: Toolchain,
+    classify: Callable[[str], CheckStatus],
+    commands: tuple[tuple[str, ...], ...],
+    path: Path,
+    max_chars: int,
 ) -> ExecResult:
-    """Roda os comandos em sequência e para no primeiro que falhar."""
+    """Roda os comandos em sequência e para no primeiro que falhar.
+
+    `classify` é o classify_error do executor em uso (na AWS real nada vira UNSUPPORTED).
+    """
     outputs: list[str] = []
     try:
         for args in commands:
@@ -71,7 +83,7 @@ def _run_commands(
             raw = proc.stdout + proc.stderr
             outputs.append(raw)
             if proc.returncode != 0:
-                unsupported = FlociExecutor.classify_error(raw) is CheckStatus.UNSUPPORTED
+                unsupported = classify(raw) is CheckStatus.UNSUPPORTED
                 prefix = f"exit code {proc.returncode}\n"
                 # Só a falha corta começo+fim: é a única saída que volta ao agente.
                 message = truncate_middle(prefix + raw, max_chars)
@@ -112,7 +124,8 @@ def run_artifact(
         for filename in INHERITED_TF_FILES:
             if (inherit_from / filename).exists():
                 shutil.copy(inherit_from / filename, ws.path / filename)
-    return _run_commands(toolchain, modality.command, ws.path, max_chars), ws.path
+    result = _run_commands(toolchain, executor.classify_error, modality.command, ws.path, max_chars)
+    return result, ws.path
 
 
 def collect_answer(path: Path, modality: Modality) -> ExecResult:
@@ -199,12 +212,33 @@ def parse_check_output(stdout: str) -> tuple[bool, dict[str, Any]]:
 
 
 def run_check(
-    toolchain: Toolchain, task: ModalityTask, workspace: Path | None = None
+    toolchain: Toolchain,
+    task: ModalityTask,
+    workspace: Path | None = None,
+    settle: bool = False,
 ) -> tuple[bool, dict[str, Any]]:
     """Roda o check.py num diretório temporário FORA do workspace (como o OpaVerifier).
 
     Se `workspace` tiver answer.json (consulta), ele é copiado para o lado do check.
+    Com `settle` no alvo aws, um check reprovado é refeito a cada CHECK_SETTLE_INTERVAL_S
+    por até CHECK_SETTLE_WINDOW_S (consistência eventual); `check_attempts` vai nos detalhes.
+    Só para checks pós-solução: o baseline deve reprovar e não pode ser refeito.
     """
+    if not (settle and toolchain.target == "aws"):
+        return _run_check_once(toolchain, task, workspace)
+    max_attempts = 1 + CHECK_SETTLE_WINDOW_S // CHECK_SETTLE_INTERVAL_S
+    for attempt in range(1, max_attempts + 1):
+        if attempt > 1:
+            time.sleep(CHECK_SETTLE_INTERVAL_S)
+        passed, details = _run_check_once(toolchain, task, workspace)
+        if passed:
+            break
+    return passed, {**details, "check_attempts": attempt}
+
+
+def _run_check_once(
+    toolchain: Toolchain, task: ModalityTask, workspace: Path | None
+) -> tuple[bool, dict[str, Any]]:
     with tempfile.TemporaryDirectory(prefix="iac-check-") as tmp:
         tmp_dir = Path(tmp)
         (tmp_dir / CHECK_FILENAME).write_text(task.check)
@@ -257,6 +291,8 @@ def prevalidate_pair(
     )  # fmt: skip
     ref = with_answer(task, modality, ref, ref_path)
     row.update(ref_exec_ok=ref.ok, ref_output=ref.output, ref_unsupported_pattern=ref.unsupported)
-    row["ref_check_pass"], row["ref_check_details"] = run_check(toolchain, task, ref_path)
+    row["ref_check_pass"], row["ref_check_details"] = run_check(
+        toolchain, task, ref_path, settle=True
+    )
     row["valid"] = row["baseline_pass"] is False and ref.ok and row["ref_check_pass"] is True
     return row
