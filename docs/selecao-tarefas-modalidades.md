@@ -192,9 +192,15 @@ retomado com `--resume`). Inventário do root ao final: nada fora do baseline.
 | CLI | 6 | 2 | 8/12 | 6,2k |
 | boto3 | 5 | 3 | 8/12 | 5,5k |
 
-Nenhuma diferença pareada é significativa (McNemar + Holm, p = 1,0). Falhas por origem:
+Nenhuma diferença pareada é significativa (McNemar + Holm, p = 1,0). Sem a task-416, que
+falhou igual nas três formas por bloqueio de permissão, o total fica 9/11, 8/11 e 8/11: a
+conclusão não muda (a tarefa não entra nos pares discordantes do McNemar). Decisão (28/10): a
+task-416 fica no conjunto, classificada como **bloqueio de permissão**, separada dos erros do
+agente; liberar uma classe maior afrouxaria a trava de custo só para fazer passar.
 
-- **task-416 (3 formas), limite do ambiente:** o agente escolheu `db.m5.large` para o io1 e a
+Falhas por origem:
+
+- **task-416 (3 formas), bloqueio de permissão (não conta como erro do agente):** o agente escolheu `db.m5.large` para o io1 e a
   política `iac-harness-scoped-v2` (só RDS micro) negou `CreateDBInstance`; as 3 tentativas
   foram gastas pedindo a liberação. A referência passa porque usa `db.t3.micro`. Achado: a trava
   de custo restringe o espaço de soluções do agente.
