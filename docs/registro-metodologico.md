@@ -156,6 +156,31 @@ Haiku, N=3 nos dois: `runs/20261027T150905-modality-haiku` (filtrado às 18 tare
 - **O padrão de A2 se repete na real:** task-230 falha 3/3 em CLI e boto3 e passa em TF.
 - **Consequência para o método:** o emulador é base válida para essas tarefas (E1, E3). A real acrescenta validade externa, não muda a conclusão.
 
+### R1: tarefas só na AWS real com N=3 (29/10/2026)
+
+As mesmas 12 tarefas do run N=1, agora com N=3 (`runs/20261029T003159-modality-real-aws-only-n3`, Haiku).
+
+| | Terraform | CLI | boto3 |
+|---|---|---|---|
+| Criar (8) | 19/24 | 17/24 | 19/24 |
+| Modificar (4) | 6/12 | 7/12 | 8/12 |
+| **Total N=3** | **25/36** | **24/36** | **27/36** |
+| Total N=1 (28/10) | 9/12 | 8/12 | 8/12 |
+
+- **Nada significativo:** Holm = 1 em todos os pares; todos os ICs do bootstrap incluem o zero.
+- **A ordem mudou de N=1 para N=3:** em N=1 o Terraform aparecia na frente; em N=3 o boto3 aparece. Isso mostra na prática por que N=1 é só exploratório (S4).
+- **Tarefas instáveis** (acertam em parte das reps): 1/3 das tarefas no Terraform, 1/4 no CLI, 1/6 no boto3.
+- **Falhas por origem:**
+  - **enunciado:** `awsb-move-s3` 0/9 (o caminho dado está errado de propósito);
+  - **permissão:** task-416, 1/9; só passou quando o agente escolheu uma classe micro (CLI, rep 3);
+  - **agente:**
+    - task-198, 3/9: o grupo do Redis com o usuário `default`;
+    - `awsb-dynamodb-strip`, 4/9;
+    - task-367, 6/9;
+    - `awsb-lambda-alias` TF, 2/3.
+- **`local-exec`:** o Terraform o usou em 6 trajetórias, nas tarefas do aws-bench sem recurso nativo.
+- **Leitura:** confirma a conclusão geral. Nas tarefas mais difíceis e só na real, nenhuma forma se destaca; o que pesa é a tarefa.
+
 ### Checks sem conferência de efeito colateral (28/10/2026)
 
 Auditoria dos 37 `check.py` (O3; ABC [2] O.g.2). "Sim" = o check confere tudo o que o enunciado
@@ -216,7 +241,7 @@ pedido).
 5. Opcional: pass^3 por forma no emulador (consistência, τ-bench).
 
 **Re-rodar (custo baixo; decidir com o usuário)**
-- R1. Tarefas só na AWS real com N=3 em vez de N=1 (S4). Hoje 9 × 8 × 8 com N=1 não sustenta nenhuma comparação.
+- ~~R1. Tarefas só na AWS real com N=3~~: feito em 29/10 (§3, "R1").
 - R2. task-130 nas 3 formas com `max_tokens` maior, igual para todas (A4). Só vale se a tarefa importar para a conclusão.
 - R3. Opcional: robustez do prompt, com um parafraseado do bloco de modalidade numa amostra (D3, Sclar [10]).
 
