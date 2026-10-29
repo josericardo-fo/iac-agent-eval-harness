@@ -22,7 +22,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | D2 | Desenho pareado: as mesmas tarefas e repetições nas 3 formas | Segue | Miller [8] §4.2: diferença pareada por questão reduz a variância "de graça". | Manter |
 | D3 | Prompt-base comum + bloco mínimo e simétrico por forma, versionado (`mod-v3`) | Adapta | SWE-agent [6]: a interface muda o resultado (18,0% × 11,0%), então é variável confundida. Terminal-Bench [5] usa um scaffold neutro. Yang et al. [1] variam o prompt (8 tentativas com prompts diferentes); aqui ele é fixo. | Manter. Declarar a sensibilidade ao texto (Sclar et al. [10]). |
 | D4 | Fora do escopo: ClickOps e monitoramento | Própria | O emulador não tem console; não há oráculo para monitoramento. | Manter |
-| D5 | Mesmo `max_tokens` (8192) nas 3 formas | Própria | Justiça: o mesmo orçamento. | Reanalisar a task-130 (ver A4). |
+| D5 | Mesmo `max_tokens` (8192) nas 3 formas | Própria | Justiça: o mesmo orçamento. | Manter. task-130 classificada como limite do harness (A4); re-rodar só se pesar (R2). |
 
 ### Tarefas
 
@@ -41,7 +41,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 |---|---|---|---|---|
 | O1 | A nota é o estado final via API (`check.py`), não o artefato | Segue | AppWorld [3] §3.2, τ-bench [4] §3 e Terminal-Bench [5] §2.1 ("testam o estado final, não os comandos"). | Manter |
 | O2 | O check aceita qualquer solução que deixe o estado certo (ex.: qualquer tabela com PITR na task-230) | Segue | ABC [2] O.g.1 (todas as saídas válidas); AppWorld [3] (conjunto de estados válidos). | Manter |
-| O3 | Efeito colateral (mexer no que não devia) | Parcial | ABC [2] O.g.2 e AppWorld [3] (C_expect/C_allow) pedem isso. Hoje só os checks de remoção e alguns de modificação conferem o que deve continuar igual (ex.: `del-sqs-dev` confere as filas prod). | Reanalisar: listar os checks sem essa conferência e decidir se vale incluir. |
+| O3 | Efeito colateral (mexer no que não devia) | Parcial | ABC [2] O.g.2 e AppWorld [3] (C_expect/C_allow) pedem isso. Hoje só os checks de remoção e alguns de modificação conferem o que deve continuar igual (ex.: `del-sqs-dev` confere as filas prod). | Listados em 28/10 (§3: 3 sim, 3 parcial, 31 não). Decidir se entra numa versão nova dos checks, antes de um run novo. |
 | O4 | Resposta de consulta por `output` (Terraform) ou `answer.json` | Segue | τ-bench [4]: r_output. | Manter |
 | O5 | Na AWS real, o check reprovado é refeito por até 60 s | Adapta | ABC [2] O.f.2 (tirar o não determinismo). É igual nas 3 formas, só depois da solução, nunca no baseline. | Manter |
 | O6 | `success` (execução ok + estado) e `state_pass` (só estado) lado a lado | Própria | `state_pass` é o comparável com [3][4][5]; `success` é o critério mais estrito do protocolo. | Manter |
@@ -67,11 +67,11 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 
 | # | Decisão | Base | Referência | Ação |
 |---|---|---|---|---|
-| S1 | McNemar exato + Holm entre os 3 pares | Adapta | Dietterich [9] recomenda McNemar para comparar dois classificadores no mesmo conjunto (conferido só o resumo). Holm [11]. **Problema:** os pares são (tarefa, rep), e com N=3 cada tarefa entra 3 vezes. As repetições não são independentes (Miller [8] §2.2: o erro padrão ingênuo chega a ser ~3× menor). | **Reanalisar** (A3) |
+| S1 | McNemar exato + Holm entre os 3 pares | Adapta | Dietterich [9] recomenda McNemar para comparar dois classificadores no mesmo conjunto (conferido só o resumo). Holm [11]. **Problema:** os pares são (tarefa, rep), e com N=3 cada tarefa entra 3 vezes. As repetições não são independentes (Miller [8] §2.2: o erro padrão ingênuo chega a ser ~3× menor). | Corrigido em 28/10: 1 par por tarefa, pela maioria das reps (A3). |
 | S2 | Bootstrap pareado reamostrando tarefas | Segue | Miller [8] (agrupar por questão). Já está implementado e é o teste certo para N>1. | Manter, como teste principal. |
 | S3 | Intervalo de Wilson | Segue | Wilson [12]; Brown, Cai e DasGupta [13]. ABC [2] R.10. | Manter |
-| S4 | N=3 no emulador; N=1 na AWS real | Adapta | Terminal-Bench [5]: ≥ 5 runs com IC 95%. Miller [8] §3.1: repetir reduz variância. N=1 só permite leitura exploratória. | Declarar N=1 como exploratório; ver R1. |
-| S5 | pass@k só com k ≤ N | Segue | Chen et al. (protocolo [13]): n ≥ k. τ-bench [4]: pass^k, que mede consistência (todas as k tentativas acertam). | Opcional: relatar pass^3 no emulador (A5). |
+| S4 | N=3 no emulador; N=1 na AWS real | Adapta | Terminal-Bench [5]: ≥ 5 runs com IC 95%. Miller [8] §3.1: repetir reduz variância. N=1 só permite leitura exploratória. | Feito o R1 (real com N=3, 29/10). O N=1 de 28/10 fica declarado como exploratório. |
+| S5 | pass@k só com k ≤ N | Segue | Chen et al. (protocolo [13]): n ≥ k. τ-bench [4]: pass^k, que mede consistência (todas as k tentativas acertam). | Manter. pass^3 relatado em 29/10 (§3). |
 
 ## 2. Auditoria pelo ABC [2]
 
@@ -80,13 +80,13 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | T.1 versões / T.4 limpeza / T.6 ambiente congelado | Atende (digest, lock, `prompt_version`; reset; emulador fixo) |
 | T.5 agente isolado do gabarito | Atende (referência e check fora do workspace; nota não volta) |
 | T.7 verificar tarefa / T.8 resolvível / T.9 oráculo | Atende (gate de pré-validação) |
-| T.10 inspecionar outliers | Parcial. Feito para algumas tarefas; faltava para as que decidem as manchetes (A1, A2). |
+| T.10 inspecionar outliers | Atende. Feito também para as tarefas que decidiam as manchetes (A1, A2) e com as falhas por origem. |
 | O.g.1 todas as saídas válidas | Atende |
 | O.g.2 efeito colateral | Parcial (O3) |
 | O.g.3 mudança trivial não passa | Atende (o baseline reprova) |
 | R.5 relação entre construto e medida | Falta escrever: mede "gerar e corrigir um artefato numa forma", não "agente de nuvem" em geral |
-| R.7–R.9, R.11 falhas conhecidas e impacto | Atende em boa parte (listas do Floci, achados do dataset); falta a leitura das manchetes com essas falhas |
-| R.10 significância e IC | Atende, com a ressalva S1 |
+| R.7–R.9, R.11 falhas conhecidas e impacto | Atende (listas do Floci, achados do dataset, manchetes relidas em A1/A2, falhas por origem) |
+| R.10 significância e IC | Atende (S1 corrigido) |
 | R.13 agente trivial | Atende (baseline do estado inicial) |
 | R.3 contaminação | Declarar (dataset público desde 2024; mais Terraform que boto3 nos dados de treino, cf. MultiPL-E [14]) |
 
@@ -110,7 +110,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 **A3. McNemar com repetições como pares independentes (S1).**
 - Os p-values atuais tratam 3 reps da mesma tarefa como 3 observações.
 - O efeito é tornar o teste otimista. Hoje nada deu significativo, então a conclusão não muda.
-- Mesmo assim, o teste precisa ser corrigido antes de qualquer resultado positivo.
+- Corrigido em 28/10: 1 par por tarefa (números abaixo).
 
 **A4. task-130 CLI rep 2: estouro de `max_tokens` nas 3 tentativas.**
 - Conta hoje como `FORMAT_FAIL` do agente, mas é limite do harness (o HANDOFF já classifica assim).
@@ -181,6 +181,23 @@ As mesmas 12 tarefas do run N=1, agora com N=3 (`runs/20261029T003159-modality-r
 - **`local-exec`:** o Terraform o usou em 6 trajetórias, nas tarefas do aws-bench sem recurso nativo.
 - **Leitura:** confirma a conclusão geral. Nas tarefas mais difíceis e só na real, nenhuma forma se destaca; o que pesa é a tarefa.
 
+### pass^3: consistência por forma (29/10/2026)
+
+τ-bench [4]: a tarefa conta só se as 3 reps passam (`check_pass`). Entre parênteses, pass@3 (ao menos 1 das 3).
+
+| Run | Terraform | CLI | boto3 |
+|---|---|---|---|
+| Sonnet, Floci | 25/25 (25) | 25/25 (25) | 24/25 (24) |
+| Haiku, Floci | 23/25 (25) | 22/25 (23) | 21/25 (23) |
+| Haiku, real, 18 comuns | 16/18 (18) | 17/18 (17) | 16/18 (17) |
+| Haiku, real, 12 só na real (R1) | 6/12 (10) | 7/12 (10) | 8/12 (10) |
+
+- **Haiku, Floci:** o que tira cada forma do 100% já está explicado:
+  - Terraform: `del-s3-bucket` 2/3 e `query-sg-ssh-open` 1/3 (A1);
+  - CLI: task-115/230 0/3 (A2) e task-130 2/3 (A4);
+  - boto3: task-115/230 0/3 (A2), task-231 e task-373 2/3.
+- **Leitura:** a consistência segue o mesmo padrão da taxa de acerto. Nenhuma forma é mais estável que outra. Nas tarefas mais difíceis (R1), metade fica instável em qualquer forma: o que pesa é a tarefa.
+
 ### Checks sem conferência de efeito colateral (28/10/2026)
 
 Auditoria dos 37 `check.py` (O3; ABC [2] O.g.2). "Sim" = o check confere tudo o que o enunciado
@@ -238,12 +255,13 @@ pedido).
 2. ~~Relatar com e sem task-115/230 e `query-sg-ssh-open`~~: feito em 28/10 (`--exclude-tasks`; números acima).
 3. ~~Separar as falhas por origem nas tabelas (agente, enunciado, emulador, harness, permissão)~~: feito em 28/10 (`selecao-tarefas-modalidades.md`, "Falhas por origem no Floci").
 4. ~~Listar os checks sem conferência de efeito colateral (O3)~~: feito em 28/10 (§3, "Checks sem conferência de efeito colateral").
-5. Opcional: pass^3 por forma no emulador (consistência, τ-bench).
+5. ~~Opcional: pass^3 por forma no emulador (consistência, τ-bench)~~: feito em 29/10, também nos runs da real (§3, "pass^3").
 
 **Re-rodar (custo baixo; decidir com o usuário)**
 - ~~R1. Tarefas só na AWS real com N=3~~: feito em 29/10 (§3, "R1").
-- R2. task-130 nas 3 formas com `max_tokens` maior, igual para todas (A4). Só vale se a tarefa importar para a conclusão.
-- R3. Opcional: robustez do prompt, com um parafraseado do bloco de modalidade numa amostra (D3, Sclar [10]).
+- ~~R2. task-130 nas 3 formas com `max_tokens` maior~~: decidido em 29/10 não rodar. A tarefa não pesa na conclusão (passa 3/3 na real); fica declarada como limite do harness (A4).
+- ~~R3. Robustez do prompt com paráfrase do bloco de modalidade~~: decidido em 29/10 só declarar (D3, Sclar [10]). Sem diferença entre as formas, a paráfrase dificilmente muda a conclusão.
+- Checks com efeito colateral (O3): decidido em 29/10 criar a versão nova (`collateral_ok` à parte) só se o toolkit próprio virar condição de um run novo.
 
 **Não precisa re-rodar**
 - Os runs de Sonnet e Haiku no emulador: o protocolo e o prompt (`mod-v3`) são os mesmos, e os problemas são de leitura, não de coleta.
