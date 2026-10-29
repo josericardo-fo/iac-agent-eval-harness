@@ -198,6 +198,15 @@ As mesmas 12 tarefas do run N=1, agora com N=3 (`runs/20261029T003159-modality-r
   - boto3: task-115/230 0/3 (A2), task-231 e task-373 2/3.
 - **Leitura:** a consistência segue o mesmo padrão da taxa de acerto. Nenhuma forma é mais estável que outra. Nas tarefas mais difíceis (R1), metade fica instável em qualquer forma: o que pesa é a tarefa.
 
+### Análises de 29/10/2026 (tokens, H3, falha silenciosa)
+
+Dados já coletados, sem custo. Runs: Sonnet Floci, Haiku Floci, real 18 comuns e R1 (run "só na real", N=3).
+
+- **Tokens (H1).** Bootstrap pareado por tarefa (`modality-metrics`, `total_tokens`). Criar: o Terraform gasta menos, com IC sem o zero, nos 3 runs com tarefas comuns e, no R1, contra o CLI. Modificar: idem, exceto TF × CLI no Sonnet. Consultar (2 tarefas): CLI/boto3 gastam menos. No total, o CLI gasta de 1,2× a 2,0× o Terraform. O resultado continua sem task-115/230 e `query-sg-ssh-open`. **Contradiz H1**, que previa CLI mais barato.
+- **H3 (o retorno do erro ajuda mais as imperativas).** Tarefas recuperadas da 1ª tentativa ao final (TF/CLI/boto3): Sonnet 0/4/6; Haiku Floci 7/10/6; real 6/3/6; R1 5/5/8. Bootstrap da diferença por tarefa: nenhum IC exclui o zero com folga (no Sonnet, o limite inferior é 0). **Não se sustenta.**
+- **Falha silenciosa** (execução ok, estado errado), entre as falhas: Haiku Floci TF 3/3, CLI 0/7, boto3 0/8; real 18 comuns 3/3, 0/3, 0/5; R1 6/11, 8/12, 6/9 (20 de 32); Sonnet boto3 3/3 (task-230).
+- Uso: `agenda-experimentos-toolkit.md` (achados K2–K4 e regra R11 do toolkit).
+
 ### Checks sem conferência de efeito colateral (28/10/2026)
 
 Auditoria dos 37 `check.py` (O3; ABC [2] O.g.2). "Sim" = o check confere tudo o que o enunciado
@@ -250,22 +259,17 @@ pedido).
 
 ## 4. Plano
 
-**Reanalisar (sem custo, só os dados existentes)**
-1. ~~Bootstrap como teste principal; McNemar por tarefa~~: feito em 28/10 (`mcnemar_unit = "task_majority"`).
-2. ~~Relatar com e sem task-115/230 e `query-sg-ssh-open`~~: feito em 28/10 (`--exclude-tasks`; números acima).
-3. ~~Separar as falhas por origem nas tabelas (agente, enunciado, emulador, harness, permissão)~~: feito em 28/10 (`selecao-tarefas-modalidades.md`, "Falhas por origem no Floci").
-4. ~~Listar os checks sem conferência de efeito colateral (O3)~~: feito em 28/10 (§3, "Checks sem conferência de efeito colateral").
-5. ~~Opcional: pass^3 por forma no emulador (consistência, τ-bench)~~: feito em 29/10, também nos runs da real (§3, "pass^3").
+**Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
+task-115/230 e `query-sg-ssh-open` (`--exclude-tasks`); falhas por origem
+(`selecao-tarefas-modalidades.md`); lista dos checks sem conferência de efeito colateral; pass^3;
+R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 
-**Re-rodar (custo baixo; decidir com o usuário)**
-- ~~R1. Tarefas só na AWS real com N=3~~: feito em 29/10 (§3, "R1").
-- ~~R2. task-130 nas 3 formas com `max_tokens` maior~~: decidido em 29/10 não rodar. A tarefa não pesa na conclusão (passa 3/3 na real); fica declarada como limite do harness (A4).
-- ~~R3. Robustez do prompt com paráfrase do bloco de modalidade~~: decidido em 29/10 só declarar (D3, Sclar [10]). Sem diferença entre as formas, a paráfrase dificilmente muda a conclusão.
-- Checks com efeito colateral (O3): decidido em 29/10 criar a versão nova (`collateral_ok` à parte) só se o toolkit próprio virar condição de um run novo.
-
-**Não precisa re-rodar**
-- Os runs de Sonnet e Haiku no emulador: o protocolo e o prompt (`mod-v3`) são os mesmos, e os problemas são de leitura, não de coleta.
-- O A/B/C da Semana 6: tem protocolo e referências próprias (`protocolo.md`).
+**Decidido em 29/10 (com o usuário)**
+- R2 (task-130 com `max_tokens` maior): não rodar; fica como limite do harness (A4).
+- R3 (paráfrase do bloco de modalidade): só declarar (D3, Sclar [10]).
+- Checks com efeito colateral (O3): criar a versão nova (`collateral_ok` à parte) só se o toolkit próprio virar condição de um run novo. O E1 da agenda (replay sem LLM) a usa como métrica à parte, sem mudar a nota atual.
+- Toolkit próprio: não roda como condição agora; vira a agenda E1–E8 (`agenda-experimentos-toolkit.md`). Cada experimento entra aqui como decisão de método antes do run.
+- Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
 
