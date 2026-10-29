@@ -99,7 +99,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
   código separa entrada e saída só pelo filtro `is-egress`, que não consta da documentação de
   `DescribeSecurityGroupRules`; a falha fica como agente/emulador até o run da AWS real
   (`selecao-tarefas-modalidades.md`, "Falhas por origem no Floci").
-- Conclusão: não sustenta "Terraform pior em consultar". Conferir no run da AWS real (`modality-real-aws-agent`, que tem a tarefa).
+- Conclusão: não sustenta "Terraform pior em consultar". **Confirmado na AWS real (28/10):** `query-sg-ssh-open` em Terraform passa 3/3 (no Floci, 1/3).
 
 **A2. "Terraform melhor em criar (36/36 × 29 × 28)" vem de 2 tarefas de premissa ambígua.**
 - 12 das 15 falhas de CLI e boto3 em criação são das task-115 e task-230. Os enunciados pressupõem um recurso que não existe (bucket `pike-…`, "the DynamoDB table").
@@ -132,6 +132,29 @@ McNemar por tarefa (maioria das reps) + Holm; diferença do bootstrap pareado po
 - uma limitação do emulador.
 
 Com 2 a 12 tarefas por categoria, o McNemar por tarefa quase não tem poder (com 2 discordantes, o menor p é 0,5). Por isso o bootstrap é o teste a relatar. ICs com um limite exatamente em 0 vêm de pares sem nenhuma tarefa a favor do outro lado.
+
+### Emulador × AWS real, mesmas 18 tarefas (28/10/2026)
+
+Haiku, N=3 nos dois: `runs/20261027T150905-modality-haiku` (filtrado às 18 tarefas) × `runs/20261028T180350-modality-real-aws-agent`. São as tarefas cuja referência passa nas 3 formas no Floci e na real.
+
+| Categoria | Floci (TF / CLI / boto3) | Real (TF / CLI / boto3) |
+|---|---|---|
+| Criar (5) | 15, 11, 11 de 15 | 15, 12, 10 de 15 |
+| Remover (3) | 8, 9, 9 de 9 | 7, 9, 9 de 9 |
+| Modificar (8) | 24 de 24 nas 3 | 24 de 24 nas 3 |
+| Consultar (2) | 4, 6, 6 de 6 | 5, 6, 6 de 6 |
+| **Total real** | — | **51, 51, 49 de 54** |
+
+- **Real:** nenhum par significativo (Holm = 1). Os ICs do bootstrap incluem o zero (ex.: TF×boto3, [−0,20; +0,11]).
+- **Leitura:** o emulador reproduz a nuvem real nessas tarefas. Das 54 combinações tarefa × forma, só 5 mudam o número de acertos, e cada uma em no máximo 2 de 3.
+- **Diferença explicada pelo emulador:** só `query-sg-ssh-open` TF (1/3 → 3/3), já esperada (A1).
+- **As outras 4 são variação do agente entre repetições, não do ambiente:**
+  - `del-s3-bucket` TF, 2 → 1: o mesmo erro do Floci, esvaziar o bucket e mantê-lo no `main.tf`;
+  - `task-231` boto3, 2 → 1;
+  - `task-130` CLI, 2 → 3: no Floci, uma rep estourou `max_tokens`;
+  - `query-dynamodb-ondemand` TF, 3 → 2: na rep 2, o agente **recriou as 4 tabelas** como `resource` em vez de lê-las, e a resposta saiu vazia. É um efeito colateral numa tarefa de consulta (ABC O.g.2), pego por acaso pela resposta errada.
+- **O padrão de A2 se repete na real:** task-230 falha 3/3 em CLI e boto3 e passa em TF.
+- **Consequência para o método:** o emulador é base válida para essas tarefas (E1, E3). A real acrescenta validade externa, não muda a conclusão.
 
 ### Checks sem conferência de efeito colateral (28/10/2026)
 
