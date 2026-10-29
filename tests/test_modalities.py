@@ -15,6 +15,7 @@ from iac_harness.modalities.execute import (
     inherits_state,
     parse_check_output,
     prevalidate_pair,
+    replay_pair,
     run_artifact,
     run_check,
     with_answer,
@@ -458,3 +459,103 @@ def test_run_check_writes_upstream_files():
     assert run_check(tc, task)[0]
     assert tc.seen[0][2] == {"check.py", "upstream"}
     assert seen == {"check.py": "orig", "instruction.md": "doc"}
+
+
+# ---------- replay (E1) ----------
+
+COLLATERAL_TASKS = {
+    "mod-s3-versioning", "mod-s3-encryption", "mod-dynamodb-pitr", "mod-dynamodb-ttl",
+    "mod-sg-https", "mod-sqs-retention", "mod-iam-user-policy", "mod-secret-tag",
+    "query-sg-ssh-open", "query-dynamodb-ondemand",
+}  # fmt: skip
+
+
+def test_collateral_loaded_only_for_e1_tasks():
+    assert {t.task_id for t in load_tasks() if t.collateral is not None} == COLLATERAL_TASKS
+
+
+class ReplayToolchain(RecordingToolchain):
+    """Retratos na ordem dada (str = stdout do collateral.py); check e artefato configuráveis."""
+
+    def __init__(self, snapshots, check_pass=True, snapshot_rc=0):
+        super().__init__()
+        self.snapshots = list(snapshots)
+        self.check_pass, self.snapshot_rc = check_pass, snapshot_rc
+
+    def run(self, args, workdir, timeout_s=None):
+        if args[:2] == ["python3", "collateral.py"]:
+            self.stdout, self.returncode = self.snapshots.pop(0), self.snapshot_rc
+        elif args[:2] == ["python3", "check.py"]:
+            self.stdout = json.dumps({"pass": self.check_pass, "details": {}})
+            self.returncode = 0
+        else:
+            self.stdout, self.returncode = "", 0
+        return super().run(args, workdir, timeout_s)
+
+
+def _snap(**state):
+    return json.dumps({"snapshot": state})
+
+
+def _replay(tmp_path, tc, task_id="mod-sg-https", modality="cli", content="echo final"):
+    return replay_pair(
+        _task(task_id), MODALITIES[modality], content, tc, FlociExecutor(tc), tmp_path, "r", rep=2
+    )
+
+
+def test_replay_pair_order_and_equal_snapshots(tmp_path):
+    tc = ReplayToolchain([_snap(a=1), _snap(a=1)])
+    row = _replay(tmp_path, tc)
+    order = [a[1] if a[0] == "python3" else a[0] for a, _, _ in tc.seen]
+    assert order == ["terraform", "terraform", "collateral.py", "bash", "check.py",
+                     "collateral.py"]  # fmt: skip
+    replay_dir = next(w for a, w, _ in tc.seen if a[0] == "bash")
+    assert replay_dir == tmp_path / "r" / "mod-sg-https" / "2" / "cli" / "replay"
+    assert (replay_dir / "run.sh").read_text() == "echo final"
+    assert row["initial_ok"] and row["exec_ok"] and row["check_pass"] is True
+    assert row["collateral_ok"] is True and row["collateral_details"] == {"changed": {}}
+
+
+def test_replay_pair_different_snapshots_gives_diff(tmp_path):
+    before = _snap(id="sg-1", groups=["a"], keep="x")
+    after = _snap(id="sg-2", groups=["a", "b"], keep="x")
+    row = _replay(tmp_path, ReplayToolchain([before, after]))
+    assert row["collateral_ok"] is False
+    assert row["collateral_details"]["changed"] == {
+        "id": {"before": "sg-1", "after": "sg-2"},
+        "groups": {"before": ["a"], "after": ["a", "b"]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("snapshots", "rc"),
+    [(['{"error": "boom"}', _snap(a=1)], 0), ([_snap(a=1), "não é json"], 0),
+     ([_snap(a=1), _snap(a=1)], 1)],
+)  # fmt: skip
+def test_replay_pair_snapshot_failure_is_none(tmp_path, snapshots, rc):
+    row = _replay(tmp_path, ReplayToolchain(snapshots, snapshot_rc=rc))
+    assert row["collateral_ok"] is None
+    details = row["collateral_details"]
+    assert details["before_error"] or details["after_error"]
+    assert row["check_pass"] is True  # o check roda igual
+
+
+def test_replay_pair_terraform_modify_inherits_state(tmp_path):
+    class StateToolchain(ReplayToolchain):
+        def run(self, args, workdir, timeout_s=None):
+            if args[:2] == ["terraform", "apply"]:
+                (Path(workdir) / "terraform.tfstate").write_text("state")
+            return super().run(args, workdir, timeout_s)
+
+    tc = StateToolchain([_snap(a=1), _snap(a=1)])
+    _replay(tmp_path, tc, modality="terraform", content="resource x {}")
+    replay_init = next(f for a, w, f in tc.seen if w.name == "replay" and a[0] == "terraform")
+    assert "terraform.tfstate" in replay_init
+
+
+def test_replay_pair_initial_failure_skips_artifact(tmp_path):
+    tc = RecordingToolchain(1, stderr="Error: boom")
+    row = _replay(tmp_path, tc)
+    assert row["initial_ok"] is False and row["exec_ok"] is None
+    assert row["collateral_ok"] is None
+    assert all(a[0] == "terraform" for a, _, _ in tc.seen)

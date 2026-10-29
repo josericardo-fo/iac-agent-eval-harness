@@ -627,3 +627,105 @@ def test_query_terraform_does_not_inherit_tfstate(tmp_path):
     attempt = tmp_path / "r" / "query-sg-ssh-open" / "1" / "terraform" / "attempt_1"
     assert json.loads((attempt / "terraform.tfstate").read_text())["outputs"]  # do próprio apply
     assert (attempt / "answer.json").exists()
+
+
+# ---------- modality-replay (E1) ----------
+
+
+def _src_run(tmp_path):
+    """Run de origem com 3 trajetórias: repair (final = tentativa 2), FORMAT_FAIL e artefato
+    apagado do disco; mais uma tarefa sem collateral.py (fica de fora)."""
+    src = tmp_path / "runs" / "src-run"
+    src.mkdir(parents=True)
+
+    def attempt(modality, n, content, format_ok=True, rep=1, task_id="mod-sg-https"):
+        path = src / task_id / str(rep) / modality / f"attempt_{n}"
+        path.mkdir(parents=True)
+        if content is not None:
+            (path / MODALITIES[modality].filename).write_text(content)
+        return {**_attempt(modality, True, task_id=task_id, rep=rep, attempt=n),
+                "format_ok": format_ok, "artifact_path": str(path)}  # fmt: skip
+
+    def final(modality, attempts, termination, check_pass, rep=1, task_id="mod-sg-https"):
+        return {"event": "final", "task_id": task_id, "modality": modality, "rep": rep,
+                "category": "modify", "attempts": attempts, "termination": termination,
+                "check_pass": check_pass}  # fmt: skip
+
+    lost = attempt("boto3", 1, "lost")
+    events = [
+        attempt("cli", 1, "primeira"), attempt("cli", 2, "final"),
+        final("cli", 2, "EXEC_OK", True),
+        attempt("terraform", 1, None, format_ok=False),
+        final("terraform", 1, "FORMAT_FAIL", False),
+        lost, final("boto3", 1, "EXEC_OK", False),
+        attempt("cli", 1, "x", task_id="task-108"),
+        final("cli", 1, "EXEC_OK", True, task_id="task-108"),
+    ]  # fmt: skip
+    (Path(lost["artifact_path"]) / "main.py").unlink()
+    (src / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    cfg = {"run": {"name": "x", "runs_dir": str(tmp_path / "runs")}, "toolchain": {"mode": "local"}}
+    (src / "run_config.json").write_text(json.dumps({"config": cfg, "git_commit": "abc"}))
+    return src
+
+
+def test_modality_replay_cli(tmp_path, monkeypatch, capsys):
+    src = _src_run(tmp_path)
+    tc = ScriptedToolchain()
+    ex = FakeExec(tc)
+    monkeypatch.setattr(cli, "build_toolchain", lambda cfg: tc)
+    monkeypatch.setattr(cli, "build_executor", lambda cfg, t, allow_real_aws=False: ex)
+    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "def"})
+    monkeypatch.setattr(cli, "_sandbox_provenance", lambda e: {"sandbox_kind": "floci"})
+    contents = []
+
+    def fake_replay(task, modality, content, *a, rep, max_chars):
+        contents.append((task.task_id, modality.name, content, rep))
+        return {"initial_ok": True, "exec_ok": True, "output": "o" * 5000, "check_pass": False,
+                "check_details": {"k": 1}, "collateral_ok": False,
+                "collateral_details": {"changed": {"id": {"before": 1, "after": 2}}}}  # fmt: skip
+
+    monkeypatch.setattr(cli, "replay_pair", fake_replay)
+    assert main(["modality-replay", str(src)]) == 0
+    run_dir = Path(capsys.readouterr().out.strip())
+    assert run_dir.parent == src.parent and run_dir.name.endswith("-replay-src-run")
+    assert contents == [("mod-sg-https", "cli", "final", 1)]  # só a tentativa final executa
+    assert ex.resets == 1
+    events = [json.loads(x) for x in (run_dir / "events.jsonl").read_text().splitlines()]
+    assert [(e["modality"], e["skipped_reason"]) for e in events] == [
+        ("cli", None),
+        ("terraform", "FORMAT_FAIL (sem artefato)"),
+        ("boto3", "artefato ausente no disco"),
+    ]
+    ran = events[0]
+    assert ran["event"] == "replay" and ran["src_run"] == str(src) and ran["src_attempt"] == 2
+    assert ran["check_pass"] is False and ran["check_pass_original"] is True
+    assert ran["collateral_ok"] is False and len(ran["output"]) < 5000
+    assert events[1]["exec_ok"] is None and events[1]["collateral_ok"] is None
+    saved = json.loads((run_dir / "run_config.json").read_text())
+    assert saved["src_run"] == str(src) and saved["tasks"] == ["mod-sg-https"]
+
+    assert main(["modality-metrics", str(run_dir)]) == 0
+    m = json.loads(capsys.readouterr().out)
+    assert m["n_replays"] == 1 and m["n_skipped"] == 2
+    assert m["by_modality"]["cli"]["collateral_ok"] == {"true": 0, "false": 1, "none": 0}
+    assert m["by_category"]["modify"]["cli"]["check_agreement"]["k"] == 0
+    assert m["collateral_false"] == [
+        {"task_id": "mod-sg-https", "modality": "cli", "rep": 1, "changed": ["id"]}
+    ]
+
+
+def test_modality_replay_rejects_real_aws(tmp_path, monkeypatch):
+    src = _src_run(tmp_path)
+    saved = json.loads((src / "run_config.json").read_text())
+    saved["config"]["sandbox"] = {"kind": "aws"}
+    (src / "run_config.json").write_text(json.dumps(saved))
+    monkeypatch.setattr(cli, "build_executor", lambda *a, **k: pytest.fail("não pode construir"))
+    with pytest.raises(SystemExit, match="só roda no Floci"):
+        main(["modality-replay", str(src)])
+    assert not list((tmp_path / "runs").glob("*-replay-src-run"))
+
+
+def test_modality_replay_rejects_task_without_collateral(tmp_path):
+    src = _src_run(tmp_path)
+    with pytest.raises(SystemExit, match="sem collateral.py"):
+        main(["modality-replay", str(src), "--tasks", "task-108"])

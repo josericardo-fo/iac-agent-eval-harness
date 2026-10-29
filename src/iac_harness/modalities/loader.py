@@ -28,6 +28,7 @@ class ModalityTask:
     missing_references: tuple[str, ...] = ()  # modalidades sem arquivo de referência
     missing_reason: str = ""  # por que faltam (obrigatório com missing_references)
     upstream: dict[str, str] = field(default_factory=dict)  # upstream/: arquivo → conteúdo
+    collateral: str | None = None  # código do collateral.py (retrato do estado), se existir
 
     @property
     def wants_answer(self) -> bool:
@@ -52,6 +53,7 @@ def load_task(path: Path) -> ModalityTask:
         raise ValueError(f"{path}: missing_references com modalidades inválidas {sorted(unknown)}")
     if missing and not meta.get("missing_reason"):
         raise ValueError(f"{path}: missing_reason é obrigatório com missing_references")
+    collateral = path / "collateral.py"
     upstream_dir = path / UPSTREAM_DIRNAME
     upstream = (
         {p.name: p.read_text() for p in sorted(upstream_dir.iterdir()) if p.is_file()}
@@ -76,6 +78,7 @@ def load_task(path: Path) -> ModalityTask:
         missing_references=missing,
         missing_reason=meta.get("missing_reason", ""),
         upstream=upstream,
+        collateral=collateral.read_text() if collateral.exists() else None,
     )
 
 

@@ -26,9 +26,9 @@ from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.metrics import compute_metrics, load_events
 from iac_harness.modalities import prompts as mod_prompts
-from iac_harness.modalities.execute import prevalidate_pair
+from iac_harness.modalities.execute import prevalidate_pair, replay_pair, truncate
 from iac_harness.modalities.loader import load_tasks
-from iac_harness.modalities.metrics import compute_modality_metrics
+from iac_harness.modalities.metrics import compute_modality_metrics, compute_replay_metrics
 from iac_harness.modalities.runner import DEFAULT_MAX_ATTEMPTS, ModRunContext, run_pair
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
@@ -628,6 +628,159 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- modality-replay ----------
+
+REPLAY_CATEGORIES = ("modify", "query")
+
+
+def _replay_plan(
+    events: list[dict[str, Any]], tasks: dict[str, Any]
+) -> list[tuple[dict[str, Any], dict[str, Any] | None, str | None]]:
+    """(final, attempt da última tentativa ou None, motivo do pulo ou None), na ordem do run.
+
+    Pula sem executar: INITIAL_FAIL (sem tentativa), FORMAT_FAIL e artefato ausente no disco.
+    """
+    attempts = {
+        (e["task_id"], e["modality"], e["rep"], e["attempt"]): e
+        for e in events
+        if e.get("event") == "attempt"
+    }
+    plan = []
+    for final in events:
+        if final.get("event") != "final" or final["task_id"] not in tasks:
+            continue
+        key = (final["task_id"], final["modality"], final["rep"], final["attempts"])
+        attempt = attempts.get(key)
+        reason = None
+        if attempt is None:
+            reason = f"sem evento attempt ({final['termination']})"
+        elif not attempt.get("format_ok", True):
+            reason = "FORMAT_FAIL (sem artefato)"
+        elif not (
+            Path(attempt["artifact_path"]) / MODALITIES[final["modality"]].filename
+        ).is_file():
+            reason = "artefato ausente no disco"
+        plan.append((final, attempt, reason))
+    return plan
+
+
+def _replay_table(metrics: dict[str, Any]) -> str:
+    """collateral_ok e concordância do check por categoria × modalidade."""
+    header = (
+        f"{'categoria':<9} {'modalidade':<10} {'n':>3} {'colat ok':>8} {'colat X':>7} "
+        f"{'colat ?':>7} {'check=orig':>10}"
+    )
+    lines = [header, "-" * len(header)]
+    rows = [
+        (cat, mod, m) for cat, mods in metrics["by_category"].items() for mod, m in mods.items()
+    ]
+    rows += [("total", mod, m) for mod, m in metrics["by_modality"].items()]
+    for cat, mod, m in rows:
+        c = m["collateral_ok"]
+        agree = f"{m['check_agreement']['k']}/{m['check_agreement']['n']}"
+        lines.append(
+            f"{cat:<9} {mod:<10} {m['n']:>3} {c['true']:>8} {c['false']:>7} {c['none']:>7} "
+            f"{agree:>10}"
+        )
+    lines.append(f"pulados: {metrics['n_skipped']} {metrics['skipped']}")
+    for item in metrics["collateral_false"]:
+        lines.append(f"colateral: {item['task_id']} × {item['modality']} rep {item['rep']}: "
+                     f"{', '.join(item['changed'])}")  # fmt: skip
+    return "\n".join(lines)
+
+
+def cmd_modality_replay(args: argparse.Namespace) -> int:
+    """Reexecuta no sandbox o artefato final de cada trajetória (sem LLM) e mede o colateral."""
+    src = Path(args.src_run_dir)
+    saved = json.loads((src / "run_config.json").read_text(encoding="utf-8"))
+    cfg = saved["config"]
+    # Replay só no Floci: reexecutar artefatos de agente na conta real não é aceito.
+    if cfg.get("sandbox", {}).get("kind", FlociExecutor.KIND) == RealAwsExecutor.KIND:
+        raise SystemExit("modality-replay só roda no Floci: o run de origem usou a AWS real")
+    events = load_events(src / "events.jsonl")
+    in_run = {e["task_id"] for e in events if e.get("event") == "final"}
+    all_tasks = {t.task_id: t for t in load_tasks()}
+    if args.tasks:
+        unknown = set(args.tasks) - in_run
+        if unknown:
+            raise SystemExit(f"tarefas não encontradas no run: {sorted(unknown)}")
+        no_snap = sorted(t for t in args.tasks if all_tasks[t].collateral is None)
+        if no_snap:
+            raise SystemExit(f"tarefas sem collateral.py: {no_snap}")
+    wanted = set(args.tasks or in_run)
+    tasks = {
+        t: all_tasks[t]
+        for t in sorted(wanted & in_run & set(all_tasks))
+        if all_tasks[t].category in args.categories and all_tasks[t].collateral is not None
+    }
+    if not tasks:
+        raise SystemExit("nenhuma tarefa com collateral.py nas categorias pedidas")
+    plan = _replay_plan(events, tasks)
+    max_chars = cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS)
+    runs_dir = src.parent
+    run_id = new_run_id(f"replay-{src.name}")
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
+    (run_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "config": cfg,
+                "src_run": str(src),
+                "src_git_commit": saved.get("git_commit"),
+                "tasks": sorted(tasks),
+                "categories": list(args.categories),
+                **_git_provenance(),
+                "versions": {
+                    **toolchain.versions(run_dir),
+                    "toolchain_image": toolchain.image,
+                    "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
+                    **_sandbox_provenance(executor),
+                },
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    recorder = JsonlRecorder(run_dir / "events.jsonl")
+    try:
+        for final, attempt, reason in plan:
+            task = tasks[final["task_id"]]
+            modality = MODALITIES[final["modality"]]
+            event: dict[str, Any] = {
+                "event": "replay", "run_id": run_id, "src_run": str(src),
+                "task_id": task.task_id, "category": task.category, "modality": modality.name,
+                "rep": final["rep"], "src_attempt": final["attempts"],
+                "src_termination": final["termination"],
+                "check_pass_original": final["check_pass"], "skipped_reason": reason,
+                "initial_ok": None, "exec_ok": None, "output": "", "check_pass": None,
+                "check_details": {}, "collateral_ok": None, "collateral_details": {},
+            }  # fmt: skip
+            if reason is None:
+                content = (Path(attempt["artifact_path"]) / modality.filename).read_text()
+                executor.reset()
+                row = replay_pair(
+                    task, modality, content, toolchain, executor, runs_dir, run_id,
+                    rep=final["rep"], max_chars=max_chars,
+                )  # fmt: skip
+                event.update(row, output=truncate(row["output"], max_chars))
+            recorder.record(event)
+            print(
+                f"{task.task_id} × {modality.name} rep {final['rep']}: "
+                f"collateral_ok={event['collateral_ok']} check={event['check_pass']} "
+                f"(orig {event['check_pass_original']})" + (f" pulado: {reason}" if reason else ""),
+                file=sys.stderr,
+            )
+    finally:
+        recorder.close()
+        final_cleanup(executor)
+    metrics = compute_replay_metrics(load_events(run_dir / "events.jsonl"))
+    print(_replay_table(metrics), file=sys.stderr)
+    print(run_dir)
+    return 0
+
+
 # ---------- modality-run ----------
 
 MODALITY_UNIT = ("task_id", "modality", "rep")
@@ -834,6 +987,12 @@ def cmd_modality_metrics(args: argparse.Namespace) -> int:
     cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
     prices = {m: tuple(p) for m, p in cfg.get("prices", {}).items()}
     events = load_events(run_dir / "events.jsonl")
+    if any(e.get("event") == "replay" for e in events):
+        # Run de modality-replay: resumo descritivo do colateral (sem bootstrap).
+        replay = compute_replay_metrics(events)
+        print(_replay_table(replay) if args.format == "table" else
+              json.dumps(replay, indent=2, ensure_ascii=False))  # fmt: skip
+        return 0
     excluded = sorted(set(args.exclude_tasks or ()))
     # guarda contra erro de digitação: só exclui tarefas que existem no run
     missing = set(excluded) - {e["task_id"] for e in events if "task_id" in e}
@@ -1182,7 +1341,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_mrun.set_defaults(func=cmd_modality_run)
 
-    p_mmet = sub.add_parser("modality-metrics", help="métricas de um modality-run")
+    p_mrep = sub.add_parser(
+        "modality-replay",
+        help="reexecuta sem LLM o artefato final de cada trajetória e mede o efeito colateral",
+    )
+    p_mrep.add_argument("src_run_dir", type=Path, help="run dir de um modality-run")
+    p_mrep.add_argument("--tasks", nargs="+")
+    p_mrep.add_argument(
+        "--categories",
+        type=lambda v: tuple(v.split(",")),
+        default=REPLAY_CATEGORIES,
+        help="categorias separadas por vírgula (padrão: modify,query)",
+    )
+    p_mrep.set_defaults(func=cmd_modality_replay)
+
+    p_mmet = sub.add_parser(
+        "modality-metrics", help="métricas de um modality-run (ou resumo de um modality-replay)"
+    )
     p_mmet.add_argument("run_dir", type=Path)
     p_mmet.add_argument("--format", choices=("json", "table"), default="json")
     p_mmet.add_argument(

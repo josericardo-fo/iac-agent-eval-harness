@@ -41,10 +41,11 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 |---|---|---|---|---|
 | O1 | A nota é o estado final via API (`check.py`), não o artefato | Segue | AppWorld [3] §3.2, τ-bench [4] §3 e Terminal-Bench [5] §2.1 ("testam o estado final, não os comandos"). | Manter |
 | O2 | O check aceita qualquer solução que deixe o estado certo (ex.: qualquer tabela com PITR na task-230) | Segue | ABC [2] O.g.1 (todas as saídas válidas); AppWorld [3] (conjunto de estados válidos). | Manter |
-| O3 | Efeito colateral (mexer no que não devia) | Parcial | ABC [2] O.g.2 e AppWorld [3] (C_expect/C_allow) pedem isso. Hoje só os checks de remoção e alguns de modificação conferem o que deve continuar igual (ex.: `del-sqs-dev` confere as filas prod). | Listados em 28/10 (§3: 3 sim, 3 parcial, 31 não). Decidir se entra numa versão nova dos checks, antes de um run novo. |
+| O3 | Efeito colateral (mexer no que não devia) | Parcial | ABC [2] O.g.2 e AppWorld [3] (C_expect/C_allow) pedem isso. Hoje só os checks de remoção e alguns de modificação conferem o que deve continuar igual (ex.: `del-sqs-dev` confere as filas prod). | Listados em 28/10 (§3: 3 sim, 3 parcial, 31 não). Medido à parte no E1 (O7), sem mudar os checks. |
 | O4 | Resposta de consulta por `output` (Terraform) ou `answer.json` | Segue | τ-bench [4]: r_output. | Manter |
 | O5 | Na AWS real, o check reprovado é refeito por até 60 s | Adapta | ABC [2] O.f.2 (tirar o não determinismo). É igual nas 3 formas, só depois da solução, nunca no baseline. | Manter |
 | O6 | `success` (execução ok + estado) e `state_pass` (só estado) lado a lado | Própria | `state_pass` é o comparável com [3][4][5]; `success` é o critério mais estrito do protocolo. | Manter |
+| O7 | E1: replay sem LLM dos artefatos finais no Floci, com `collateral_ok` por retrato antes/depois | Adapta | AppWorld [3] compara o estado antes e depois e só aceita mudança no que é permitido (C_expect/C_allow); ABC [2] O.g.2. Aqui o "permitido" é só o atributo-alvo: um `collateral.py` por tarefa retrata o que deve ficar igual (ID/ARN, data de criação, contagem de recursos do tipo, atributos fora do alvo), e `collateral_ok` = retratos iguais. Escopo: 8 de modificar + 2 de consultar, runs Sonnet e Haiku do Floci. O `check.py` é reexecutado sem mudança; a concordância com o `check_pass` original é relatada como reprodutibilidade, e discordâncias são declaradas, não corrigidas. Antes do run, cada retrato é validado: as referências dão `True` e um script que recria o recurso dá `False` (teste de integração). Limite declarado: no S3 e no SQS a recriação só aparece pela data de criação, que o Floci dá com resolução de segundo; recriar no mesmo segundo passaria. | Registrado em 29/10, antes do run. Métrica à parte; não muda nenhuma nota. |
 
 ### Protocolo do agente
 
@@ -257,6 +258,24 @@ pedido).
 - Nos checks do aws-bench, a regra do projeto é não editar o upstream; a conferência ficaria no
   adaptador.
 
+### E1: efeito colateral por replay (29/10/2026)
+
+Decisão O7. Comando: `uv run iac-harness modality-replay <run>`, e o resumo sai com `modality-metrics <replay>`. Runs:
+`runs/20261029T191956-replay-20261027T150905-modality-haiku` e
+`runs/20261029T194517-replay-20261020T184924-modality-spike`. Validação dos retratos:
+`tests/test_integration.py::test_collateral_reference_and_sabotage` (30 referências `True`, 10
+sabotagens `False`; o `check.py` atual aprovou as 10 sabotagens na primeira validação).
+
+| Run | Modificar (TF / CLI / boto3) | Consultar | `check_pass` igual ao original |
+|---|---|---|---|
+| Haiku, Floci | 24/24 nas 3 | 6/6 nas 3 | 90/90 |
+| Sonnet, Floci | 24/24 nas 3 | 6/6 nas 3 | 90/90 |
+
+- **Nenhum efeito colateral** nas 180 trajetórias, em nenhuma forma, e nenhuma pulada.
+- **Reprodutibilidade:** o replay reproduz a nota original em 180/180.
+- **Leitura:** nas tarefas do Floci, os agentes não mexeram no que não deviam, e a falta de conferência nos checks (O3) não esconde falhas nos runs existentes. O único caso conhecido (`query-dynamodb-ondemand` TF, recriação das tabelas) é da AWS real e não entra no replay (O7 é só Floci). Fica como achado isolado.
+- **Limites:** são 10 tarefas fáceis (modificar com 1 recurso e consultas simples); a recriação no mesmo segundo passaria no S3 e no SQS (O7). Não diz nada sobre as tarefas difíceis (R1) nem sobre pedidos ambíguos (E2).
+
 ## 4. Plano
 
 **Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
@@ -269,6 +288,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - R3 (paráfrase do bloco de modalidade): só declarar (D3, Sclar [10]).
 - Checks com efeito colateral (O3): criar a versão nova (`collateral_ok` à parte) só se o toolkit próprio virar condição de um run novo. O E1 da agenda (replay sem LLM) a usa como métrica à parte, sem mudar a nota atual.
 - Toolkit próprio: não roda como condição agora; vira a agenda E1–E8 (`agenda-experimentos-toolkit.md`). Cada experimento entra aqui como decisão de método antes do run.
+- E1 registrado em 29/10, antes do run (O7): replay sem LLM, `collateral_ok` à parte, 8 de modificar + 2 de consultar, runs Sonnet e Haiku do Floci.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).

@@ -19,6 +19,9 @@ from iac_harness.cli import (
     prevalidate_task,
 )
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
+from iac_harness.modalities.execute import replay_pair
+from iac_harness.modalities.loader import load_tasks
+from iac_harness.modalities.spec import MODALITIES
 from iac_harness.runner import COMMON_CHAIN, run_gates
 from iac_harness.types import Artifact, Stage, TaskOracle
 from iac_harness.workspace import create_workspace
@@ -129,3 +132,106 @@ def test_modality_prevalidate_one_task(floci, tmp_path):
     for r in rows:
         assert r["baseline_pass"] is False, r
         assert r["ref_exec_ok"] and r["ref_check_pass"] is True, r
+
+
+# ---------- E1: collateral.py de cada tarefa (replay_pair no Floci) ----------
+
+# Sabotagem por tarefa (CLI): efeito colateral que o retrato tem de pegar.
+COLLATERAL_SABOTAGE = {
+    "mod-s3-versioning": """
+aws s3api delete-bucket --bucket mod-versioning-bucket
+sleep 2
+aws s3api create-bucket --bucket mod-versioning-bucket
+aws s3api put-bucket-versioning --bucket mod-versioning-bucket \\
+  --versioning-configuration Status=Enabled
+""",
+    "mod-s3-encryption": """
+aws s3api put-bucket-encryption --bucket mod-encryption-bucket \\
+  --server-side-encryption-configuration \\
+  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms"},"BucketKeyEnabled":true}]}'
+aws kms create-key --description unused
+""",
+    "mod-dynamodb-pitr": """
+aws dynamodb delete-table --table-name mod-pitr-table
+sleep 2
+aws dynamodb create-table --table-name mod-pitr-table --billing-mode PAY_PER_REQUEST \\
+  --attribute-definitions AttributeName=id,AttributeType=S \\
+  --key-schema AttributeName=id,KeyType=HASH
+aws dynamodb update-continuous-backups --table-name mod-pitr-table \\
+  --point-in-time-recovery-specification PointInTimeRecoveryEnabled=true
+""",
+    "mod-dynamodb-ttl": """
+aws dynamodb delete-table --table-name mod-ttl-table
+sleep 2
+aws dynamodb create-table --table-name mod-ttl-table --billing-mode PAY_PER_REQUEST \\
+  --attribute-definitions AttributeName=id,AttributeType=S \\
+  --key-schema AttributeName=id,KeyType=HASH
+aws dynamodb update-time-to-live --table-name mod-ttl-table \\
+  --time-to-live-specification Enabled=true,AttributeName=expires_at
+""",
+    "mod-sg-https": """
+VPC=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=mod-sg-vpc \\
+  --query 'Vpcs[0].VpcId' --output text)
+SG=$(aws ec2 describe-security-groups \\
+  --filters Name=group-name,Values=mod-web-sg Name=vpc-id,Values=$VPC \\
+  --query 'SecurityGroups[0].GroupId' --output text)
+aws ec2 authorize-security-group-ingress --group-id "$SG" --protocol tcp --port 443 --cidr 0.0.0.0/0
+DEF=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true \\
+  --query 'Vpcs[0].VpcId' --output text)
+aws ec2 create-security-group --group-name stray-sg --description stray --vpc-id "$DEF"
+""",
+    "mod-sqs-retention": """
+URL=$(aws sqs get-queue-url --queue-name mod-retention-queue --query QueueUrl --output text)
+aws sqs delete-queue --queue-url "$URL"
+sleep 2
+aws sqs create-queue --queue-name mod-retention-queue --attributes MessageRetentionPeriod=345600
+""",
+    "mod-iam-user-policy": """
+aws iam delete-user --user-name mod-readonly-user
+aws iam create-user --user-name mod-readonly-user
+aws iam attach-user-policy --user-name mod-readonly-user \\
+  --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+""",
+    "mod-secret-tag": """
+aws secretsmanager delete-secret --secret-id mod-tagged-secret --force-delete-without-recovery
+sleep 2
+aws secretsmanager create-secret --name mod-tagged-secret \\
+  --tags Key=Team,Value=platform Key=Environment,Value=production
+""",
+    "query-sg-ssh-open": """
+DEF=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true \\
+  --query 'Vpcs[0].VpcId' --output text)
+aws ec2 create-security-group --group-name stray-sg --description stray --vpc-id "$DEF"
+echo '{"security_groups": ["query-bastion-sg", "query-legacy-sg"]}' > answer.json
+""",
+    "query-dynamodb-ondemand": """
+aws dynamodb update-continuous-backups --table-name query-orders \\
+  --point-in-time-recovery-specification PointInTimeRecoveryEnabled=true
+echo '{"tables": ["query-orders", "query-sessions"]}' > answer.json
+""",
+}
+COLLATERAL_CASES = [
+    (task_id, modality, "reference")
+    for task_id in sorted(COLLATERAL_SABOTAGE)
+    for modality in ("terraform", "cli", "boto3")
+] + [(task_id, "cli", "sabotage") for task_id in sorted(COLLATERAL_SABOTAGE)]
+
+
+@pytest.fixture(scope="module")
+def modality_env(floci):
+    cfg = load_config(ROOT / "configs" / "modality-spike.toml")
+    toolchain = build_toolchain(cfg)
+    return toolchain, build_executor(cfg, toolchain)
+
+
+@pytest.mark.parametrize(("task_id", "modality", "kind"), COLLATERAL_CASES)
+def test_collateral_reference_and_sabotage(modality_env, tmp_path, task_id, modality, kind):
+    """Referência nas três modalidades não mexe no retrato; a sabotagem (CLI) mexe."""
+    toolchain, executor = modality_env
+    task = next(t for t in load_tasks() if t.task_id == task_id)
+    assert task.collateral is not None
+    content = task.references[modality] if kind == "reference" else COLLATERAL_SABOTAGE[task_id]
+    executor.reset()
+    row = replay_pair(task, MODALITIES[modality], content, toolchain, executor, tmp_path, "it")
+    assert row["exec_ok"], row["output"]
+    assert row["collateral_ok"] is (kind == "reference"), row["collateral_details"]

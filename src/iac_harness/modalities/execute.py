@@ -23,6 +23,7 @@ from iac_harness.workspace import create_workspace
 # Arquivos do apply inicial herdados pelo workspace Terraform em modify/delete.
 INHERITED_TF_FILES = ("terraform.tfstate", ".terraform.lock.hcl")
 CHECK_FILENAME = "check.py"
+COLLATERAL_FILENAME = "collateral.py"
 ANSWER_FILENAME = "answer.json"
 # Erro fixo de resposta ausente/inválida nas consultas (volta ao agente como erro de execução).
 ANSWER_ERROR = {
@@ -201,17 +202,27 @@ def apply_initial(
     )  # fmt: skip
 
 
-def parse_check_output(stdout: str) -> tuple[bool, dict[str, Any]]:
-    """Última linha JSON `{"pass": bool, "details": {...}}`; qualquer outra coisa reprova."""
+def last_json_line(stdout: str) -> tuple[str | None, Any]:
+    """(última linha não vazia, valor JSON dela); linha None se não há saída.
+
+    Levanta json.JSONDecodeError se a última linha não for JSON.
+    """
     lines = [line for line in stdout.strip().splitlines() if line.strip()]
     if not lines:
-        return False, {"error": "check sem saída"}
+        return None, None
+    return lines[-1], json.loads(lines[-1])
+
+
+def parse_check_output(stdout: str) -> tuple[bool, dict[str, Any]]:
+    """Última linha JSON `{"pass": bool, "details": {...}}`; qualquer outra coisa reprova."""
     try:
-        data = json.loads(lines[-1])
+        line, data = last_json_line(stdout)
     except json.JSONDecodeError as exc:
         return False, {"error": f"saída do check não é JSON: {exc}", "output": stdout[-500:]}
+    if line is None:
+        return False, {"error": "check sem saída"}
     if not isinstance(data, dict) or not isinstance(data.get("pass"), bool):
-        return False, {"error": "saída do check sem campo booleano 'pass'", "output": lines[-1]}
+        return False, {"error": "saída do check sem campo booleano 'pass'", "output": line}
     details = data.get("details")
     return data["pass"], details if isinstance(details, dict) else {"details": details}
 
@@ -241,28 +252,79 @@ def run_check(
     return passed, {**details, "check_attempts": attempt}
 
 
-def _run_check_once(
-    toolchain: Toolchain, task: ModalityTask, workspace: Path | None
-) -> tuple[bool, dict[str, Any]]:
+def _run_task_script(
+    toolchain: Toolchain, task: ModalityTask, filename: str, code: str, workspace: Path | None
+) -> subprocess.CompletedProcess | str:
+    """Roda `python3 <filename> <region>` num diretório temporário FORA do workspace.
+
+    Mesmo ambiente do check: upstream/ ao lado e answer.json do workspace, se houver. Devolve o
+    processo, ou a mensagem de erro se nem foi possível executar.
+    """
     with tempfile.TemporaryDirectory(prefix="iac-check-") as tmp:
         tmp_dir = Path(tmp)
-        (tmp_dir / CHECK_FILENAME).write_text(task.check)
+        (tmp_dir / filename).write_text(code)
         if task.upstream:
             # Check original do dataset, usado pelo check.py adaptador da tarefa.
             (tmp_dir / UPSTREAM_DIRNAME).mkdir()
-            for filename, content in task.upstream.items():
-                (tmp_dir / UPSTREAM_DIRNAME / filename).write_text(content)
+            for name, content in task.upstream.items():
+                (tmp_dir / UPSTREAM_DIRNAME / name).write_text(content)
         if workspace is not None and (workspace / ANSWER_FILENAME).is_file():
             shutil.copy(workspace / ANSWER_FILENAME, tmp_dir / ANSWER_FILENAME)
         try:
-            proc = toolchain.run(["python3", CHECK_FILENAME, task.region], tmp_dir)
+            return toolchain.run(["python3", filename, task.region], tmp_dir)
         except (subprocess.TimeoutExpired, OSError) as exc:
-            return False, {"error": f"falha ao executar o check: {exc}"}
+            return str(exc)
+
+
+def _run_check_once(
+    toolchain: Toolchain, task: ModalityTask, workspace: Path | None
+) -> tuple[bool, dict[str, Any]]:
+    proc = _run_task_script(toolchain, task, CHECK_FILENAME, task.check, workspace)
+    if isinstance(proc, str):
+        return False, {"error": f"falha ao executar o check: {proc}"}
     passed, details = parse_check_output(proc.stdout)
     if proc.returncode != 0:
         details = {**details, "returncode": proc.returncode, "stderr": proc.stderr[-500:]}
         passed = False
     return passed, details
+
+
+def run_snapshot(
+    toolchain: Toolchain, task: ModalityTask
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Retrato do estado pelo collateral.py da tarefa (mesmo contrato do check, sem settle).
+
+    Última linha JSON `{"snapshot": {...}}`. Devolve (retrato, {}) ou (None, erro): falha do
+    retrato não é efeito colateral, vira `collateral_ok` None.
+    """
+    proc = _run_task_script(toolchain, task, COLLATERAL_FILENAME, task.collateral, None)
+    if isinstance(proc, str):
+        return None, {"error": f"falha ao executar o retrato: {proc}"}
+    try:
+        _, data = last_json_line(proc.stdout)
+    except json.JSONDecodeError:
+        data = None
+    if (
+        proc.returncode != 0
+        or not isinstance(data, dict)
+        or not isinstance(data.get("snapshot"), dict)
+    ):
+        return None, {
+            "error": "retrato inválido", "returncode": proc.returncode,
+            "output": proc.stdout[-500:], "stderr": proc.stderr[-500:],
+        }  # fmt: skip
+    return data["snapshot"], {}
+
+
+def diff_snapshots(before: Any, after: Any, prefix: str = "") -> dict[str, dict[str, Any]]:
+    """Chaves (caminho com ponto) cujo valor mudou, com antes/depois; dicts descem, listas não."""
+    if isinstance(before, dict) and isinstance(after, dict):
+        out: dict[str, dict[str, Any]] = {}
+        for key in sorted(set(before) | set(after)):
+            path = f"{prefix}.{key}" if prefix else str(key)
+            out.update(diff_snapshots(before.get(key), after.get(key), path))
+        return out
+    return {} if before == after else {prefix or "<root>": {"before": before, "after": after}}
 
 
 def prevalidate_pair(
@@ -309,4 +371,55 @@ def prevalidate_pair(
         toolchain, task, ref_path, settle=True
     )
     row["valid"] = row["baseline_pass"] is False and ref.ok and row["ref_check_pass"] is True
+    return row
+
+
+def replay_pair(
+    task: ModalityTask,
+    modality: Modality,
+    content: str,
+    toolchain: Toolchain,
+    executor: FlociExecutor,
+    runs_dir: Path,
+    run_id: str,
+    rep: int = 0,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> dict[str, Any]:
+    """Reexecuta um artefato (sem LLM): estado inicial → retrato → artefato → check → retrato.
+
+    Mesmo fluxo de `prevalidate_pair`, com `content` no lugar da referência. Quem chama faz o
+    `executor.reset()` antes. `collateral_ok` = retrato antes == depois; None se o retrato
+    falhou (erro em `collateral_details`) ou se o estado inicial não aplicou.
+    """
+    row: dict[str, Any] = {
+        "initial_ok": None, "exec_ok": None, "output": "", "check_pass": None,
+        "check_details": {}, "collateral_ok": None, "collateral_details": {},
+    }  # fmt: skip
+    inherit = None
+    if task.initial_tf is not None:
+        initial, initial_path = apply_initial(
+            toolchain, executor, task, modality, runs_dir, run_id, max_chars, rep=rep
+        )
+        row["initial_ok"] = initial.ok
+        if not initial.ok:
+            row["collateral_details"] = {"error": "initial.tf não aplicou",
+                                         "output": initial.output}  # fmt: skip
+            return row
+        if inherits_state(task, modality):
+            inherit = initial_path
+    before, before_err = run_snapshot(toolchain, task)
+    result, path = run_artifact(
+        toolchain, executor, modality, content, runs_dir, run_id, task.task_id, "replay",
+        inherit, max_chars, rep=rep,
+    )  # fmt: skip
+    result = with_answer(task, modality, result, path)
+    row.update(exec_ok=result.ok, output=result.output)
+    row["check_pass"], row["check_details"] = run_check(toolchain, task, path, settle=True)
+    after, after_err = run_snapshot(toolchain, task)
+    if before is None or after is None:
+        row["collateral_details"] = {"before_error": before_err or None,
+                                     "after_error": after_err or None}  # fmt: skip
+        return row
+    diff = diff_snapshots(before, after)
+    row.update(collateral_ok=not diff, collateral_details={"changed": diff})
     return row

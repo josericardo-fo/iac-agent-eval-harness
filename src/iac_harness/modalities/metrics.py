@@ -213,3 +213,59 @@ def compute_modality_metrics(
             },
         },
     }
+
+
+def _replay_block(rows: list[Row]) -> dict[str, Any]:
+    """Contagens de um conjunto de replays executados (sem os pulados)."""
+    agree = [e for e in rows if e["check_pass"] is not None]
+    return {
+        "n": len(rows),
+        "collateral_ok": {
+            "true": sum(1 for e in rows if e["collateral_ok"] is True),
+            "false": sum(1 for e in rows if e["collateral_ok"] is False),
+            "none": sum(1 for e in rows if e["collateral_ok"] is None),
+        },
+        # Reprodutibilidade: check do replay igual ao check original da trajetória.
+        "check_agreement": _rate(
+            sum(1 for e in agree if e["check_pass"] == e["check_pass_original"]), len(agree)
+        ),
+    }
+
+
+def compute_replay_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Resumo descritivo dos eventos `replay` (E1): `collateral_ok` e concordância do check.
+
+    Por modalidade e por categoria × modalidade. `none` = retrato falhou ou o initial não
+    aplicou. Os pulados (sem artefato) ficam fora das contagens e são listados à parte.
+    """
+    replays = [e for e in events if e.get("event") == "replay"]
+    ran = [e for e in replays if not e.get("skipped_reason")]
+    skipped = [e for e in replays if e.get("skipped_reason")]
+    modalities = [m for m in MODALITIES if any(e["modality"] == m for e in ran)]
+    categories = sorted({e["category"] for e in ran})
+    return {
+        "n_replays": len(ran),
+        "n_skipped": len(skipped),
+        "skipped": dict(sorted(Counter(e["skipped_reason"] for e in skipped).items())),
+        "by_modality": {
+            m: _replay_block([e for e in ran if e["modality"] == m]) for m in modalities
+        },
+        "by_category": {
+            c: {
+                m: _replay_block(r)
+                for m in modalities
+                if (r := [e for e in ran if e["modality"] == m and e["category"] == c])
+            }
+            for c in categories
+        },
+        "collateral_false": [
+            {
+                "task_id": e["task_id"],
+                "modality": e["modality"],
+                "rep": e["rep"],
+                "changed": sorted(e["collateral_details"].get("changed", {})),
+            }
+            for e in ran
+            if e["collateral_ok"] is False
+        ],
+    }
