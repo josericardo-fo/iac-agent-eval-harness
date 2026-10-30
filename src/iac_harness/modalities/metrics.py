@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Callable
@@ -21,7 +22,7 @@ from iac_harness.metrics import (
     mcnemar_exact,
     paired_bootstrap,
 )
-from iac_harness.modalities.spec import MODALITIES
+from iac_harness.modalities.spec import FREE, MODALITIES
 
 Row = dict[str, Any]
 
@@ -225,7 +226,150 @@ def compute_modality_metrics(
     }
     if any("expect" in e for e in finals):
         out["ask"] = {m: _ask_block(rows(m)) for m in modalities}
+    if FREE.name in modalities:
+        out["free"] = {
+            "overall": _free_block(rows(FREE.name)),
+            "by_category": {c: _free_block(r) for c in categories if (r := rows(FREE.name, c))},
+        }
     return out
+
+
+# ---------- forma livre (E4) ----------
+
+# R11 (K2): a forma mais barata por categoria. Remover fica de fora (K2 não cobre).
+R11_EXPECTED = {"create": {"terraform"}, "modify": {"terraform"}, "query": {"cli", "boto3"}}
+
+
+def _choice_counts(rows: list[Row], field: str) -> dict[str, int]:
+    return dict(sorted(Counter(e[field] or "none" for e in rows).items()))
+
+
+def _free_block(rows: list[Row]) -> dict[str, Any]:
+    """Escolhas da forma livre: 1ª e última, taxa de troca e acordo com a R11 (pela 1ª escolha).
+
+    O acordo só conta create/modify/query com 1ª escolha definida; `none` = a 1ª tentativa não
+    entregou exatamente um arquivo de código.
+    """
+    judged = [e for e in rows if e["category"] in R11_EXPECTED and e["chosen_first"] is not None]
+    return {
+        "chosen_first": _choice_counts(rows, "chosen_first"),
+        "chosen": _choice_counts(rows, "chosen"),
+        "switched": _rate(sum(bool(e["switched"]) for e in rows), len(rows)),
+        "r11_agreement": _rate(
+            sum(e["chosen_first"] in R11_EXPECTED[e["category"]] for e in judged), len(judged)
+        ),
+    }
+
+
+def _majority_choice(rows: list[Row]) -> str | None:
+    """Forma com maioria estrita de `chosen_first` sobre todas as reps (None conta no total),
+    como em `_task_majority`; sem maioria = None."""
+    counts = Counter(e["chosen_first"] for e in rows if e["chosen_first"])
+    return next((m for m, k in counts.items() if k * 2 > len(rows)), None)
+
+
+TOKEN_FIELDS = {"total": "total_tokens", "output": "output_tokens"}
+
+
+def _compare_task(free: list[Row], base: list[Row]) -> dict[str, Any]:
+    """Uma tarefa: forma escolhida e médias da livre; a mais barata/cara do baseline."""
+    by_mod: dict[str, list[Row]] = defaultdict(list)
+    for e in base:
+        by_mod[e["modality"]].append(e)
+    mean = {
+        k: {m: statistics.fmean(e[f] for e in r) for m, r in by_mod.items()}
+        for k, f in TOKEN_FIELDS.items()
+    }
+    success = {m: statistics.fmean(map(_success, r)) for m, r in by_mod.items()}
+    return {
+        "category": free[0]["category"],
+        "chosen": _majority_choice(free),
+        "cheapest": {k: min(v, key=v.__getitem__) for k, v in mean.items()},
+        "most_expensive": {k: max(v, key=v.__getitem__) for k, v in mean.items()},
+        "free_mean": {k: statistics.fmean(e[f] for e in free) for k, f in TOKEN_FIELDS.items()},
+        "baseline_mean": mean,
+        "free_success": statistics.fmean(map(_success, free)),
+        "best_fixed_success": max(success.values()),
+    }
+
+
+def _free_summary(tasks: dict[str, dict[str, Any]], n_boot: int, seed: int) -> dict[str, Any]:
+    """Agregado de um conjunto de tarefas; bootstrap pareado com a tarefa como unidade."""
+    decided = {t: v for t, v in tasks.items() if v["chosen"] is not None}
+
+    def ratio(which: str, k: str) -> dict[str, Any]:
+        # Razão livre / forma fixa por tarefa, em log: paired_bootstrap devolve a média de
+        # log(livre) − log(fixa) e o IC; exp dá a média geométrica da razão (< 1 = livre gastou
+        # menos). Tarefas com zero tokens em algum lado ficam fora (log indefinido) e são listadas.
+        fixed = {t: v["baseline_mean"][k][v[which][k]] for t, v in tasks.items()}
+        free = {t: v["free_mean"][k] for t, v in tasks.items()}
+        zero = sorted(t for t in tasks if fixed[t] <= 0 or free[t] <= 0)
+        kept = [t for t in tasks if t not in zero]
+        d, lo, hi = paired_bootstrap(
+            {t: math.log(fixed[t]) for t in kept}, {t: math.log(free[t]) for t in kept},
+            n_boot, seed,
+        )  # fmt: skip
+        return {
+            "ratio_geomean": math.exp(d) if kept else None,
+            "ratio_ci95": [math.exp(lo), math.exp(hi)] if kept else [None, None],
+            "n_tasks": len(kept),
+            "skipped_zero": zero,
+        }
+
+    outcome = Counter(
+        "better" if v["free_success"] > v["best_fixed_success"]
+        else "worse" if v["free_success"] < v["best_fixed_success"] else "equal"
+        for v in tasks.values()
+    )  # fmt: skip
+    return {
+        "n_tasks": len(tasks),
+        "undecided": sorted(set(tasks) - set(decided)),
+        "chose_cheapest": {
+            k: _rate(sum(v["chosen"] == v["cheapest"][k] for v in decided.values()), len(decided))
+            for k in TOKEN_FIELDS
+        },
+        "ratio_vs_cheapest": {k: ratio("cheapest", k) for k in TOKEN_FIELDS},
+        "ratio_vs_most_expensive": {k: ratio("most_expensive", k) for k in TOKEN_FIELDS},
+        "success_vs_best_fixed": {o: outcome[o] for o in ("better", "equal", "worse")},
+    }
+
+
+def compare_free_to_baseline(
+    free_events: list[dict[str, Any]],
+    baseline_events: list[dict[str, Any]],
+    n_boot: int = BOOTSTRAP_ITERATIONS,
+    seed: int = BOOTSTRAP_SEED,
+) -> dict[str, Any]:
+    """E4: a forma escolhida (maioria das reps em `chosen_first`) contra um run de forma fixa.
+
+    Por tarefa, a forma mais barata e a mais cara do baseline pela média de tokens (total e,
+    à parte, saída: o prompt livre é mais longo). `chose_cheapest` só conta tarefas com escolha
+    definida (sem maioria estrita fica em `undecided`). As razões (livre / forma fixa, em
+    tokens médios por trajetória) são médias geométricas, com bootstrap pareado por tarefa. Só
+    entram tarefas presentes nos dois runs.
+    """
+    free = [e for e in free_events if e.get("event") == "final" and e["modality"] == FREE.name]
+    base = [e for e in baseline_events if e.get("event") == "final" and e["modality"] in MODALITIES]
+    free_ids, base_ids = {e["task_id"] for e in free}, {e["task_id"] for e in base}
+    common = sorted(free_ids & base_ids)
+    tasks = {
+        t: _compare_task(
+            [e for e in free if e["task_id"] == t], [e for e in base if e["task_id"] == t]
+        )
+        for t in common
+    }
+    categories = sorted({v["category"] for v in tasks.values()})
+    return {
+        "n_tasks": len(common),
+        "only_free": sorted(free_ids - base_ids),
+        "only_baseline": sorted(base_ids - free_ids),
+        "tasks": tasks,
+        "overall": _free_summary(tasks, n_boot, seed),
+        "by_category": {
+            c: _free_summary({t: v for t, v in tasks.items() if v["category"] == c}, n_boot, seed)
+            for c in categories
+        },
+    }
 
 
 # Desfechos em que um artefato executou na última tentativa (o estado pode ter mudado).

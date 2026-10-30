@@ -32,3 +32,7 @@ MODALITIES: dict[str, Modality] = {
     "cli": Modality("cli", "run.sh", (("bash", "-euo", "pipefail", "run.sh"),)),
     "boto3": Modality("boto3", "main.py", (("python3", "main.py"),)),
 }
+
+# Pseudo-modalidade da forma livre (E4): o agente escolhe uma das três a cada tentativa, pelo
+# arquivo que entrega. Fora de MODALITIES; sem arquivo nem comando próprios (só nome e grupo).
+FREE = Modality("free", "", ())

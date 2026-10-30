@@ -133,7 +133,79 @@ single fenced block with title="{question}" instead of {filename}. Nothing will 
 """
 
 
-def prompt_version(allow_question: bool = False) -> str:
+# ---------- forma livre (E4) ----------
+# Versão com a escolha da ferramenta: os três blocos, sem falar de custo (decisão P5).
+FREE_PROMPT_VERSION = f"{PROMPT_VERSION}-free"
+FREE_ORDER = ("terraform", "cli", "boto3")  # ordem fixa dos blocos no prompt
+
+FREE_SYSTEM_PROMPT = """\
+You are an infrastructure engineer for AWS.
+Write code that does exactly what the user asks for.
+
+Execution environment: the AWS endpoint and credentials are already configured in the
+environment. Do not set endpoints or credentials in your code.
+
+You may use any one of the three tools below; choose one for each response.
+
+{modality_blocks}
+
+Response format:
+- Deliver exactly one file, the one for the tool you chose (main.tf, run.sh or main.py), in a
+  single fenced code block, with the file name on the opening line, in this format (hcl and
+  main.tf for Terraform, bash and run.sh for the AWS CLI, python and main.py for boto3):
+
+```<language> title="<file name>"
+# file contents
+```
+
+- Deliver the complete contents of the file (never snippets).
+- Do not use resources or local files that are not part of the request.
+- Outside the block, write at most a short explanation.
+"""
+
+# As frases de MODIFY_NOTES e QUERY_NOTES unidas, uma por ferramenta.
+FREE_MODIFY_NOTE = (
+    "If you use Terraform, edit the existing main.tf above and deliver the complete edited file;\n"
+    "the current Terraform state is already in the working directory. If you use the AWS CLI or\n"
+    "boto3, these resources already exist in the account: deliver run.sh or main.py that acts on\n"
+    "the existing resources."
+)
+
+FREE_QUERY_NOTE = (
+    'If you use Terraform, deliver the answer as the value of a Terraform output named "answer",\n'
+    "declared in main.tf; the harness reads it after the apply. If you use the AWS CLI or boto3,\n"
+    "deliver the answer by writing it to the file answer.json in the working directory; the\n"
+    "harness reads it after run.sh or main.py."
+)
+
+FREE_REPAIR_TEMPLATE = """\
+The execution failed with the error below. Deliver the complete corrected file (main.tf, run.sh
+or main.py), in the same block format with title= and the file name.
+
+Error:
+
+{message}
+"""
+
+FREE_FORMAT_ERROR = (
+    'Your response did not contain exactly one fenced code block with title="main.tf", '
+    'title="run.sh" or title="main.py", so nothing was executed.'
+)
+
+
+def free_system_prompt() -> str:
+    blocks = "\n\n".join(MODALITY_BLOCKS[name] for name in FREE_ORDER)
+    return FREE_SYSTEM_PROMPT.format(modality_blocks=blocks)
+
+
+def free_user_prompt(task: ModalityTask) -> str:
+    """Enunciado da forma livre: mesma lógica de user_prompt, com as frases unidas."""
+    return _user_prompt(task, FREE_MODIFY_NOTE, FREE_QUERY_NOTE)
+
+
+def prompt_version(allow_question: bool = False, free: bool = False) -> str:
+    if free:
+        return FREE_PROMPT_VERSION
     return ASK_PROMPT_VERSION if allow_question else PROMPT_VERSION
 
 
@@ -159,14 +231,18 @@ def user_prompt(task: ModalityTask, modality: Modality) -> str:
     Na consulta, só a frase de onde sai a resposta: o initial.tf entregaria a resposta.
     Com `hide_initial`, só o enunciado (mais a frase da resposta, se `answer`).
     """
+    return _user_prompt(task, MODIFY_NOTES[modality.name], QUERY_NOTES[modality.name])
+
+
+def _user_prompt(task: ModalityTask, modify_note: str, query_note: str) -> str:
     shows_initial = task.initial_tf is not None and not task.hide_initial
     if task.category == "query" or (task.answer and not shows_initial):
-        return QUERY_TEMPLATE.format(prompt=task.prompt.rstrip(), note=QUERY_NOTES[modality.name])
+        return QUERY_TEMPLATE.format(prompt=task.prompt.rstrip(), note=query_note)
     if not shows_initial:
         return task.prompt
-    note = MODIFY_NOTES[modality.name]
+    note = modify_note
     if task.wants_answer:
-        note += "\n\n" + QUERY_NOTES[modality.name]
+        note += "\n\n" + query_note
     return MODIFY_TEMPLATE.format(
         prompt=task.prompt.rstrip(), initial=task.initial_tf.rstrip(), note=note
     )

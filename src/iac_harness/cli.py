@@ -34,7 +34,11 @@ from iac_harness.modalities.execute import (
     truncate,
 )
 from iac_harness.modalities.loader import load_tasks
-from iac_harness.modalities.metrics import compute_modality_metrics, compute_replay_metrics
+from iac_harness.modalities.metrics import (
+    compare_free_to_baseline,
+    compute_modality_metrics,
+    compute_replay_metrics,
+)
 from iac_harness.modalities.runner import (
     DEFAULT_MAX_ATTEMPTS,
     ModRunContext,
@@ -43,7 +47,7 @@ from iac_harness.modalities.runner import (
     run_pair,
     uses_local_exec,
 )
-from iac_harness.modalities.spec import MODALITIES
+from iac_harness.modalities.spec import FREE, MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.runner import COMMON_CHAIN, RunContext, SandboxGate, run_gates, run_task
 from iac_harness.toolchain import DEFAULT_ENDPOINT, DEFAULT_REGION, DEFAULT_TIMEOUT_S, Toolchain
@@ -571,7 +575,10 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
 def _select_modality_run(
     cfg: dict[str, Any], tasks_arg: list[str] | None, modalities_arg: list[str] | None = None
 ) -> tuple[list[Any], list[str]]:
-    """Tarefas e modalidades: argumento da CLI > seção [modality] > todas."""
+    """Tarefas e modalidades: argumento da CLI > seção [modality] > todas.
+
+    `free` (E4) é a forma livre: roda sozinha e sem `allow_question` (uma variável por vez).
+    """
     mod_cfg = cfg.get("modality", {})
     tasks = load_tasks()
     wanted = tasks_arg or mod_cfg.get("tasks")
@@ -581,9 +588,14 @@ def _select_modality_run(
             raise SystemExit(f"tarefas não encontradas: {sorted(missing)}")
         tasks = [t for t in tasks if t.task_id in set(wanted)]
     modalities = modalities_arg or mod_cfg.get("modalities", list(MODALITIES))
-    unknown = set(modalities) - set(MODALITIES)
+    unknown = set(modalities) - set(MODALITIES) - {FREE.name}
     if unknown:
         raise SystemExit(f"modalidades desconhecidas: {sorted(unknown)}")
+    if FREE.name in modalities:
+        if len(modalities) > 1:
+            raise SystemExit("erro: a modalidade free roda sozinha (sem outras no mesmo run)")
+        if _allow_question(cfg):
+            raise SystemExit("erro: free não combina com allow_question (uma variável por vez)")
     return tasks, modalities
 
 
@@ -937,6 +949,17 @@ def _allow_question(cfg: dict[str, Any]) -> bool:
 def _modality_backends(cfg: dict[str, Any], modalities: list[str]) -> dict[str, Any]:
     """Um backend por modalidade: system prompt e repair próprios, versão mod_prompts."""
     allow_question = _allow_question(cfg)
+    if modalities == [FREE.name]:
+        # Forma livre: o histórico usa sempre a resposta bruta, então code_lang não é usado.
+        return {
+            FREE.name: _build_backend(
+                cfg,
+                system_prompt=mod_prompts.free_system_prompt(),
+                repair_template=mod_prompts.FREE_REPAIR_TEMPLATE,
+                prompt_version=mod_prompts.FREE_PROMPT_VERSION,
+                code_lang="text",
+            )
+        }
     return {
         name: _build_backend(
             cfg,
@@ -992,6 +1015,7 @@ def _modality_loop(
         max_attempts=cfg.get("modality", {}).get("max_attempts", DEFAULT_MAX_ATTEMPTS),
         max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
         allow_question=_allow_question(cfg),
+        free_choice=FREE.name in modalities,
     )
     backends = _modality_backends(cfg, modalities)
     recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
@@ -1001,7 +1025,8 @@ def _modality_loop(
                 for name in modalities:
                     if (task.task_id, name, rep) in skip:
                         continue
-                    final = run_pair(task, MODALITIES[name], rep, backends[name], recorder, ctx)
+                    modality = FREE if name == FREE.name else MODALITIES[name]
+                    final = run_pair(task, modality, rep, backends[name], recorder, ctx)
                     print(
                         f"{task.task_id} × {name} rep {rep}: success={final['success']} "
                         f"check={final['check_pass']} "
@@ -1035,7 +1060,9 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
                 "reps": reps,
                 "tasks": [t.task_id for t in tasks],
                 "modalities": modalities,
-                "prompt_version": mod_prompts.prompt_version(_allow_question(cfg)),
+                "prompt_version": mod_prompts.prompt_version(
+                    _allow_question(cfg), FREE.name in modalities
+                ),
                 **_git_provenance(),
                 "versions": {
                     **toolchain.versions(run_dir),
@@ -1132,6 +1159,46 @@ def _modality_metrics_table(metrics: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _free_table(metrics: dict[str, Any]) -> str:
+    """Forma livre (E4): escolhas por categoria e, com --baseline, a comparação de tokens."""
+    lines = ["", "forma livre: 1ª escolha / última escolha / troca / acordo R11"]
+    free = metrics["free"]
+    for category, b in [*free["by_category"].items(), ("total", free["overall"])]:
+        agree = b["r11_agreement"]
+        lines.append(
+            f"{category:<9} {b['chosen_first']}  {b['chosen']}  "
+            f"troca {b['switched']['k']}/{b['switched']['n']}  "
+            f"R11 {agree['k']}/{agree['n']}"
+        )
+    base = metrics.get("baseline")
+    if base:
+        lines += [
+            "",
+            f"livre × baseline {base['run_dir']} ({base['n_tasks']} tarefas; "
+            "razão = livre / forma fixa, média geométrica dos tokens médios por tarefa)",
+        ]
+
+        def fmt(r: dict[str, Any]) -> str:
+            if r["ratio_geomean"] is None:
+                return "n/d"
+            lo, hi = r["ratio_ci95"]
+            return f"{r['ratio_geomean']:.2f} [{lo:.2f}, {hi:.2f}]"
+
+        for category, b in [*base["by_category"].items(), ("total", base["overall"])]:
+            for k in ("total", "output"):
+                vs_cheapest = b["ratio_vs_cheapest"][k]
+                vs_priciest = b["ratio_vs_most_expensive"][k]
+                chose = b["chose_cheapest"][k]
+                lines.append(
+                    f"{category:<9} {k:<6} escolheu a mais barata {chose['k']}/{chose['n']}  "
+                    f"vs mais barata {fmt(vs_cheapest)}  vs mais cara {fmt(vs_priciest)}"
+                )
+            lines.append(f"{category:<9} sucesso livre × melhor fixa {b['success_vs_best_fixed']}")
+        if base["overall"]["undecided"]:
+            lines.append(f"sem escolha majoritária: {', '.join(base['overall']['undecided'])}")
+    return "\n".join(lines)
+
+
 def cmd_modality_metrics(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
@@ -1151,10 +1218,20 @@ def cmd_modality_metrics(args: argparse.Namespace) -> int:
     events = [e for e in events if e.get("task_id") not in excluded]
     metrics = compute_modality_metrics(events, prices, difficulty=_modality_difficulty())
     metrics["excluded_tasks"] = excluded
+    if args.baseline is not None:
+        # E4: forma livre contra um run de forma fixa (as mesmas exclusões valem nos dois)
+        base_events = load_events(Path(args.baseline) / "events.jsonl")
+        base_events = [e for e in base_events if e.get("task_id") not in excluded]
+        metrics["baseline"] = {
+            "run_dir": str(args.baseline),
+            **compare_free_to_baseline(events, base_events),
+        }
     if args.format == "table":
         if excluded:
             print(f"tarefas excluídas: {', '.join(excluded)}")
         print(_modality_metrics_table(metrics))
+        if "free" in metrics:
+            print(_free_table(metrics))
     else:
         print(json.dumps(metrics, indent=2, ensure_ascii=False))
     return 0
@@ -1522,6 +1599,12 @@ def main(argv: list[str] | None = None) -> int:
         nargs="+",
         metavar="TASK",
         help="remove essas tarefas (task_id) antes de calcular as métricas",
+    )
+    p_mmet.add_argument(
+        "--baseline",
+        type=Path,
+        metavar="RUN_DIR",
+        help="run de forma fixa para comparar com um run da forma livre (E4)",
     )
     p_mmet.set_defaults(func=cmd_modality_metrics)
 

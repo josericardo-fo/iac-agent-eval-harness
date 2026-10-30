@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -12,14 +13,14 @@ from iac_harness.executors.floci import FlociExecutor
 from iac_harness.modalities import prompts
 from iac_harness.modalities.execute import _run_commands, truncate_middle
 from iac_harness.modalities.loader import load_tasks
-from iac_harness.modalities.metrics import compute_modality_metrics
+from iac_harness.modalities.metrics import compare_free_to_baseline, compute_modality_metrics
 from iac_harness.modalities.runner import (
     ModRunContext,
     parse_question,
     run_pair,
     uses_local_exec,
 )
-from iac_harness.modalities.spec import MODALITIES
+from iac_harness.modalities.spec import FREE, MODALITIES
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import AgentReply, Artifact, Usage
 
@@ -983,3 +984,312 @@ def test_modality_reask_reclassifies_missed_question(tmp_path, monkeypatch, caps
     assert main(["modality-metrics", str(run_dir)]) == 0
     ask = json.loads(capsys.readouterr().out)["ask"]["cli"]["ambiguous"]
     assert (ask["asked_first_attempt"]["k"], ask["asked_first_attempt"]["n"]) == (2, 2)
+
+
+# ---------- E4: forma livre ----------
+
+
+def _run_free(tmp_path, task_id, replies, tc=None, **tc_kwargs):
+    tc = tc or ScriptedToolchain(**tc_kwargs)
+    ex = FakeExec(tc)
+    backend = ScriptedBackend(replies)
+    rec = ListRecorder()
+    ctx = ModRunContext("r", tmp_path, tc, ex, max_attempts=3, free_choice=True)
+    final = run_pair(_task(task_id), FREE, 1, backend, rec, ctx)
+    return final, backend, rec, tc, ex
+
+
+def test_free_run_sh_executes_bash_and_records_cli(tmp_path):
+    final, backend, rec, tc, _ = _run_free(tmp_path, "task-108", [{"run.sh": "aws ok"}])
+    assert final["termination"] == "EXEC_OK" and final["success"] is True
+    assert final["modality"] == "free" and final["prompt_version"] == "mod-v3-free"
+    assert (final["chosen"], final["chosen_first"], final["switched"]) == ("cli", "cli", False)
+    assert any(c[0] == "bash" for c in tc.calls)
+    att = rec.events[0]
+    assert att["chosen"] == "cli" and att["modality"] == "free"
+    assert Path(att["artifact_path"]).parts[-3:] == ("1", "free", "attempt_1")
+    assert (Path(att["artifact_path"]) / "run.sh").read_text() == "aws ok"
+
+
+@pytest.mark.parametrize("files", [{"main.tf": "x", "run.sh": "y"}, {}, {"notes.md": "z"}])
+def test_free_zero_or_two_code_files_is_format_error(tmp_path, files):
+    final, backend, rec, tc, _ = _run_free(tmp_path, "task-108", [files, {"main.py": "ok"}])
+    assert final["termination"] == "EXEC_OK" and final["attempts"] == 2
+    first = rec.events[0]
+    assert first["format_ok"] is False and first["chosen"] is None
+    (turn,) = backend.calls[1][1]
+    assert turn.feedback.message == prompts.FREE_FORMAT_ERROR and turn.raw_text == "raw"
+    assert not any(c[0] in ("bash", "terraform") for c in tc.calls)  # a tentativa 1 não executou
+    assert (final["chosen_first"], final["chosen"], final["switched"]) == (None, "boto3", False)
+
+
+def test_free_switch_terraform_to_boto3(tmp_path):
+    replies = [{"main.tf": "v1"}, {"main.py": "v2"}]
+    final, backend, rec, tc, _ = _run_free(tmp_path, "task-230", replies, fail_runs=1)
+    assert final["termination"] == "EXEC_OK" and final["attempts"] == 2
+    assert (final["chosen_first"], final["chosen"], final["switched"]) == (
+        "terraform", "boto3", True,
+    )  # fmt: skip
+    assert [e.get("chosen") for e in rec.events[:2]] == ["terraform", "boto3"]
+    (turn,) = backend.calls[1][1]
+    assert turn.raw_text == "raw"  # histórico sempre com a resposta bruta na forma livre
+    assert SECRET not in turn.feedback.message
+
+
+class _InitialStateToolchain(ScriptedToolchain):
+    """O apply do initial grava um tfstate marcado (para ver se a tentativa o herda)."""
+
+    def run(self, args, workdir, timeout_s=None):
+        if args[:2] == ["terraform", "apply"] and Path(workdir).name.startswith("initial"):
+            (Path(workdir) / "terraform.tfstate").write_text('{"initial": true}')
+        return super().run(args, workdir, timeout_s)
+
+
+@pytest.mark.parametrize(
+    ("files", "inherits"), [({"main.tf": "x"}, True), ({"run.sh": "x"}, False)]
+)
+def test_free_modify_inherits_tfstate_only_for_terraform(tmp_path, files, inherits):
+    final, *_ = _run_free(tmp_path, "mod-dynamodb-pitr", [files], tc=_InitialStateToolchain())
+    assert final["termination"] == "EXEC_OK"
+    pair = tmp_path / "r" / "mod-dynamodb-pitr" / "1" / "free"
+    assert {p.name for p in pair.iterdir()} == {"initial_1", "attempt_1"}
+    assert (pair / "attempt_1" / "terraform.tfstate").exists() is inherits
+
+
+def test_free_query_collects_answer(tmp_path):
+    class AnswerToolchain(ScriptedToolchain):
+        def run(self, args, workdir, timeout_s=None):
+            if args[0] == "python3" and args[1] == "main.py":
+                (Path(workdir) / "answer.json").write_text('{"security_groups": []}')
+            return super().run(args, workdir, timeout_s)
+
+    final, backend, rec, *_ = _run_free(
+        tmp_path, "query-sg-ssh-open", [{"main.py": "x"}], tc=AnswerToolchain()
+    )
+    assert final["termination"] == "EXEC_OK" and final["chosen"] == "boto3"
+    assert rec.events[0]["answer"] == '{"security_groups": []}'
+    assert prompts.FREE_QUERY_NOTE in backend.calls[0][0].prompt
+
+
+def test_free_prompts_list_three_tools_without_cost():
+    text = prompts.free_system_prompt()
+    blocks = [text.index(prompts.MODALITY_BLOCKS[n]) for n in ("terraform", "cli", "boto3")]
+    assert blocks == sorted(blocks)  # os três, na ordem fixa
+    assert all(f in text for f in ("main.tf", "run.sh", "main.py"))
+    assert "Do not set endpoints or credentials" in text
+    everything = " ".join(
+        [text, prompts.FREE_MODIFY_NOTE, prompts.FREE_QUERY_NOTE, prompts.FREE_REPAIR_TEMPLATE,
+         prompts.FREE_FORMAT_ERROR]
+    ).lower()  # fmt: skip
+    assert not any(w in everything for w in ("cost", "token", "cheap", "efficien"))
+    assert prompts.prompt_version(free=True) == "mod-v3-free"
+    modify = prompts.free_user_prompt(_task("mod-sg-https"))
+    assert prompts.FREE_MODIFY_NOTE in modify and _task("mod-sg-https").initial_tf.strip() in modify
+
+
+@pytest.mark.parametrize(
+    ("modality_cfg", "match"),
+    [
+        ('modalities = ["free"]\nallow_question = true', "free.*allow_question"),
+        ('modalities = ["free", "cli"]', "free.*sozinha"),
+    ],
+)
+def test_free_invalid_combinations_are_rejected(tmp_path, modality_cfg, match):
+    config = tmp_path / "e4.toml"
+    config.write_text(
+        f'[run]\nname = "x"\nruns_dir = "{tmp_path / "runs"}"\n'
+        f'[modality]\ntasks = ["task-108"]\n{modality_cfg}\n'
+        '[agent]\nprovider = "anthropic"\nmodel = "m"\n'
+    )
+    with pytest.raises(SystemExit, match=match):
+        main(["modality-run", "--config", str(config)])
+    assert not (tmp_path / "runs").exists()
+
+
+def test_free_backend_uses_free_prompts(monkeypatch):
+    built = []
+    monkeypatch.setattr(cli, "_build_backend", lambda cfg, **kw: built.append(kw) or kw)
+    cfg = {"modality": {"modalities": ["free"]}}
+    backends = cli._modality_backends(cfg, ["free"])
+    assert set(backends) == {"free"}
+    (kw,) = built
+    assert kw["system_prompt"] == prompts.free_system_prompt()
+    assert kw["repair_template"] == prompts.FREE_REPAIR_TEMPLATE
+    assert kw["prompt_version"] == "mod-v3-free"
+
+
+def test_free_resume_skips_completed(tmp_path, monkeypatch):
+    run_dir = tmp_path / "runs" / "run1"
+    run_dir.mkdir(parents=True)
+    done = {**_final("free", "create", True, 1, 10, "EXEC_OK", task_id="task-108"),
+            "chosen": "cli", "chosen_first": "cli", "switched": False}  # fmt: skip
+    events = [{**_attempt("free", True, task_id="task-108"), "chosen": "cli"}, done]
+    (run_dir / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    cfg = {"run": {"name": "x"}, "agent": {"provider": "anthropic", "model": "m"},
+           "modality": {"modalities": ["free"]}}  # fmt: skip
+    (run_dir / "run_config.json").write_text(
+        json.dumps({"config": cfg, "reps": 2, "tasks": ["task-108"], "modalities": ["free"]})
+    )
+    ran = []
+    monkeypatch.setattr(
+        cli, "_modality_loop",
+        lambda cfg, tasks, mods, reps, rd, rid, tc, ex, skip=frozenset(): ran.append(
+            [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in mods
+             if (t.task_id, m, r) not in skip]
+        ),
+    )  # fmt: skip
+    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False})
+    assert main(["modality-run", "--resume", str(run_dir)]) == 0
+    assert ran == [[("task-108", "free", 2)]]
+
+
+def _free_final(task_id, category, chosen_first, chosen=None, tokens=100, out=10, rep=1,
+                success=True):  # fmt: skip
+    chosen = chosen or chosen_first
+    return {
+        **_final("free", category, success, 1, tokens, "EXEC_OK", task_id=task_id, rep=rep),
+        "output_tokens": out, "total_tokens": tokens + out,
+        "chosen": chosen, "chosen_first": chosen_first,
+        "switched": chosen_first is not None and chosen != chosen_first,
+    }  # fmt: skip
+
+
+def _base_final(task_id, category, modality, tokens, out, success=True, rep=1):
+    return {
+        **_final(modality, category, success, 1, tokens, "EXEC_OK", task_id=task_id, rep=rep),
+        "output_tokens": out, "total_tokens": tokens + out,
+    }  # fmt: skip
+
+
+def test_free_block_counts_choices_switches_and_r11_agreement():
+    events = [
+        _free_final("c1", "create", "terraform"),  # acorda com R11
+        _free_final("c2", "create", "cli", chosen="terraform"),  # não acorda; trocou
+        _free_final("q1", "query", "boto3"),  # acorda
+        _free_final("d1", "delete", "cli"),  # só descritivo
+        _free_final("m1", "modify", None, chosen="terraform"),  # 1ª tentativa sem escolha
+    ]
+    free = compute_modality_metrics(events)["free"]
+    overall = free["overall"]
+    assert overall["chosen_first"] == {"boto3": 1, "cli": 2, "none": 1, "terraform": 1}
+    assert overall["chosen"] == {"boto3": 1, "cli": 1, "terraform": 3}
+    assert (overall["switched"]["k"], overall["switched"]["n"]) == (1, 5)
+    assert (overall["r11_agreement"]["k"], overall["r11_agreement"]["n"]) == (2, 3)  # m1 fora
+    assert free["by_category"]["delete"]["r11_agreement"]["n"] == 0
+    create = free["by_category"]["create"]["r11_agreement"]
+    assert (create["k"], create["n"]) == (1, 2)
+
+
+def test_non_free_metrics_have_no_free_block():
+    assert "free" not in compute_modality_metrics([_final("cli", "create", True, 1, 10, "EXEC_OK")])
+
+
+def test_compare_free_to_baseline():
+    # Baseline: create a -> terraform mais barato (total e saída); query q -> cli mais barato no
+    # total, boto3 na saída; terraform é o mais caro nas duas. Tarefa "x" só no baseline.
+    base = [
+        _base_final("a", "create", "terraform", 100, 10),
+        _base_final("a", "create", "cli", 300, 30),
+        _base_final("a", "create", "boto3", 500, 50, success=False),
+        _base_final("q", "query", "terraform", 900, 90, success=False),
+        _base_final("q", "query", "cli", 200, 40),
+        _base_final("q", "query", "boto3", 260, 20),
+        _base_final("x", "create", "cli", 1, 1),
+    ]
+    free = [
+        # a: escolhe terraform nas 3 reps (2 de 3 já bastam), gasta mais que o mais barato
+        _free_final("a", "create", "terraform", tokens=150, out=15, rep=1),
+        _free_final("a", "create", "terraform", tokens=150, out=15, rep=2),
+        _free_final("a", "create", "cli", tokens=150, out=15, rep=3),
+        # q: empate entre cli e boto3 (uma rep sem escolha) -> sem escolha definida
+        _free_final("q", "query", "cli", tokens=230, out=30, rep=1, success=False),
+        _free_final("q", "query", "boto3", tokens=230, out=30, rep=2, success=False),
+        _free_final("q", "query", None, chosen="cli", tokens=230, out=30, rep=3, success=False),
+    ]
+    cmp = compare_free_to_baseline(free, base, n_boot=200)
+    assert cmp["n_tasks"] == 2 and cmp["only_baseline"] == ["x"] and cmp["only_free"] == []
+    a, q = cmp["tasks"]["a"], cmp["tasks"]["q"]
+    assert a["chosen"] == "terraform" and q["chosen"] is None
+    assert a["cheapest"] == {"total": "terraform", "output": "terraform"}
+    assert q["cheapest"] == {"total": "cli", "output": "boto3"}
+    assert q["most_expensive"] == {"total": "terraform", "output": "terraform"}
+    overall = cmp["overall"]
+    assert overall["undecided"] == ["q"]
+    assert (overall["chose_cheapest"]["total"]["k"], overall["chose_cheapest"]["total"]["n"]) == (
+        1, 1,
+    )  # fmt: skip
+    # razões (média geométrica por tarefa): total vs mais barata: a = 165/110 = 1.5;
+    # q = 260/240 -> sqrt(1.5 * 260/240) (> 1: livre gastou mais)
+    vs_cheap = overall["ratio_vs_cheapest"]["total"]
+    assert vs_cheap["ratio_geomean"] == pytest.approx(math.sqrt(1.5 * 260 / 240))
+    assert vs_cheap["n_tasks"] == 2 and vs_cheap["skipped_zero"] == []
+    lo, hi = vs_cheap["ratio_ci95"]
+    assert 260 / 240 <= lo <= hi <= 1.5
+    # total vs mais cara: a = 165/550; q = 260/990 -> < 1
+    assert overall["ratio_vs_most_expensive"]["total"]["ratio_geomean"] == pytest.approx(
+        math.sqrt(165 / 550 * 260 / 990)
+    )
+    # saída vs mais barata: a = 15/10, q = 30/20 -> 1.5, IC degenerado
+    out_cheap = overall["ratio_vs_cheapest"]["output"]
+    assert out_cheap["ratio_geomean"] == pytest.approx(1.5)
+    assert out_cheap["ratio_ci95"] == [pytest.approx(1.5), pytest.approx(1.5)]
+    by_q = cmp["by_category"]["query"]["ratio_vs_cheapest"]["total"]
+    assert by_q["ratio_geomean"] == pytest.approx(260 / 240)
+    # sucesso: a = livre 3/3 x melhor fixa 1.0 (igual); q = 0 x 1.0 (pior)
+    assert overall["success_vs_best_fixed"] == {"better": 0, "equal": 1, "worse": 1}
+
+
+def test_modality_metrics_cli_baseline(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "_modality_difficulty", dict)
+    (tmp_path / "f").mkdir()
+    (tmp_path / "b").mkdir()
+    free_dir = _metrics_run(tmp_path / "f", [_free_final("a", "create", "terraform", 150, 15)])
+    base_dir = _metrics_run(
+        tmp_path / "b",
+        [
+            _base_final("a", "create", "terraform", 100, 10),
+            _base_final("a", "create", "cli", 300, 30),
+        ],
+    )
+    assert main(["modality-metrics", str(free_dir), "--baseline", str(base_dir)]) == 0
+    m = json.loads(capsys.readouterr().out)
+    assert m["free"]["overall"]["chosen_first"] == {"terraform": 1}
+    assert m["baseline"]["run_dir"] == str(base_dir)
+    assert m["baseline"]["tasks"]["a"]["cheapest"]["total"] == "terraform"
+    argv = ["modality-metrics", str(free_dir), "--baseline", str(base_dir), "--format", "table"]
+    assert main(argv) == 0
+    out = capsys.readouterr().out
+    assert "forma livre" in out and "mais barata" in out
+
+
+@pytest.mark.parametrize(
+    ("firsts", "expected"),
+    [
+        ([None, None, "terraform"], None),
+        (["terraform", "terraform", None], "terraform"),
+        (["cli", "boto3", None], None),
+    ],
+)
+def test_compare_choice_is_strict_majority_over_all_reps(firsts, expected):
+    base = [_base_final("a", "create", "terraform", 100, 10)]
+    free = [
+        _free_final("a", "create", c, chosen=c or "cli", rep=r)
+        for r, c in enumerate(firsts, start=1)
+    ]
+    assert compare_free_to_baseline(free, base, n_boot=50)["tasks"]["a"]["chosen"] == expected
+
+
+def test_compare_ratio_skips_zero_token_tasks():
+    base = [
+        _base_final("a", "create", "terraform", 100, 10),
+        _base_final("z", "create", "terraform", 100, 0),
+    ]
+    free = [
+        _free_final("a", "create", "terraform", tokens=200, out=20),
+        _free_final("z", "create", "terraform", tokens=200, out=5),
+    ]
+    overall = compare_free_to_baseline(free, base, n_boot=50)["overall"]
+    out = overall["ratio_vs_cheapest"]["output"]
+    assert out["skipped_zero"] == ["z"] and out["n_tasks"] == 1
+    assert out["ratio_geomean"] == pytest.approx(2.0)
+    assert overall["ratio_vs_cheapest"]["total"]["skipped_zero"] == []

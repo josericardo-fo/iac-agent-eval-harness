@@ -56,6 +56,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | P2 | Erro truncado em começo + fim | Segue | mini-swe-agent (corte no meio da saída longa). | Manter |
 | P3 | Terraform modifica herdando o tfstate; CLI/boto3 recebem o `initial.tf` como descrição | Adapta | Yang et al. [1] dizem que o IaC falhou por não levar o estado ao modelo. Aqui o estado é dado, o que testa o mecanismo. | Manter. Declarar a assimetria inerente à forma. |
 | P4 | E2: desfecho "perguntou". Com `allow_question`, o prompt (`mod-v3-ask`) ganha uma frase neutra, sem exemplos, igual nas 3 formas: o agente pode entregar `question.md` no lugar do arquivo. Nesse caso nada executa e a trajetória termina (`ASKED`). Se ele entregar os dois, vale a pergunta (`both_files`). Acerto: na ambígua, perguntar; na clara, agir com sucesso (perguntar a mais conta como erro). O check roda igual e dá `untouched` (estado intacto) quando o agente chuta na ambígua. | Adapta | τ-bench [4] mede a interação com um usuário simulado; aqui não há simulador (seria uma variável nova) e a pergunta encerra. Nekrasov (protocolo §15): as falhas que sobram são de intenção. | Registrado em 29/10, antes do run. A pergunta vale em qualquer tentativa, mas a feita só depois de um erro de execução (cujo texto muda com a forma) é relatada à parte: `asked_first_attempt` ao lado de `asked`; `untouched` só entre as ambíguas que executaram algo. Limites: a pergunta conta pela existência, não pelo conteúdo (o texto é lido à mão e relatado); a frase é sensível ao texto (D3, Sclar [10]); o `mod-v3` dos runs antigos não muda. |
+| P5 | E4: forma livre. Pseudo-modalidade `free`, prompt `mod-v3-free`: os 3 blocos de forma do `mod-v3`, na ordem fixa (Terraform, CLI, boto3), sem nenhuma menção a custo, e o pedido de entregar **exatamente um** de `main.tf`, `run.sh`, `main.py`. As notas de modificar e consultar juntam as frases das 3 formas. A forma de cada tentativa é o arquivo entregue; nenhum ou mais de um é erro de formato (repair). Na correção, o agente pode trocar de forma (`switched`). Terraform em modificar/remover herda o tfstate, como em P3. Desfechos e checks iguais. Comparação de custo contra o run de forma fixa `20261027T150905-modality-haiku` (mesmas 25 tarefas, N=3): por tarefa, a forma mais barata ali (média de `total_tokens` e, à parte, `output_tokens`) × a escolhida (maioria das reps na 1ª tentativa). | Adapta | Yang et al. [1] propõem o agente que escolhe a modalidade; não medem se ele escolhe a mais barata. Gate S6 (regra de custo explícita ou não). | Registrado em 30/10, antes do run. Um braço só (sem dica de custo); `allow_question` fica de fora. Limites: o prompt livre é mais longo que o de uma forma (por isso também os tokens de saída), o baseline é de outro dia (deriva do gateway), um modelo, uma frase (D3). Exploratório. |
 
 ### Ambiente
 
@@ -318,6 +319,43 @@ parser. Decidido com o usuário em vez de re-rodar.
   entre formas sem poder). A pergunta conta pela existência (P4). Os pedidos ambíguos mostram o
   `initial.tf`, o que facilita ver os candidatos; o leigo real não entrega isso (E8).
 
+### E4: o agente escolhe a forma mais barata? (30/10/2026)
+
+Decisão P5. Run: `runs/20261030T153918-e4-free-haiku` (Haiku, 25 tarefas, forma livre, N=3,
+Floci, 75 trajetórias, ~US$ 0,09). Comparação: `modality-metrics <run> --baseline
+runs/20261027T150905-modality-haiku`. Sem desvios. A "escolha" da tarefa é a maioria estrita das reps
+na 1ª tentativa; razão = livre / forma fixa, média geométrica por tarefa, bootstrap pareado.
+
+| Caso | 1ª escolha (75 trajetórias) | Escolheu a mais barata (tarefas) | Razão de tokens vs mais barata: total / saída | vs mais cara: total / saída |
+|---|---|---|---|---|
+| Criar | TF 31, CLI 4, boto3 1 | 9/12 | 1,35 [1,11–1,84] / 1,22 [1,01–1,59] | 0,55 / 0,45 |
+| Modificar | TF 24 | 8/8 | 1,27 [1,19–1,39] / 1,07 [0,99–1,18] | 0,79 / 0,42 |
+| Remover | CLI 5, TF 4 | 1/3 | 1,48 [1,02–2,20] / 1,38 [0,81–1,95] | 0,54 / 0,42 |
+| Consultar | CLI 6 | 0/2 | 1,28 [1,05–1,56] / 1,20 [0,90–1,61] | 0,54 / 0,50 |
+| Total | TF 59, CLI 15, boto3 1 | 18/25 | 1,33 [1,19–1,56] / 1,19 [1,05–1,37] | 0,61 / 0,44 |
+
+- **A escolha segue K2 na direção:** Terraform para criar (31/36) e modificar (24/24); CLI para
+  consultar (6/6). Acordo com R11: 61 de 66 trajetórias (remover fica fora). Nunca trocou de forma na
+  correção (0/75) e nunca usou `local-exec`.
+- **Onde não escolheu a mais barata (7 tarefas):** consultar, CLI em vez de boto3 (+3% em
+  `query-sg-ssh-open`, empate prático; +58% em `query-dynamodb-ondemand`); remover, CLI (+55% e +63%);
+  criar, CLI nas duas de premissa falsa (task-115 +86%, task-230 +369%, A2) e Terraform na task-130
+  (+38% sobre boto3, limite de `max_tokens`, A4). As que mais pesam são as de premissa falsa, onde a
+  forma muda a reação ao pedido, não só o custo.
+- **Acerto:** 72/75, igual à melhor forma fixa em 24 de 25 tarefas. A exceção é a task-230 (0/3): o
+  agente escolheu CLI/boto3, que procuram a tabela e falham, enquanto o Terraform cria e passa (A2).
+  Sem a task-115/230, a escolha é a mais barata em 18 de 23.
+- **Custo:** a forma livre fica perto da mais barata nos tokens de saída (1,19×) e longe da mais cara
+  (0,44×). O total sobe mais (1,33×) porque o prompt de sistema traz os 3 blocos; o excesso é do prompt,
+  não da escolha.
+- **Leitura:** sem dica nenhuma, o Haiku já escolhe a forma pelo tipo de caso como K2 recomenda. A regra
+  R11 não precisa ser explícita para criar e modificar; para consultar, o CLI escolhido custa o mesmo que
+  o boto3 numa tarefa e mais na outra (K2 já era fraca aí, 2 tarefas). O que a regra pode acrescentar é
+  menos o "qual forma" e mais o prompt curto: com uma forma só, o prompt de sistema não carrega os 3
+  blocos (a distância entre a razão total, 1,33×, e a de saída, 1,19×, vem da entrada).
+- **Limites:** baseline de outro dia (deriva do gateway); um modelo, uma frase (D3); remover e consultar
+  com 3 e 2 tarefas; exploratório.
+
 ## 4. Plano
 
 **Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
@@ -332,6 +370,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - Toolkit próprio: não roda como condição agora; vira a agenda E1–E8 (`agenda-experimentos-toolkit.md`). Cada experimento entra aqui como decisão de método antes do run.
 - E1 registrado em 29/10, antes do run (O7): replay sem LLM, `collateral_ok` à parte, 8 de modificar + 2 de consultar, runs Sonnet e Haiku do Floci.
 - E2 registrado em 29/10, antes do run (P4, T7): 12 tarefas (6 pares), Haiku, 3 formas, N=3, Floci (108 trajetórias, `configs/e2-ask-haiku.toml`). Nada na AWS real. Feito em 30/10 (§3, "E2"), com 2 desvios declarados.
+- E4 registrado em 30/10, antes do run (P5): forma livre, 25 tarefas do Floci, Haiku, N=3 (75 trajetórias, `configs/e4-free-haiku.toml`), comparada com o run `20261027T150905-modality-haiku`. Nada na AWS real.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
