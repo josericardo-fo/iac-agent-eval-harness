@@ -340,10 +340,14 @@ def prevalidate_pair(
 
     Quem chama faz o `executor.reset()` antes. Modalidade sem referência (`missing_references`)
     não aplica nada: `ref_missing` True e `valid` None (nem válida nem inválida).
+
+    Gate invertido em `expect = "ask"` (pedido ambíguo): o check confere o estado intocado, então
+    o initial deve passar, e a referência (um chute plausível) deve executar e reprovar.
     """
     row: dict[str, Any] = {
         "task_id": task.task_id, "category": task.category, "modality": modality.name,
-        "initial_ok": None, "initial_output": "", "baseline_pass": None, "baseline_details": {},
+        "expect": task.expect, "initial_ok": None, "initial_output": "", "baseline_pass": None,
+        "baseline_details": {},
         "ref_exec_ok": None, "ref_output": "", "ref_unsupported_pattern": None,
         "ref_check_pass": None, "ref_check_details": {}, "ref_missing": False, "valid": False,
     }  # fmt: skip
@@ -370,7 +374,10 @@ def prevalidate_pair(
     row["ref_check_pass"], row["ref_check_details"] = run_check(
         toolchain, task, ref_path, settle=True
     )
-    row["valid"] = row["baseline_pass"] is False and ref.ok and row["ref_check_pass"] is True
+    if task.expect == "ask":
+        row["valid"] = row["baseline_pass"] is True and ref.ok and row["ref_check_pass"] is False
+    else:
+        row["valid"] = row["baseline_pass"] is False and ref.ok and row["ref_check_pass"] is True
     return row
 
 

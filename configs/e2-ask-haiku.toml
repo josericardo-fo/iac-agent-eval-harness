@@ -1,0 +1,56 @@
+# E2 (o agente pergunta quando deve?): 6 pares claro × ambíguo, com a opção de perguntar
+# (prompt mod-v3-ask). Mesmo modelo e config do modality-haiku; desenho em
+# docs/registro-metodologico.md (P4/T7).
+[run]
+name = "e2-ask-haiku"
+reps = 3
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # par 1: mais de um candidato
+  "amb-dynamodb-pitr", "clr-dynamodb-pitr",
+  # par 2: premissa falsa
+  "amb-s3-versioning", "mod-s3-versioning",
+  # par 3: falta o valor
+  "amb-sqs-retention", "mod-sqs-retention",
+  # par 4: mais de um candidato
+  "amb-sg-https", "clr-sg-https",
+  # par 5: remover, mais de um candidato
+  "amb-del-sqs", "clr-del-sqs",
+  # par 6: remover, mais de um candidato
+  "amb-del-s3", "clr-del-s3",
+]
+modalities = ["terraform", "cli", "boto3"]
+# O agente pode entregar question.md no lugar do arquivo (desfecho ASKED).
+allow_question = true
+
+[agent]
+provider = "anthropic"
+# ID aceito pelo gateway atual (middleware); a API direta usa "claude-haiku-5-5".
+model = "Haiku 5.5"
+max_tokens = 8192
+# effort = "medium"   # opcional; só é enviado quando definido
+
+[feedback]
+# Truncagem da saída de execução (a mesma do feedback do agente).
+max_chars = 2000
+
+[sandbox]
+# endpoint: como a toolchain (no container) enxerga o Floci.
+endpoint = "http://floci:4566"
+# host_endpoint: como o harness (no host) enxerga o Floci.
+host_endpoint = "http://127.0.0.1:4566"
+# container: reiniciado a cada reset (o reset nativo do Floci apaga a VPC default).
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"   # docker | local
+image = "iac-harness-toolchain:latest"
+# Timeout por comando (terraform, bash run.sh, python3 main.py, check.py).
+timeout_s = 180
+
+# US$ por milhão de tokens: [entrada, saída]. Confirme os valores vigentes antes de reportar custo.
+[prices]
+"Haiku 5.5" = [0.10, 0.50]

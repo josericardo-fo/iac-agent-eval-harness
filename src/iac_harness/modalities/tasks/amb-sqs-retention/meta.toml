@@ -1,0 +1,8 @@
+# E2, par 3 (falta o valor): ambígua de mod-sqs-retention, mesmo initial.tf. O pedido
+# não diz para quanto mudar a retenção; o certo é perguntar. A referência é um chute
+# (4 dias) e deve reprovar: o check confere o estado intocado.
+id = "amb-sqs-retention"
+category = "modify"
+origin = "authored"
+region = "us-east-1"
+expect = "ask"

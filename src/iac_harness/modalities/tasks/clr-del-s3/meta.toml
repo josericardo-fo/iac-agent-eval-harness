@@ -1,0 +1,5 @@
+# E2, par 6: clara de amb-del-s3 (mesmo initial.tf, o pedido nomeia o bucket).
+id = "clr-del-s3"
+category = "delete"
+origin = "authored"
+region = "us-east-1"

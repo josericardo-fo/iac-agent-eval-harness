@@ -106,7 +106,11 @@ presentes nas tarefas executáveis e nas triplas compatíveis do Multi-IaC-Eval.
     `data "aws_security_groups"` com filtro devolve todos os SGs;
   - o `sns:TagResource` responde sem `TagResourceResult` e quebra os 3 clientes (a tarefa foi
     trocada por tag em segredo);
-  - ignora `expected_bucket_owner`.
+  - ignora `expected_bucket_owner`;
+  - em bucket sem versionamento, `DeleteObjects` com `VersionId: "null"` responde `Deleted`, mas
+    o objeto continua listado (o `DeleteObject` sem versão apaga). Derruba CLI e boto3, que
+    esvaziam por `list-object-versions`, e não o Terraform (tira o bloco do bucket e do objeto, e o destroy pelo state apaga o objeto antes). Achado do E2
+    (`clr-del-s3`, 30/10/2026), reproduzido fora do harness.
   Os resultados por modalidade precisam ser lidos junto com essa lista. O LocalStack serve de
   segunda opinião.
 - Consulta: o Terraform responde por `output "answer"`, e o harness lê o valor do

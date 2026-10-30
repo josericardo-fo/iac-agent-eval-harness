@@ -13,7 +13,12 @@ from iac_harness.modalities import prompts
 from iac_harness.modalities.execute import _run_commands, truncate_middle
 from iac_harness.modalities.loader import load_tasks
 from iac_harness.modalities.metrics import compute_modality_metrics
-from iac_harness.modalities.runner import ModRunContext, run_pair, uses_local_exec
+from iac_harness.modalities.runner import (
+    ModRunContext,
+    parse_question,
+    run_pair,
+    uses_local_exec,
+)
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import AgentReply, Artifact, Usage
@@ -80,12 +85,12 @@ class ListRecorder:
         self.events.append(event)
 
 
-def _run(tmp_path, task_id, modality, replies, task=None, **tc_kwargs):
+def _run(tmp_path, task_id, modality, replies, task=None, allow_question=False, **tc_kwargs):
     tc = ScriptedToolchain(**tc_kwargs)
     ex = FakeExec(tc)
     backend = ScriptedBackend(replies)
     rec = ListRecorder()
-    ctx = ModRunContext("r", tmp_path, tc, ex, max_attempts=3)
+    ctx = ModRunContext("r", tmp_path, tc, ex, max_attempts=3, allow_question=allow_question)
     final = run_pair(task or _task(task_id), MODALITIES[modality], 1, backend, rec, ctx)
     return final, backend, rec, tc, ex
 
@@ -729,3 +734,252 @@ def test_modality_replay_rejects_task_without_collateral(tmp_path):
     src = _src_run(tmp_path)
     with pytest.raises(SystemExit, match="sem collateral.py"):
         main(["modality-replay", str(src), "--tasks", "task-108"])
+
+
+# ---------- E2: pergunta (question.md) ----------
+
+# sha256 do system prompt mod-v3 antes do E2: sem allow_question, nada muda.
+MOD_V3_SYSTEM_SHA256 = {
+    "terraform": "badd39128c21cf7f22d3c42cb1542bc44cc5bc3f9a600fd1849464115c758950",
+    "cli": "88f5c9b07f3492d59ebdcaadbdba7411a0e1d074098288f99cef825ab196d86d",
+    "boto3": "1a2eef9926cc1da230f10ba686b71f7b6c2d3b6673b2856cf60a6447d19b0bbc",
+}
+
+
+@pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
+def test_system_prompt_without_question_is_mod_v3(name):
+    m = MODALITIES[name]
+    text = prompts.system_prompt(m)
+    assert text == prompts.system_prompt(m, allow_question=False)
+    assert hashlib.sha256(text.encode()).hexdigest() == MOD_V3_SYSTEM_SHA256[name]
+    assert "question.md" not in text
+    assert prompts.prompt_version() == "mod-v3"
+
+
+@pytest.mark.parametrize("name", ["terraform", "cli", "boto3"])
+def test_system_prompt_with_question_adds_only_the_note(name):
+    m = MODALITIES[name]
+    text = prompts.system_prompt(m, allow_question=True)
+    note = (
+        "If you cannot tell what the user wants, ask instead of guessing: deliver your question "
+        f'in a\nsingle fenced block with title="question.md" instead of {m.filename}. Nothing '
+        "will be executed.\n"
+    )
+    assert text == prompts.system_prompt(m) + "\n" + note
+    assert prompts.prompt_version(allow_question=True) == "mod-v3-ask"
+
+
+def test_question_terminates_asked_without_executing(tmp_path):
+    replies = [{"question.md": "Which table?"}]
+    final, backend, rec, tc, _ = _run(
+        tmp_path, "amb-dynamodb-pitr", "cli", replies, allow_question=True
+    )
+    assert final["termination"] == "ASKED" and final["attempts"] == 1
+    assert final["asked"] is True and final["expect"] == "ask" and final["success"] is True
+    assert final["question"] == "Which table?" and final["both_files"] is False
+    assert final["exec_ok"] is False and final["prompt_version"] == "mod-v3-ask"
+    assert not any(c[0] == "bash" for c in tc.calls)  # nada do agente executou
+    assert tc.calls[-1][:2] == ["python3", "check.py"]  # o check roda (untouched)
+    att = rec.events[-2]
+    assert att["event"] == "attempt" and att["asked"] is True
+    assert att["question"] == "Which table?" and att["termination"] == "ASKED"
+    assert (Path(att["artifact_path"]) / "response.txt").read_text() == "raw"
+    assert len(backend.calls) == 1
+
+
+def test_question_on_clear_task_is_not_success(tmp_path):
+    final, *_ = _run(
+        tmp_path, "clr-dynamodb-pitr", "boto3", [{"question.md": "Sure?"}], allow_question=True
+    )
+    assert final["termination"] == "ASKED" and final["expect"] == "act"
+    assert final["asked"] is True and final["success"] is False
+
+
+def test_acting_on_ambiguous_task_is_not_success(tmp_path):
+    final, *_ = _run(
+        tmp_path, "amb-dynamodb-pitr", "cli", [{"run.sh": "aws ok"}], allow_question=True
+    )
+    assert final["termination"] == "EXEC_OK" and final["check_pass"] is True
+    assert final["asked"] is False and final["success"] is False
+
+
+def test_question_after_failed_attempt_is_accepted(tmp_path):
+    replies = [{"run.sh": "a"}, {"question.md": "Which one?", "run.sh": "b"}]
+    final, backend, rec, tc, _ = _run(
+        tmp_path, "amb-del-sqs", "cli", replies, allow_question=True, fail_runs=1
+    )
+    assert final["termination"] == "ASKED" and final["attempts"] == 2
+    assert final["both_files"] is True and final["success"] is True
+    assert sum(c[0] == "bash" for c in tc.calls) == 1  # só a tentativa 1 executou
+
+
+def test_question_without_flag_is_format_failure(tmp_path):
+    final, backend, rec, tc, _ = _run(
+        tmp_path, "amb-dynamodb-pitr", "cli", [{"question.md": "Which table?"}] * 3
+    )
+    assert final["termination"] == "FORMAT_FAIL" and final["attempts"] == 3
+    assert final["prompt_version"] == "mod-v3"
+    assert not {"asked", "expect", "question", "both_files"} & set(final)
+    assert all(e["format_ok"] is False for e in rec.events if e["event"] == "attempt")
+
+
+def _ask_final(
+    task_id, expect, asked, success, check_pass=True, rep=1, termination=None, attempts=1
+):
+    termination = termination or ("ASKED" if asked else "EXEC_OK")
+    return {
+        **_final("cli", "modify", check_pass, attempts, 10, termination,
+                 success=success, task_id=task_id, rep=rep),
+        "expect": expect, "asked": asked, "both_files": False,
+    }  # fmt: skip
+
+
+def test_modality_metrics_ask_block():
+    events = [
+        _ask_final("amb-dynamodb-pitr", "ask", True, True),
+        _ask_final("amb-dynamodb-pitr", "ask", False, False, check_pass=False, rep=2),
+        _ask_final("clr-dynamodb-pitr", "act", False, True),
+        _ask_final("clr-dynamodb-pitr", "act", True, False, check_pass=False, rep=2),
+        _ask_final("amb-sqs-retention", "ask", False, False, check_pass=True),
+        _ask_final("mod-sqs-retention", "act", False, True),
+    ]
+    ask = compute_modality_metrics(events)["ask"]["cli"]
+    assert (ask["ambiguous"]["asked"]["k"], ask["ambiguous"]["asked"]["n"]) == (1, 3)
+    untouched = ask["ambiguous"]["untouched_when_acted"]
+    assert (untouched["k"], untouched["n"]) == (1, 2)
+    assert (ask["clear"]["success"]["k"], ask["clear"]["success"]["n"]) == (2, 3)
+    assert (ask["clear"]["over_asked"]["k"], ask["clear"]["over_asked"]["n"]) == (1, 3)
+    pitr = ask["pairs"]["amb-dynamodb-pitr"]
+    assert pitr["clear"] == "clr-dynamodb-pitr"
+    assert (pitr["both_correct"]["k"], pitr["both_correct"]["n"]) == (1, 2)
+    assert set(ask["pairs"]) == {"amb-dynamodb-pitr", "amb-sqs-retention"}
+
+
+def test_ask_block_untouched_counts_only_executed_trajectories():
+    events = [
+        _ask_final("amb-dynamodb-pitr", "ask", False, False, check_pass=True),
+        _ask_final("amb-dynamodb-pitr", "ask", False, False, check_pass=False, rep=2,
+                   termination="BUDGET_EXHAUSTED"),
+        # Nada executou na última tentativa: o estado é o inicial, não conta como "agiu".
+        _ask_final("amb-dynamodb-pitr", "ask", False, False, check_pass=True, rep=3,
+                   termination="FORMAT_FAIL", attempts=3),
+        _ask_final("amb-dynamodb-pitr", "ask", False, False, check_pass=False, rep=4,
+                   termination="INITIAL_FAIL"),
+        _ask_final("amb-dynamodb-pitr", "ask", True, True, rep=5),
+    ]  # fmt: skip
+    untouched = compute_modality_metrics(events)["ask"]["cli"]["ambiguous"]["untouched_when_acted"]
+    assert (untouched["k"], untouched["n"]) == (1, 2)
+
+
+def test_ask_block_asked_first_attempt():
+    events = [
+        _ask_final("amb-dynamodb-pitr", "ask", True, True),
+        _ask_final("amb-dynamodb-pitr", "ask", True, True, rep=2, attempts=2),
+        _ask_final("amb-dynamodb-pitr", "ask", False, False, rep=3),
+        _ask_final("clr-dynamodb-pitr", "act", False, True),
+    ]
+    ask = compute_modality_metrics(events)["ask"]["cli"]
+    first = ask["ambiguous"]["asked_first_attempt"]
+    assert (first["k"], first["n"]) == (1, 3)
+    assert (ask["ambiguous"]["asked"]["k"], ask["ambiguous"]["asked"]["n"]) == (2, 3)
+    pair = ask["pairs"]["amb-dynamodb-pitr"]["ambiguous_asked_first_attempt"]
+    assert (pair["k"], pair["n"]) == (1, 3)
+
+
+def test_modality_metrics_without_expect_has_no_ask_block():
+    events = [_final("cli", "create", True, 1, 10, "EXEC_OK")]
+    assert "ask" not in compute_modality_metrics(events)
+
+
+@pytest.mark.parametrize(
+    "info",
+    ["question.md", 'question.md title="question.md"', 'markdown title="question.md"'],
+)
+def test_parse_question_recognizes_question_block(info):
+    text = f"Antes.\n```{info}\nWhich bucket?\n```\nDepois."
+    assert parse_question(text) == "Which bucket?\n"
+
+
+def test_parse_question_ignores_other_blocks():
+    assert parse_question('```hcl title="main.tf"\nx\n```\n```question.mdx\ny\n```') is None
+
+
+def test_question_block_named_by_info_string_is_asked(tmp_path):
+    class RawBackend(ScriptedBackend):
+        def generate(self, task, history):
+            self.calls.append((task, list(history)))
+            raw = "```question.md\nWhich table?\n```"
+            return AgentReply(Artifact({}), Usage(10, 5), "fake", "req", raw, {})
+
+    tc = ScriptedToolchain()
+    ctx = ModRunContext("r", tmp_path, tc, FakeExec(tc), max_attempts=3, allow_question=True)
+    backend = RawBackend([])
+    final = run_pair(_task("amb-dynamodb-pitr"), MODALITIES["cli"], 1, backend, ListRecorder(), ctx)
+    assert final["termination"] == "ASKED" and final["attempts"] == 1
+    assert final["question"] == "Which table?\n" and len(backend.calls) == 1
+
+
+def _ask_src_run(tmp_path):
+    """Run E2 sintético: rep 1 perguntou com ```question.md na tentativa 1 (tomado por FORMAT)."""
+    src = tmp_path / "runs" / "e2-run"
+
+    def attempt(n, raw, rep, tokens, format_ok=False):
+        path = src / "amb-dynamodb-pitr" / str(rep) / "cli" / f"attempt_{n}"
+        path.mkdir(parents=True)
+        (path / "response.txt").write_text(raw)
+        return {**_attempt("cli", False, task_id="amb-dynamodb-pitr", rep=rep, attempt=n),
+                "format_ok": format_ok, "artifact_path": str(path),
+                "input_tokens": tokens, "output_tokens": 1}  # fmt: skip
+
+    def final(rep, attempts, termination, tokens, asked=False, success=False):
+        return {**_ask_final("amb-dynamodb-pitr", "ask", asked, success, check_pass=False,
+                             rep=rep, termination=termination, attempts=attempts),
+                "input_tokens": tokens, "output_tokens": attempts,
+                "total_tokens": tokens + attempts, "question": "Q?" if asked else None}  # fmt: skip
+
+    events = [
+        attempt(1, "```question.md\nWhich table?\n```", 1, 100),
+        attempt(2, '```bash title="run.sh"\nfalse\n```', 1, 200, format_ok=True),
+        attempt(3, "nada", 1, 300),
+        final(1, 3, "FORMAT_FAIL", 600),
+        attempt(1, '```md title="question.md"\nQ?\n```', 2, 50, format_ok=True),
+        final(2, 1, "ASKED", 50, asked=True, success=True),
+    ]
+    (src / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    cfg = {"run": {"name": "e2", "runs_dir": str(tmp_path / "runs")},
+           "toolchain": {"mode": "local"}, "modality": {"allow_question": True}}  # fmt: skip
+    (src / "run_config.json").write_text(json.dumps({"config": cfg, "git_commit": "abc"}))
+    return src, events
+
+
+def test_modality_reask_reclassifies_missed_question(tmp_path, monkeypatch, capsys):
+    src, src_events = _ask_src_run(tmp_path)
+    tc = ScriptedToolchain(check_pass=True)
+    ex = FakeExec(tc)
+    monkeypatch.setattr(cli, "build_toolchain", lambda cfg: tc)
+    monkeypatch.setattr(cli, "build_executor", lambda cfg, t, allow_real_aws=False: ex)
+    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "def"})
+    monkeypatch.setattr(cli, "_sandbox_provenance", lambda e: {"sandbox_kind": "floci"})
+    before = (src / "events.jsonl").read_text()
+    assert main(["modality-reask", str(src)]) == 0
+    run_dir = Path(capsys.readouterr().out.strip())
+    assert run_dir.parent == src.parent and run_dir.name.endswith("-reask-e2-run")
+    assert (src / "events.jsonl").read_text() == before  # o run de origem não muda
+    events = [json.loads(x) for x in (run_dir / "events.jsonl").read_text().splitlines()]
+    rep1 = [e for e in events if e["rep"] == 1]
+    assert [e["event"] for e in rep1] == ["attempt", "final"]  # truncada na tentativa 1
+    att, fin = rep1
+    assert att["asked"] is True and att["termination"] == "ASKED" and att["format_ok"] is True
+    assert att["question"] == "Which table?\n"
+    assert fin["termination"] == "ASKED" and fin["asked"] is True and fin["attempts"] == 1
+    assert fin["question"] == "Which table?\n" and fin["reclassified"] is True
+    assert fin["success"] is True and fin["exec_ok"] is False
+    assert (fin["input_tokens"], fin["output_tokens"], fin["total_tokens"]) == (100, 1, 101)
+    assert fin["check_pass"] is True and ex.resets == 1  # check real sobre o estado inicial
+    assert [e for e in events if e["rep"] == 2] == src_events[4:]  # intocada
+    saved = json.loads((run_dir / "run_config.json").read_text())
+    assert saved["src_run"] == str(src) and saved["reclassified"] == 1
+
+    assert main(["modality-metrics", str(run_dir)]) == 0
+    ask = json.loads(capsys.readouterr().out)["ask"]["cli"]["ambiguous"]
+    assert (ask["asked_first_attempt"]["k"], ask["asked_first_attempt"]["n"]) == (2, 2)

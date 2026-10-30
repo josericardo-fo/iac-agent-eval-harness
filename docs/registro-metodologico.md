@@ -34,6 +34,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | T4 | Gate: o estado inicial reprova e a referência passa em cada forma | Segue | ABC [2] T.8/T.9 (tarefa resolvível, solver oráculo) e R.13 (agente trivial). O estado inicial reprovando faz o papel do "agente que não faz nada". Terminal-Bench [5] §2.3 (Solvability). | Manter |
 | T5 | Tarefas autorais de modificar, remover e consultar | Própria | O IaC-Eval só tem criação; Yang et al. [1] acham a diferença justamente em updates. | Manter. Declarar a autoria (risco de viés de quem escreve). |
 | T6 | Adaptar a referência (nunca o enunciado) quando ela não realiza o pedido ou a API saiu | Própria | Registrado no `meta.toml`. O agente nunca vê a referência (ABC [2] T.5). | Manter |
+| T7 | E2: 6 pares claro × ambíguo (`expect = "act"` / `"ask"` no `meta.toml`), 10 tarefas novas + `mod-s3-versioning` e `mod-sqs-retention` como claras. Tipos: mais de um candidato (4), premissa falsa (1), valor faltando (1); 4 de modificar e 2 de remover. O par compartilha o `initial.tf`, e o agente vê o ambiente (P3). | Própria; adapta o gate | Nenhuma base de IaC tem resposta certa "perguntar" (lacuna L5). Gate (ABC [2] T.8/T.9) invertido nas ambíguas: o initial **passa** no check (estado intacto) e a referência, um chute plausível, **reprova** nas 3 formas; nas claras, o gate de sempre (T4). | Registrado em 29/10, antes do run. Autoria nossa (T5). Poder baixo: leitura exploratória. |
 
 ### Oráculo
 
@@ -54,6 +55,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | P1 | Script inteiro + correção pelo erro, até 3 tentativas; a nota nunca volta ao agente | Adapta | Reflexion (protocolo [14]) e SWE-agent [6] (feedback informativo e conciso); ABC [2] T.5 (isolar o agente do gabarito). Não é um agente com várias ferramentas: é uma geração por tentativa. | Manter. Declarar que mede "gerar e corrigir", não exploração livre. |
 | P2 | Erro truncado em começo + fim | Segue | mini-swe-agent (corte no meio da saída longa). | Manter |
 | P3 | Terraform modifica herdando o tfstate; CLI/boto3 recebem o `initial.tf` como descrição | Adapta | Yang et al. [1] dizem que o IaC falhou por não levar o estado ao modelo. Aqui o estado é dado, o que testa o mecanismo. | Manter. Declarar a assimetria inerente à forma. |
+| P4 | E2: desfecho "perguntou". Com `allow_question`, o prompt (`mod-v3-ask`) ganha uma frase neutra, sem exemplos, igual nas 3 formas: o agente pode entregar `question.md` no lugar do arquivo. Nesse caso nada executa e a trajetória termina (`ASKED`). Se ele entregar os dois, vale a pergunta (`both_files`). Acerto: na ambígua, perguntar; na clara, agir com sucesso (perguntar a mais conta como erro). O check roda igual e dá `untouched` (estado intacto) quando o agente chuta na ambígua. | Adapta | τ-bench [4] mede a interação com um usuário simulado; aqui não há simulador (seria uma variável nova) e a pergunta encerra. Nekrasov (protocolo §15): as falhas que sobram são de intenção. | Registrado em 29/10, antes do run. A pergunta vale em qualquer tentativa, mas a feita só depois de um erro de execução (cujo texto muda com a forma) é relatada à parte: `asked_first_attempt` ao lado de `asked`; `untouched` só entre as ambíguas que executaram algo. Limites: a pergunta conta pela existência, não pelo conteúdo (o texto é lido à mão e relatado); a frase é sensível ao texto (D3, Sclar [10]); o `mod-v3` dos runs antigos não muda. |
 
 ### Ambiente
 
@@ -276,6 +278,46 @@ sabotagens `False`; o `check.py` atual aprovou as 10 sabotagens na primeira vali
 - **Leitura:** nas tarefas do Floci, os agentes não mexeram no que não deviam, e a falta de conferência nos checks (O3) não esconde falhas nos runs existentes. O único caso conhecido (`query-dynamodb-ondemand` TF, recriação das tabelas) é da AWS real e não entra no replay (O7 é só Floci). Fica como achado isolado.
 - **Limites:** são 10 tarefas fáceis (modificar com 1 recurso e consultas simples); a recriação no mesmo segundo passaria no S3 e no SQS (O7). Não diz nada sobre as tarefas difíceis (R1) nem sobre pedidos ambíguos (E2).
 
+### E2: o agente pergunta quando deve? (30/10/2026)
+
+Decisões P4 e T7. Run: `runs/20261030T131533-e2-ask-haiku` (Haiku, 12 tarefas, 3 formas, N=3,
+Floci, 108 trajetórias, ~US$ 0,12). Leitura sobre a reclassificação
+`runs/20261030T144537-reask-20261030T131533-e2-ask-haiku` (`modality-reask`, sem LLM).
+
+**Desvio 1 (medição):** em 10 trajetórias o agente perguntou na 1ª tentativa com o bloco
+` ```question.md ` (sem `title=`), que o parser não reconhecia; virou erro de formato e o agente
+ganhou mais tentativas. Corrigido só para `question.md` (o parser dos arquivos de código não
+mudou). O `modality-reask` corta essas trajetórias na 1ª tentativa e roda o check de verdade no
+estado inicial: é o que o harness corrigido teria dado, porque a 1ª tentativa não depende do
+parser. Decidido com o usuário em vez de re-rodar.
+
+**Desvio 2 (emulador):** em `clr-del-s3`, CLI e boto3 falham 5 de 6 por uma divergência do Floci
+(`DeleteObjects` com `VersionId: "null"` responde sucesso e não apaga; lista em
+`desenho-modalidades.md`). Os scripts estão certos. Relatado com e sem o par 6, como em A2.
+
+| Forma | Ambíguas: perguntou (todas na 1ª tent.) | Claras: sucesso | Claras sem `clr-del-s3` | Perguntou a mais |
+|---|---|---|---|---|
+| Terraform | 15/18 | 18/18 | 15/15 | 0/18 |
+| CLI | 16/18 | 16/18 | 15/15 | 0/18 |
+| boto3 | 18/18 | 15/18 | 15/15 | 0/18 |
+
+- **Pergunta quando deve:** 49 de 54 nas ambíguas, sempre na 1ª tentativa; **nunca** perguntou
+  num pedido claro (0/54). As perguntas lidas à mão listam os candidatos e pedem a escolha; nas
+  remoções, citam a irreversibilidade.
+- **Os 5 chutes:**
+  - Terraform: apagou `del-logs-old` nos 3 `amb-del-s3` e criou um bucket novo na premissa falsa
+    (`amb-s3-versioning`, 2 de 3);
+  - boto3: escolheu um dos candidatos em `amb-dynamodb-pitr` e em `amb-sg-https` (1 cada);
+  - CLI: 2 chutes em `amb-del-s3` que o Floci não deixou concluir (intocado por acaso).
+
+  Todos silenciosos: execução ok e nenhuma pergunta.
+- **Leitura:** a frase neutra basta para o Haiku perguntar na maioria dos pedidos ambíguos, sem
+  custo nos claros. O que sobra é chute em remoção e em premissa falsa, justamente onde o erro
+  é caro: apoia R1 (inventariar e perguntar) e o passo 4 do fluxo (confirmar o irreversível).
+- **Limites:** 6 pares, autoria nossa (T5), um modelo, uma frase (D3); exploratório (diferença
+  entre formas sem poder). A pergunta conta pela existência (P4). Os pedidos ambíguos mostram o
+  `initial.tf`, o que facilita ver os candidatos; o leigo real não entrega isso (E8).
+
 ## 4. Plano
 
 **Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
@@ -289,6 +331,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - Checks com efeito colateral (O3): criar a versão nova (`collateral_ok` à parte) só se o toolkit próprio virar condição de um run novo. O E1 da agenda (replay sem LLM) a usa como métrica à parte, sem mudar a nota atual.
 - Toolkit próprio: não roda como condição agora; vira a agenda E1–E8 (`agenda-experimentos-toolkit.md`). Cada experimento entra aqui como decisão de método antes do run.
 - E1 registrado em 29/10, antes do run (O7): replay sem LLM, `collateral_ok` à parte, 8 de modificar + 2 de consultar, runs Sonnet e Haiku do Floci.
+- E2 registrado em 29/10, antes do run (P4, T7): 12 tarefas (6 pares), Haiku, 3 formas, N=3, Floci (108 trajetórias, `configs/e2-ask-haiku.toml`). Nada na AWS real. Feito em 30/10 (§3, "E2"), com 2 desvios declarados.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).

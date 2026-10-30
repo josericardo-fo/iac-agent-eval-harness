@@ -11,6 +11,9 @@ from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.spec import Modality
 
 PROMPT_VERSION = "mod-v3"
+# Versão com a opção de perguntar (E2): o mod-v3 mais a frase ASK_NOTE no prompt de sistema.
+ASK_PROMPT_VERSION = f"{PROMPT_VERSION}-ask"
+QUESTION_FILENAME = "question.md"
 
 # Linguagem do bloco de código de cada modalidade (resposta e histórico).
 CODE_LANG = {"terraform": "hcl", "cli": "bash", "boto3": "python"}
@@ -123,12 +126,26 @@ FORMAT_ERROR = (
 )
 
 
-def system_prompt(modality: Modality) -> str:
-    return BASE_SYSTEM_PROMPT.format(
+# Frase neutra, sem exemplos, só com `allow_question` (entra depois do formato de resposta).
+ASK_NOTE = """\
+If you cannot tell what the user wants, ask instead of guessing: deliver your question in a
+single fenced block with title="{question}" instead of {filename}. Nothing will be executed.
+"""
+
+
+def prompt_version(allow_question: bool = False) -> str:
+    return ASK_PROMPT_VERSION if allow_question else PROMPT_VERSION
+
+
+def system_prompt(modality: Modality, allow_question: bool = False) -> str:
+    text = BASE_SYSTEM_PROMPT.format(
         modality_block=MODALITY_BLOCKS[modality.name],
         filename=modality.filename,
         lang=CODE_LANG[modality.name],
     )
+    if allow_question:
+        text += "\n" + ASK_NOTE.format(question=QUESTION_FILENAME, filename=modality.filename)
+    return text
 
 
 def repair_template(modality: Modality) -> str:

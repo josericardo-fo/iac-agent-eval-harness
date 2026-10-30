@@ -1,0 +1,5 @@
+# E2, par 4: clara de amb-sg-https (mesmo initial.tf, o pedido nomeia o SG).
+id = "clr-sg-https"
+category = "modify"
+origin = "authored"
+region = "us-east-1"

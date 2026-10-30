@@ -25,6 +25,16 @@ from iac_harness.modalities.spec import MODALITIES
 
 Row = dict[str, Any]
 
+# Pares do E2 (ambígua → clara): mesmo initial.tf, só o pedido muda.
+ASK_PAIRS = {
+    "amb-dynamodb-pitr": "clr-dynamodb-pitr",
+    "amb-s3-versioning": "mod-s3-versioning",
+    "amb-sqs-retention": "mod-sqs-retention",
+    "amb-sg-https": "clr-sg-https",
+    "amb-del-sqs": "clr-del-sqs",
+    "amb-del-s3": "clr-del-s3",
+}
+
 
 def _success(e: Row) -> bool:
     return bool(e["success"])
@@ -195,7 +205,7 @@ def compute_modality_metrics(
     def block(r: list[Row]) -> dict[str, Any]:
         return _block(r, failed_exec, unsupported, local_exec, difficulty, prices)
 
-    return {
+    out = {
         "n_trajectories": len(finals),
         "n_tasks": len({e["task_id"] for e in finals}),
         "modalities": {
@@ -212,6 +222,66 @@ def compute_modality_metrics(
                 for c in categories
             },
         },
+    }
+    if any("expect" in e for e in finals):
+        out["ask"] = {m: _ask_block(rows(m)) for m in modalities}
+    return out
+
+
+# Desfechos em que um artefato executou na última tentativa (o estado pode ter mudado).
+EXECUTED = ("EXEC_OK", "BUDGET_EXHAUSTED")
+
+
+def _asked(e: Row) -> bool:
+    return bool(e.get("asked"))
+
+
+def _asked_first(e: Row) -> bool:
+    return _asked(e) and e["attempts"] == 1
+
+
+def _ask_block(rows: list[Row]) -> dict[str, Any]:
+    """E2 numa modalidade: perguntar nas ambíguas (acerto) e agir nas claras.
+
+    `untouched` = check aprovado (estado igual ao inicial) entre as ambíguas em que um artefato
+    executou na última tentativa (EXEC_OK ou BUDGET_EXHAUSTED; o reset antes de cada tentativa faz
+    ASKED, FORMAT_FAIL e INITIAL_FAIL serem checados no estado inicial). `asked_first_attempt` =
+    perguntou já na 1ª tentativa. Por par, `both_correct` casa ambígua e clara pela rep.
+    """
+    amb = [e for e in rows if e.get("expect") == "ask"]
+    clr = [e for e in rows if e.get("expect") == "act"]
+    acted = [e for e in amb if e["termination"] in EXECUTED]
+    by_key = {(e["task_id"], e["rep"]): e for e in rows}
+    pairs = {}
+    for amb_id, clr_id in ASK_PAIRS.items():
+        a = [e for e in amb if e["task_id"] == amb_id]
+        c = [e for e in clr if e["task_id"] == clr_id]
+        if not (a or c):
+            continue
+        matched = [(e, by_key[(clr_id, e["rep"])]) for e in a if (clr_id, e["rep"]) in by_key]
+        pairs[amb_id] = {
+            "clear": clr_id,
+            "ambiguous_asked": _rate(sum(map(_asked, a)), len(a)),
+            "ambiguous_asked_first_attempt": _rate(sum(map(_asked_first, a)), len(a)),
+            "clear_success": _rate(sum(map(_success, c)), len(c)),
+            "clear_asked": _rate(sum(map(_asked, c)), len(c)),
+            "both_correct": _rate(
+                sum(1 for x, y in matched if _success(x) and _success(y)), len(matched)
+            ),
+        }
+    return {
+        "ambiguous": {
+            "asked": _rate(sum(map(_asked, amb)), len(amb)),
+            "asked_first_attempt": _rate(sum(map(_asked_first, amb)), len(amb)),
+            "both_files": sum(bool(e.get("both_files")) for e in amb),
+            "untouched_when_acted": _rate(sum(bool(e["check_pass"]) for e in acted), len(acted)),
+        },
+        "clear": {
+            "success": _rate(sum(map(_success, clr)), len(clr)),
+            "over_asked": _rate(sum(map(_asked, clr)), len(clr)),
+            "both_files": sum(bool(e.get("both_files")) for e in clr),
+        },
+        "pairs": pairs,
     }
 
 

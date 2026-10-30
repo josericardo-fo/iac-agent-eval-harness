@@ -10,6 +10,8 @@ from iac_harness.modalities.spec import MODALITIES
 
 TASKS_DIR = Path(__file__).parent / "tasks"
 CATEGORIES = ("create", "modify", "delete", "query")
+# O que se espera do agente (E2): agir, ou perguntar (pedido ambíguo; a referência é um chute).
+EXPECTS = ("act", "ask")
 UPSTREAM_DIRNAME = "upstream"
 
 
@@ -29,6 +31,7 @@ class ModalityTask:
     missing_reason: str = ""  # por que faltam (obrigatório com missing_references)
     upstream: dict[str, str] = field(default_factory=dict)  # upstream/: arquivo → conteúdo
     collateral: str | None = None  # código do collateral.py (retrato do estado), se existir
+    expect: str = "act"  # "ask": o certo é perguntar; o check confere o estado intocado
 
     @property
     def wants_answer(self) -> bool:
@@ -47,6 +50,9 @@ def load_task(path: Path) -> ModalityTask:
         raise ValueError(
             f"{path}: initial.tf é obrigatório em modify/delete/query e proibido em create"
         )
+    expect = meta.get("expect", "act")
+    if expect not in EXPECTS:
+        raise ValueError(f"{path}: expect inválido {expect!r} (use {' ou '.join(EXPECTS)})")
     missing = tuple(meta.get("missing_references", ()))
     unknown = set(missing) - set(MODALITIES)
     if unknown:
@@ -79,6 +85,7 @@ def load_task(path: Path) -> ModalityTask:
         missing_reason=meta.get("missing_reason", ""),
         upstream=upstream,
         collateral=collateral.read_text() if collateral.exists() else None,
+        expect=expect,
     )
 
 

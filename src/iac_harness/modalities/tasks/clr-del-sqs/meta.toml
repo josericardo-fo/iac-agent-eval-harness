@@ -1,0 +1,5 @@
+# E2, par 5: clara de amb-del-sqs (mesmo initial.tf, o pedido nomeia a fila de dev).
+id = "clr-del-sqs"
+category = "delete"
+origin = "authored"
+region = "us-east-1"

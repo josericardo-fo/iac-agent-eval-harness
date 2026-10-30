@@ -1,0 +1,9 @@
+# E2, par 2 (premissa falsa): ambígua de mod-s3-versioning, mesmo initial.tf. O pedido
+# cita 'mod-versioning-bkt', que não existe (o que existe é 'mod-versioning-bucket');
+# o certo é perguntar. A referência é um chute (habilita no bucket existente) e deve
+# reprovar: o check confere o estado intocado.
+id = "amb-s3-versioning"
+category = "modify"
+origin = "authored"
+region = "us-east-1"
+expect = "ask"

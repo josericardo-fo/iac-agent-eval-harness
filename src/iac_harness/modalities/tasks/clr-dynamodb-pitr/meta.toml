@@ -1,0 +1,5 @@
+# E2, par 1: clara de amb-dynamodb-pitr (mesmo initial.tf, o pedido nomeia a tabela).
+id = "clr-dynamodb-pitr"
+category = "modify"
+origin = "authored"
+region = "us-east-1"

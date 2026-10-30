@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend
+from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend, parse_files
 from iac_harness.agents.prompts import PROMPT_VERSION
 from iac_harness.conditions import A, B, C, Condition
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
@@ -26,10 +26,23 @@ from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.metrics import compute_metrics, load_events
 from iac_harness.modalities import prompts as mod_prompts
-from iac_harness.modalities.execute import prevalidate_pair, replay_pair, truncate
+from iac_harness.modalities.execute import (
+    apply_initial,
+    prevalidate_pair,
+    replay_pair,
+    run_check,
+    truncate,
+)
 from iac_harness.modalities.loader import load_tasks
 from iac_harness.modalities.metrics import compute_modality_metrics, compute_replay_metrics
-from iac_harness.modalities.runner import DEFAULT_MAX_ATTEMPTS, ModRunContext, run_pair
+from iac_harness.modalities.runner import (
+    DEFAULT_MAX_ATTEMPTS,
+    ModRunContext,
+    ModTermination,
+    parse_question,
+    run_pair,
+    uses_local_exec,
+)
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.runner import COMMON_CHAIN, RunContext, SandboxGate, run_gates, run_task
@@ -37,7 +50,7 @@ from iac_harness.toolchain import DEFAULT_ENDPOINT, DEFAULT_REGION, DEFAULT_TIME
 from iac_harness.types import Artifact, CheckStatus, Stage, Task, TaskOracle
 from iac_harness.verifiers.opa import OpaVerifier
 from iac_harness.verifiers.terraform import PLAN_FILE, PlanVerifier, ValidateVerifier, error_blocks
-from iac_harness.workspace import OVERRIDE_FILENAME, create_workspace, pair_dir
+from iac_harness.workspace import OVERRIDE_FILENAME, RESPONSE_FILENAME, create_workspace, pair_dir
 
 CONDITIONS: dict[str, Condition] = {"A": A, "B": B, "C": C}
 BACKENDS = {"anthropic": AnthropicBackend}
@@ -544,8 +557,8 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
     tasks = list(dict.fromkeys(r["task_id"] for r in rows))
     width = max([len(t) for t in tasks] + [4])
     lines = [
-        "células: baseline_pass ref_exec_ok ref_check_pass (esperado 011; '!' = inválida;"
-        " 'sem ref' = modalidade sem referência)",
+        "células: baseline_pass ref_exec_ok ref_check_pass (esperado 011, ou 110 nas tarefas"
+        " expect=ask; '!' = inválida; 'sem ref' = modalidade sem referência)",
         f"{'task':<{width}}  " + "  ".join(f"{m:<10}" for m in modalities),
     ]
     for t in tasks:
@@ -781,19 +794,155 @@ def cmd_modality_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- modality-reask ----------
+
+
+def _first_question(events: list[dict[str, Any]]) -> dict[tuple[Any, ...], tuple[int, str]]:
+    """(tarefa, modalidade, rep) -> (1ª tentativa com bloco question.md, texto), do response.txt."""
+    found: dict[tuple[Any, ...], tuple[int, str]] = {}
+    for e in events:
+        key = (e.get("task_id"), e.get("modality"), e.get("rep"))
+        if e.get("event") != "attempt" or key in found:
+            continue
+        response = Path(e["artifact_path"]) / RESPONSE_FILENAME
+        question = parse_question(response.read_text()) if response.is_file() else None
+        if question is not None:
+            found[key] = (e["attempt"], question)
+    return found
+
+
+def cmd_modality_reask(args: argparse.Namespace) -> int:
+    """Reclassifica (sem LLM) trajetórias E2 cuja pergunta o parser antigo não reconheceu.
+
+    A trajetória é cortada na 1ª tentativa com bloco question.md: final ASKED, tokens só até ali
+    e check real no estado inicial (reset + initial.tf no Floci). As demais são copiadas iguais.
+    """
+    src = Path(args.src_run_dir)
+    saved = json.loads((src / "run_config.json").read_text(encoding="utf-8"))
+    cfg = saved["config"]
+    if not _allow_question(cfg):
+        raise SystemExit("modality-reask só vale para runs com [modality] allow_question")
+    if cfg.get("sandbox", {}).get("kind", FlociExecutor.KIND) == RealAwsExecutor.KIND:
+        raise SystemExit("modality-reask só roda no Floci: o run de origem usou a AWS real")
+    events = load_events(src / "events.jsonl")
+    questions = _first_question(events)
+    finals = {(e["task_id"], e["modality"], e["rep"]): e for e in events if e["event"] == "final"}
+    # Só muda o que o harness corrigido teria encerrado antes (ou com outro desfecho).
+    fix = {
+        key: q for key, q in questions.items()
+        if key in finals and not (finals[key].get("asked") and finals[key]["attempts"] == q[0])
+    }  # fmt: skip
+    tasks = {t.task_id: t for t in load_tasks()}
+    max_chars = cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS)
+    runs_dir = src.parent
+    run_id = new_run_id(f"reask-{src.name}")
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
+    (run_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "config": cfg,
+                "src_run": str(src),
+                "src_git_commit": saved.get("git_commit"),
+                "note": (
+                    "modality-reask: trajetórias cuja 1ª pergunta veio como ```question.md "
+                    "(sem title=) foram cortadas nessa tentativa e reclassificadas como ASKED, "
+                    "sem LLM; check rodado de novo no estado inicial. Demais eventos copiados."
+                ),
+                "reclassified": len(fix),
+                **_git_provenance(),
+                "versions": {
+                    "toolchain_image": toolchain.image,
+                    **_sandbox_provenance(executor),
+                },
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    both_files: dict[tuple[Any, ...], bool] = {}
+    recorder = JsonlRecorder(run_dir / "events.jsonl")
+    try:
+        for e in events:
+            key = (e.get("task_id"), e.get("modality"), e.get("rep"))
+            if key not in fix:
+                recorder.record(e)
+                continue
+            q_attempt, question = fix[key]
+            if e["event"] == "attempt" and e["attempt"] < q_attempt:
+                recorder.record(e)
+            elif e["event"] == "attempt" and e["attempt"] == q_attempt:
+                modality = MODALITIES[e["modality"]]
+                raw = (Path(e["artifact_path"]) / RESPONSE_FILENAME).read_text()
+                content = parse_files(raw).get(modality.filename)
+                both_files[key] = content is not None
+                e.update(
+                    format_ok=True, exec_ok=None, asked=True, question=question,
+                    both_files=both_files[key], unsupported=False,
+                    uses_local_exec=uses_local_exec(modality, content), output="",
+                    raw_output="", feedback_sent=None, termination=ModTermination.ASKED.value,
+                    artifact_hash=None, answer=None, reclassified=True,
+                )  # fmt: skip
+                recorder.record(e)
+            elif e["event"] == "final":
+                task, modality = tasks[e["task_id"]], MODALITIES[e["modality"]]
+                kept = [
+                    a for a in events
+                    if a["event"] == "attempt" and (a["task_id"], a["modality"], a["rep"]) == key
+                    and a["attempt"] <= q_attempt
+                ]  # fmt: skip
+                tokens_in = sum(a["input_tokens"] for a in kept)
+                tokens_out = sum(a["output_tokens"] for a in kept)
+                # Check real no estado inicial, como o harness corrigido faria.
+                executor.reset()
+                initial, path = apply_initial(
+                    toolchain, executor, task, modality, runs_dir, run_id, max_chars,
+                    rep=e["rep"], name="reask_initial",
+                )  # fmt: skip
+                if initial.ok:
+                    check_pass, details = run_check(toolchain, task, path, settle=True)
+                else:
+                    check_pass, details = False, {"error": "initial.tf não aplicou"}
+                e.update(
+                    attempts=q_attempt, termination=ModTermination.ASKED.value,
+                    exec_ok=False, check_pass=check_pass, check_details=details,
+                    success=task.expect == "ask", asked=True, question=question,
+                    both_files=both_files[key], input_tokens=tokens_in,
+                    output_tokens=tokens_out, total_tokens=tokens_in + tokens_out,
+                    reclassified=True,
+                )  # fmt: skip
+                recorder.record(e)
+                print(f"{key[0]} × {key[1]} rep {key[2]}: ASKED na tentativa {q_attempt} "
+                      f"(check={check_pass})", file=sys.stderr)  # fmt: skip
+    finally:
+        recorder.close()
+        final_cleanup(executor)
+    print(f"reclassificadas: {len(fix)}", file=sys.stderr)
+    print(run_dir)
+    return 0
+
+
 # ---------- modality-run ----------
 
 MODALITY_UNIT = ("task_id", "modality", "rep")
 
 
+def _allow_question(cfg: dict[str, Any]) -> bool:
+    """`[modality] allow_question` (E2): o agente pode perguntar em vez de agir."""
+    return bool(cfg.get("modality", {}).get("allow_question", False))
+
+
 def _modality_backends(cfg: dict[str, Any], modalities: list[str]) -> dict[str, Any]:
     """Um backend por modalidade: system prompt e repair próprios, versão mod_prompts."""
+    allow_question = _allow_question(cfg)
     return {
         name: _build_backend(
             cfg,
-            system_prompt=mod_prompts.system_prompt(MODALITIES[name]),
+            system_prompt=mod_prompts.system_prompt(MODALITIES[name], allow_question),
             repair_template=mod_prompts.repair_template(MODALITIES[name]),
-            prompt_version=mod_prompts.PROMPT_VERSION,
+            prompt_version=mod_prompts.prompt_version(allow_question),
             code_lang=mod_prompts.CODE_LANG[name],
         )
         for name in modalities
@@ -842,6 +991,7 @@ def _modality_loop(
         model_provider=cfg["agent"]["provider"],
         max_attempts=cfg.get("modality", {}).get("max_attempts", DEFAULT_MAX_ATTEMPTS),
         max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
+        allow_question=_allow_question(cfg),
     )
     backends = _modality_backends(cfg, modalities)
     recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
@@ -885,7 +1035,7 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
                 "reps": reps,
                 "tasks": [t.task_id for t in tasks],
                 "modalities": modalities,
-                "prompt_version": mod_prompts.PROMPT_VERSION,
+                "prompt_version": mod_prompts.prompt_version(_allow_question(cfg)),
                 **_git_provenance(),
                 "versions": {
                     **toolchain.versions(run_dir),
@@ -1354,6 +1504,13 @@ def main(argv: list[str] | None = None) -> int:
         help="categorias separadas por vírgula (padrão: modify,query)",
     )
     p_mrep.set_defaults(func=cmd_modality_replay)
+
+    p_mrea = sub.add_parser(
+        "modality-reask",
+        help="reclassifica sem LLM as perguntas (```question.md) que o parser antigo não leu",
+    )
+    p_mrea.add_argument("src_run_dir", type=Path, help="run dir de um modality-run do E2")
+    p_mrea.set_defaults(func=cmd_modality_reask)
 
     p_mmet = sub.add_parser(
         "modality-metrics", help="métricas de um modality-run (ou resumo de um modality-replay)"

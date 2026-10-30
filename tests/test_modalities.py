@@ -38,6 +38,9 @@ EXPECTED_TASKS = {
     "awsb-create-s3-bucket-with-config", "awsb-move-s3-contents-within-bucket",
     "awsb-sync-s3-buckets-with-metadata", "awsb-dynamodb-strip-ec2-fields-from-prod",
     "awsb-lambda-versioned-alias-update",
+    # E2: pares claro × ambíguo (as claras mod-s3-versioning e mod-sqs-retention já estão acima)
+    "amb-dynamodb-pitr", "clr-dynamodb-pitr", "amb-s3-versioning", "amb-sqs-retention",
+    "amb-sg-https", "clr-sg-https", "amb-del-sqs", "clr-del-sqs", "amb-del-s3", "clr-del-s3",
 }  # fmt: skip
 
 
@@ -99,6 +102,28 @@ def test_load_task_accepts_delete_with_initial(tmp_path):
 def test_load_task_rejects_missing_initial_in_delete(tmp_path):
     with pytest.raises(ValueError, match="initial.tf"):
         load_task(_copy_task_as_delete(tmp_path, with_initial=False))
+
+
+def test_load_task_expect_defaults_to_act_and_reads_ask():
+    assert _task("mod-s3-versioning").expect == "act"
+    assert _task("amb-s3-versioning").expect == "ask"
+    assert _task("clr-dynamodb-pitr").expect == "act"
+
+
+def test_load_task_rejects_invalid_expect(tmp_path):
+    dst = _copy_task_as_delete(tmp_path, with_initial=True)
+    meta = dst / "meta.toml"
+    meta.write_text(meta.read_text() + 'expect = "maybe"\n')
+    with pytest.raises(ValueError, match="expect"):
+        load_task(dst)
+
+
+def test_ask_pairs_share_initial_tf():
+    from iac_harness.modalities.metrics import ASK_PAIRS
+
+    for amb, clr in ASK_PAIRS.items():
+        assert _task(amb).expect == "ask" and _task(clr).expect == "act"
+        assert _task(amb).initial_tf == _task(clr).initial_tf
 
 
 def test_modality_commands():
@@ -232,6 +257,25 @@ def test_prevalidate_pair_order_and_validity(tmp_path):
     assert [a[0] for a, _, _ in tc.seen] == ["python3", "bash", "python3"]
     assert row["baseline_pass"] is False and row["ref_check_pass"] is True
     assert row["valid"] and row["initial_ok"] is None
+
+
+@pytest.mark.parametrize(
+    ("baseline", "ref_check", "valid"),
+    [(True, False, True), (False, True, False), (True, True, False), (False, False, False)],
+)
+def test_prevalidate_pair_inverted_gate_for_ask(tmp_path, baseline, ref_check, valid):
+    outputs = iter(json.dumps({"pass": v, "details": {}}) for v in (baseline, ref_check))
+
+    class CheckToolchain(RecordingToolchain):
+        def run(self, args, workdir, timeout_s=None):
+            self.stdout = next(outputs) if args[:2] == ["python3", "check.py"] else ""
+            return super().run(args, workdir, timeout_s)
+
+    tc = CheckToolchain()
+    row = prevalidate_pair(
+        _task("amb-del-sqs"), MODALITIES["cli"], tc, FlociExecutor(tc), tmp_path, "r"
+    )
+    assert row["expect"] == "ask" and row["valid"] is valid
 
 
 def test_prevalidate_pair_stops_when_initial_fails(tmp_path):
