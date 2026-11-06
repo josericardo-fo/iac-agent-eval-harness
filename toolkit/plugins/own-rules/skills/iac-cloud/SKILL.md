@@ -44,9 +44,10 @@ Step 4 applies at both levels.
    with one plain question naming the resource, the action, and its consequence.
 5. **Act.** Use the credentials you were given, as they are: they should be least-privilege and
    separate from the owner's. Tag everything you create, reusing the tags already in the
-   project. Give globally unique names (S3 buckets) a unique suffix such as the account id,
-   never an example name. Treat `AccessDenied` as a guardrail: stop, explain it, and offer the
-   cheapest option that fits within it. Keep secret values out of your output and context;
+   project. Use the exact names the user gave. Only when you choose a globally unique name
+   yourself (S3 buckets), add a unique suffix such as the account id, never an example name.
+   Treat `AccessDenied` as a guardrail: stop, explain it, and offer the cheapest option that
+   fits within it. Keep secret values out of your output and context;
    reference secrets by name or ARN.
 6. **Verify.** Read the final state from the API; an exit code or a plan is not evidence. Retry
    the read for up to about 60 seconds before declaring failure, because cloud APIs are

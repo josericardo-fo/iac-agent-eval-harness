@@ -22,11 +22,20 @@ def load_strata(path: Path = DEFAULT_STRATA_FILE) -> dict[str, dict[str, Any]]:
         for key, allowed in (("origin", ORIGINS), ("intent", INTENTS), ("target", TARGETS)):
             if row.get(key) not in allowed:
                 raise ValueError(f"{path}: {task_id}.{key} inválido: {row.get(key)!r}")
+        if "intent_aws" in row and row["intent_aws"] not in INTENTS:
+            raise ValueError(f"{path}: {task_id}.intent_aws inválido: {row['intent_aws']!r}")
         if not isinstance(row.get("services"), list) or not row["services"]:
             raise ValueError(f"{path}: {task_id}.services deve ser uma lista não vazia")
     return tasks
 
 
-def strata_fields(row: dict[str, Any]) -> dict[str, Any]:
-    """Campos gravados no evento final (prefixo strata_ para não colidir com target/category)."""
-    return {f"strata_{axis}": row.get(axis) for axis in AXES}
+def strata_fields(row: dict[str, Any], target_kind: str) -> dict[str, Any]:
+    """Campos gravados no evento final (prefixo strata_ para não colidir com target/category).
+
+    Na AWS real, `intent_aws` (quando existe) substitui `intent`: a mesma tarefa pode ter
+    premissa falsa só lá (ex.: bucket de outra conta).
+    """
+    fields = {f"strata_{axis}": row.get(axis) for axis in AXES}
+    if target_kind == "aws" and "intent_aws" in row:
+        fields["strata_intent"] = row["intent_aws"]
+    return fields

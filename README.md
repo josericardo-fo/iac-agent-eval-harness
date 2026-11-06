@@ -117,3 +117,49 @@ uv run iac-harness modality-prevalidate --config configs/modality-real-aws.toml 
 ```
 
 O resultado de cada limpeza (apagados, falhas, restantes) sai no stderr como `aws sweep: {...}`.
+
+## Estudo de modalidades (Terraform, AWS CLI, boto3)
+
+O agente resolve a mesma tarefa em cada forma; a nota vem do estado final dos recursos
+(`check.py` da tarefa). Desenho e decisões: [docs/registro-metodologico.md](docs/registro-metodologico.md).
+
+```bash
+uv run iac-harness modality-prevalidate --config configs/modality-haiku.toml   # referência e estado inicial
+uv run iac-harness modality-run --config configs/modality-haiku.toml           # --resume <run> retoma
+uv run iac-harness modality-metrics runs/<id>
+```
+
+- **Forma livre (E4):** `modalities = ["free"]` (`configs/e4-free-haiku.toml`); o agente escolhe a
+  forma a cada tentativa. Roda sozinha e sem `allow_question`. Compare com uma forma fixa:
+  `modality-metrics <run> --baseline <run de forma fixa>`.
+- **Efeito colateral por replay (E1):** `modality-replay <run>` reexecuta sem LLM o artefato final de
+  cada trajetória (padrão: `--categories modify,query`) e mede `collateral_ok` à parte da nota.
+  Resumo: `modality-metrics <run do replay>`.
+- **Reclassificar perguntas (E2):** `modality-reask <run>` corta, sem LLM, as trajetórias em que o
+  agente perguntou com um bloco ` ```question.md ` que o parser antigo não lia.
+
+## E3: agente real (Claude Code headless em container)
+
+O Claude Code (`claude -p`) age sozinho no Floci ou na AWS real, sob 5 condições de toolkit
+(`none`, `aws-core`, `own-skill-only`, `own-rules`, `own-tools`). Código em
+`src/iac_harness/agentic/`; o toolkit próprio sai de `toolkit/src/` com
+`uv run python toolkit/build.py`.
+
+```bash
+docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest .
+set -a; source .env; set +a
+export LOCALSTACK_AUTH_TOKEN=unused   # o compose exige a variável
+docker compose -f docker/compose.yaml --profile agent --profile agent-workers up -d --wait
+
+uv run iac-harness agent-run --config configs/e3-agent-haiku.toml   # --tasks/--reps para recortar
+uv run iac-harness agent-resume runs/<id>                           # pula o que já tem evento final
+uv run iac-harness agent-judge runs/<id>                            # juiz: a mensagem final pergunta algo?
+uv run iac-harness agent-judge runs/<id> --sample 30 --seed 20261106   # judge_sample.csv para leitura à mão
+uv run iac-harness agent-judge runs/<id> --agreement runs/<id>/judge_sample.csv   # juiz × humano
+uv run iac-harness agent-metrics runs/<id> --format table           # condição × modelo, estratos, alvo
+uv run iac-harness agent-metrics runs/<floci> --compare runs/<aws>  # concordância Floci × AWS real
+```
+
+- O agente roda como usuário não-root, com egresso só pelo proxy squid (perfil `agent`).
+- Os estratos (intenção, categoria, origem, dificuldade, alvo) ficam em `configs/strata.toml`.
+- Os testes de integração fazem `docker compose down`: não rode com um run em andamento.

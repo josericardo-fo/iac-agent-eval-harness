@@ -35,7 +35,7 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | T5 | Tarefas autorais de modificar, remover e consultar | Própria | O IaC-Eval só tem criação; Yang et al. [1] acham a diferença justamente em updates. | Manter. Declarar a autoria (risco de viés de quem escreve). |
 | T6 | Adaptar a referência (nunca o enunciado) quando ela não realiza o pedido ou a API saiu | Própria | Registrado no `meta.toml`. O agente nunca vê a referência (ABC [2] T.5). | Manter |
 | T7 | E2: 6 pares claro × ambíguo (`expect = "act"` / `"ask"` no `meta.toml`), 10 tarefas novas + `mod-s3-versioning` e `mod-sqs-retention` como claras. Tipos: mais de um candidato (4), premissa falsa (1), valor faltando (1); 4 de modificar e 2 de remover. O par compartilha o `initial.tf`, e o agente vê o ambiente (P3). | Própria; adapta o gate | Nenhuma base de IaC tem resposta certa "perguntar" (lacuna L5). Gate (ABC [2] T.8/T.9) invertido nas ambíguas: o initial **passa** no check (estado intacto) e a referência, um chute plausível, **reprova** nas 3 formas; nas claras, o gate de sempre (T4). | Registrado em 29/10, antes do run. Autoria nossa (T5). Poder baixo: leitura exploratória. |
-| T8 | E3: tarefas e estratos. Floci: 35 tarefas (as 25 do E4 + as 10 do E2; `configs/e3-agent.toml`). AWS real: 30 (as 18 comuns + as 12 só da real; `configs/e3-agent-aws.toml`, em série). Cada tarefa tem estratos em `configs/strata.toml`, sem mudar os `meta.toml`: categoria, origem, dificuldade (IaC-Eval), intenção (`clear`, `ambiguous`, `false-premise`, `side-effect-risk`, `cost-lock`), alvo e serviços. As métricas saem por estrato e por alvo. | Própria | ABC [2] R.11 (relatar por subgrupo); Nekrasov (falha de intenção concentrada); T2 (dataset intocado). | Registrado em 06/11, antes da matriz. Classificação nossa, sem segundo avaliador. Pendentes com o usuário: task-108/110/118 (bucket de outra conta na real; hoje `clear`) e task-110/130/367 (ambiguidade registrada; hoje `clear`). |
+| T8 | E3: tarefas e estratos. Floci: 35 tarefas (as 25 do E4 + as 10 do E2; `configs/e3-agent.toml`). AWS real: 30 (as 18 comuns + as 12 só da real; `configs/e3-agent-aws.toml`, em série). Cada tarefa tem estratos em `configs/strata.toml`, sem mudar os `meta.toml`: categoria, origem, dificuldade (IaC-Eval), intenção (`clear`, `ambiguous`, `false-premise`, `side-effect-risk`, `cost-lock`), alvo e serviços. As métricas saem por estrato e por alvo. | Própria | ABC [2] R.11 (relatar por subgrupo); Nekrasov (falha de intenção concentrada); T2 (dataset intocado). | Registrado em 06/11, antes da matriz. Classificação nossa, sem segundo avaliador. **Decidido com o usuário em 06/11, depois da matriz Floci e antes da real:** task-108/110/118 ficam `clear` no Floci e `false-premise` só na real (`intent_aws`, bucket de outra conta); task-231/373 continuam `clear` (mudar depois de ver o resultado seria escolher pelo resultado; a pergunta defensável é relatada à parte); task-110/130/367 continuam `clear`. |
 
 ### Oráculo
 
@@ -377,6 +377,75 @@ Decisões P6 e T8. Exploratório (N=1, Haiku, Floci); serve para validar o harne
   segurança aberto em 30/10, depois da criação em massa de usuários IAM pelo harness. Respondido em
   06/11; a real espera a liberação.
 
+### E3: matriz no Floci (06/11/2026)
+
+Decisões P6 e T8. Runs: `runs/20261106T143311-e3-agent-haiku` e `runs/20261106T170449-e3-agent-sonnet`
+(`configs/e3-agent-{haiku,sonnet}.toml`, fatias da `e3-agent.toml`), 35 tarefas × 5 condições × N=3 =
+525 por modelo, toolkit congelado nos dois. 1050/1050 com `DONE`, nenhuma falha do harness. Juiz
+Sonnet (`e3-judge-v2`) em todas. **Juiz ainda não validado**: amostra de 30 (`--seed 20261106`)
+em `judge_sample.csv` do run Haiku, aguardando leitura à mão.
+
+| Modelo | Condição | Ambíguas: perguntou (sucesso) | Claras: sucesso | Perguntou nas claras | Skill acionada | Tokens (soma) |
+|---|---|---|---|---|---|---|
+| Haiku | none | 12/18 | 77/78 | 1 | — | 175k |
+| Haiku | aws-core | 11/18 | 77/78 | 1 | 65/105 | 245k |
+| Haiku | own-skill-only | 13/18 | 72/78 | 3 | 30/105 | 188k |
+| Haiku | own-rules | 18/18 | 70/78 | 5 | 105/105 | 211k |
+| Haiku | own-tools | 18/18 | 69/78 | 6 | 105/105 | 232k |
+| Sonnet | none | 10/18 | 78/78 | 0 | — | 130k |
+| Sonnet | aws-core | 10/18 | 78/78 | 0 | 78/105 | 181k |
+| Sonnet | own-skill-only | 17/18 | 72/78 | 3 | 99/105 | 142k |
+| Sonnet | own-rules | 18/18 | 72/78 | 3 | 105/105 | 155k |
+| Sonnet | own-tools | 18/18 | 72/78 | 3 | 105/105 | 161k |
+
+"Claras" = estrato `clear` (26 tarefas); as 3 de premissa falsa e a de risco de efeito colateral
+ficam fora. Colateral 30/30 em todas as células.
+
+- **Sucesso total:** nenhuma condição difere de `none` (McNemar pela maioria das reps, p ≥ 0,69,
+  Holm 1,0; bootstrap com IC cruzando zero nos dois modelos).
+- **Ambíguas:** com a skill acionada, o agente pergunta em 18/18 (Haiku e Sonnet), contra 10–12/18
+  em `none` e `aws-core`. O Sonnet aciona a skill sozinho (99/105 em `own-skill-only`); o Haiku
+  precisa da regra no system prompt (30/105 sem ela). O `aws-core` não muda nada e custa +39–40%
+  de tokens.
+- **Claras:** a piora concentra-se em 3 tarefas:
+  - task-118 (0/9 com a skill nos dois modelos, 3/3 sem): **defeito do toolkit**. O passo 5 da skill
+    ("dê sufixo único a nomes globais") fez o agente criar `your-bucket-name-<conta>` quando o pedido
+    dava o nome literal.
+  - task-231 ("configure um TTL", sem tabela) e task-373 (disco Lightsail, sem instância; só Haiku):
+    com o toolkit o agente pergunta em vez de inventar. É pergunta defensável; o estrato `clear` está
+    em revisão (pendente com o usuário).
+- **Leitura:** o toolkit troca chute por pergunta nas ambíguas, ao custo de perguntas a mais em
+  pedidos vagos e de +19–33% de tokens. Nenhuma condição ganha no total.
+- **Limites:** juiz sem validação; estratos de autoria nossa (T8); um agente; Floci.
+- **Correção do toolkit (06/11, depois da matriz):** o passo 5 da skill passou a dizer "use os
+  nomes exatos que o usuário deu; o sufixo único só quando você escolhe o nome". Verificação só
+  na task-118, nas 3 condições com skill × 2 modelos × N=3 (`configs/e3-fix118-{haiku,sonnet}.toml`,
+  `runs/20261106T192631-e3-fix118-haiku` e `runs/20261106T192914-e3-fix118-sonnet`): de 0/18 para
+  18/18 de sucesso (estado certo e sem pergunta, pelo juiz). A matriz **não** foi re-rodada: os
+  números da tabela acima são do toolkit anterior. Contar a task-118 corrigida no lugar da antiga
+  seria escolher pelo resultado, então ela entra só como verificação. As outras 34 tarefas não
+  foram re-rodadas com o texto novo.
+
+**Por estrato (06/11, `agent-metrics`, mesmos runs, toolkit anterior).** Sucesso em
+`none` / `aws-core` / `own-skill-only` / `own-rules` / `own-tools` (trajetórias).
+
+| Estrato | Haiku | Sonnet |
+|---|---|---|
+| Criar (12 tarefas, IaC-Eval v2) | 32 / 29 / 27 / 22 / 21 de 36 | 33 / 33 / 26 / 24 / 25 de 36 |
+| Modificar (14) | 35 / 35 / 36 / 42 / 42 de 42 | 34 / 34 / 41 / 42 / 42 de 42 |
+| Remover (7) | 21 / 21 / 20 / 21 / 21 de 21 | 21 em todas |
+| Consultar (2) | 6 em todas | 6 em todas |
+| Premissa falsa (3 no Floci) | 5 / 1 / 3 / 3 / 3 de 9 | 3 / 3 / 5 / 3 / 4 de 9 |
+| Dificuldade 2–3 (IaC-Eval) | 17 / 14 / 12 / 7 / 6 de 21 | 18 / 18 / 11 / 9 / 10 de 21 |
+| Dificuldade 1, 4, 5, 6 | 15/15 em todas | 15/15 em todas |
+
+- **O toolkit ganha em modificar e perde em criar.** Em modificar, o ganho vem das ambíguas (15/15).
+  Em criar, a perda fica nas tarefas de dificuldade 2–3 do IaC-Eval, com enunciado curto: a
+  task-118 (defeito já corrigido) e a task-231 e a task-373 (o agente pergunta em vez de inventar).
+- **A dificuldade do IaC-Eval não prevê nada aqui:** as de nível 4–6 passam em todas as células.
+  O que pesa é o enunciado vago, não o tamanho da infraestrutura.
+- O alvo é só o Floci; o estrato `target` fica para quando houver a real.
+
 ## 4. Plano
 
 **Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
@@ -393,6 +462,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - E2 registrado em 29/10, antes do run (P4, T7): 12 tarefas (6 pares), Haiku, 3 formas, N=3, Floci (108 trajetórias, `configs/e2-ask-haiku.toml`). Nada na AWS real. Feito em 30/10 (§3, "E2"), com 2 desvios declarados.
 - E4 registrado em 30/10, antes do run (P5): forma livre, 25 tarefas do Floci, Haiku, N=3 (75 trajetórias, `configs/e4-free-haiku.toml`), comparada com o run `20261027T150905-modality-haiku`. Nada na AWS real.
 - E3 registrado em 06/11, depois dos pilotos e antes da matriz (P6, T8): Floci, 35 tarefas × 5 condições × Haiku/Sonnet × N=3 (1050 trajetórias, `configs/e3-agent.toml`); depois a real, 30 tarefas em série (`configs/e3-agent-aws.toml`), só depois do piloto real e do budget fixado pelo usuário.
+- AWS real do E3 (06/11, com o usuário): esperar a liberação do Lambda (caso 179333530400472) até 09/11. Se não sair, opção B: o sweep tolera `AccessDenied` só no Lambda, registrado como desvio, e `awsb-lambda-versioned-alias-update` sai da real. Antes da matriz real, avisar a AWS no caso que o harness cria e apaga usuários IAM.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).

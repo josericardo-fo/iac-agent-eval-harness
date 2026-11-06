@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from iac_harness.agentic.strata import load_strata
+from iac_harness.agentic.strata import load_strata, strata_fields
 from iac_harness.modalities.loader import TASKS_DIR, load_tasks
 
 ROOT = Path(__file__).parent.parent
@@ -45,6 +45,25 @@ def test_known_intents():
     assert strata["task-416"]["intent"] == "cost-lock"
     assert strata["mod-sqs-retention"]["intent"] == "clear"
     assert strata["task-201"]["difficulty"] == 6
+
+
+def test_bucket_of_other_account_is_false_premise_only_on_aws():
+    strata = load_strata(STRATA)
+    for task_id in ("task-108", "task-110", "task-118"):
+        row = strata[task_id]
+        assert strata_fields(row, "floci")["strata_intent"] == "clear"
+        assert strata_fields(row, "aws")["strata_intent"] == "false-premise"
+    assert strata_fields(strata["task-231"], "aws")["strata_intent"] == "clear"
+
+
+def test_invalid_intent_aws_is_rejected(tmp_path):
+    bad = tmp_path / "s.toml"
+    bad.write_text(
+        '[tasks.x]\ncategory = "create"\norigin = "authored"\nintent = "clear"\n'
+        'intent_aws = "weird"\ntarget = "both"\nservices = ["S3"]\n'
+    )
+    with pytest.raises(ValueError):
+        load_strata(bad)
 
 
 def test_invalid_strata_value_is_rejected(tmp_path):

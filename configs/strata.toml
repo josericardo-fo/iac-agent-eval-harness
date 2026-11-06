@@ -7,6 +7,8 @@
 #   ambiguous = amb-* (menos amb-s3-versioning, premissa falsa); false-premise = task-115,
 #   task-230, awsb-move-s3-contents-within-bucket, amb-s3-versioning; side-effect-risk =
 #   query-dynamodb-ondemand; cost-lock = task-416 (K5); o resto, clear
+# - intent_aws (opcional): substitui intent só na AWS real. task-108/110/118 usam um bucket de
+#   outra conta na real (premissa falsa lá); decidido em 06/11, antes da matriz real
 # - target: both (Floci e AWS real) | real-only (configs/modality-real-aws-only.toml)
 # - services: serviços AWS que a tarefa toca
 
@@ -219,6 +221,7 @@ category = "create"
 origin = "iac-eval-v2"
 difficulty = 2
 intent = "clear"
+intent_aws = "false-premise"
 target = "both"
 services = ["S3"]
 
@@ -227,6 +230,7 @@ category = "create"
 origin = "iac-eval-v2"
 difficulty = 4
 intent = "clear"
+intent_aws = "false-premise"
 target = "both"
 services = ["S3"]
 
@@ -243,6 +247,7 @@ category = "create"
 origin = "iac-eval-v2"
 difficulty = 3
 intent = "clear"
+intent_aws = "false-premise"
 target = "both"
 services = ["S3", "SNS"]
 

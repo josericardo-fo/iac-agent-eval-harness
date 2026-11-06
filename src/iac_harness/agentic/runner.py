@@ -170,7 +170,7 @@ def run_agent_pair(
         "task_id": task.task_id, "category": task.category,
         "expect": task.expect, "condition": condition_name, "model": model, "rep": rep,
         "target": target.kind, "agent": ctx.agent.name, "prompt_version": AGENT_PROMPT_VERSION,
-        **strata_fields(ctx.strata.get(task.task_id, {})),
+        **strata_fields(ctx.strata.get(task.task_id, {}), target.kind),
         "initial_ok": None, "check_pass": None, "check_details": {}, "asked": None,
         "judge_kind": None, "success": None, "collateral_ok": None, "collateral_details": {},
         "answer_present": None, "final_text": None, "num_turns": None, "cost_usd": None,
