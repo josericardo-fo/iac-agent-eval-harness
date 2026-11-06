@@ -382,8 +382,8 @@ Decisões P6 e T8. Exploratório (N=1, Haiku, Floci); serve para validar o harne
 Decisões P6 e T8. Runs: `runs/20261106T143311-e3-agent-haiku` e `runs/20261106T170449-e3-agent-sonnet`
 (`configs/e3-agent-{haiku,sonnet}.toml`, fatias da `e3-agent.toml`), 35 tarefas × 5 condições × N=3 =
 525 por modelo, toolkit congelado nos dois. 1050/1050 com `DONE`, nenhuma falha do harness. Juiz
-Sonnet (`e3-judge-v2`) em todas. **Juiz ainda não validado**: amostra de 30 (`--seed 20261106`)
-em `judge_sample.csv` do run Haiku, aguardando leitura à mão.
+Sonnet (`e3-judge-v2`) em todas. **Juiz conferido por um segundo modelo, não por humano** (ver
+"Conferência do juiz" abaixo).
 
 | Modelo | Condição | Ambíguas: perguntou (sucesso) | Claras: sucesso | Perguntou nas claras | Skill acionada | Tokens (soma) |
 |---|---|---|---|---|---|---|
@@ -416,7 +416,8 @@ ficam fora. Colateral 30/30 em todas as células.
     em revisão (pendente com o usuário).
 - **Leitura:** o toolkit troca chute por pergunta nas ambíguas, ao custo de perguntas a mais em
   pedidos vagos e de +19–33% de tokens. Nenhuma condição ganha no total.
-- **Limites:** juiz sem validação; estratos de autoria nossa (T8); um agente; Floci.
+- **Limites:** juiz conferido por outro modelo, sem leitura humana; estratos de autoria nossa (T8); um
+  agente; Floci.
 - **Correção do toolkit (06/11, depois da matriz):** o passo 5 da skill passou a dizer "use os
   nomes exatos que o usuário deu; o sufixo único só quando você escolhe o nome". Verificação só
   na task-118, nas 3 condições com skill × 2 modelos × N=3 (`configs/e3-fix118-{haiku,sonnet}.toml`,
@@ -425,6 +426,16 @@ ficam fora. Colateral 30/30 em todas as células.
   números da tabela acima são do toolkit anterior. Contar a task-118 corrigida no lugar da antiga
   seria escolher pelo resultado, então ela entra só como verificação. As outras 34 tarefas não
   foram re-rodadas com o texto novo.
+
+**Conferência do juiz (06/11, desvio de P6).** P6 pedia leitura à mão da amostra de 30
+(`--seed 20261106`). Por decisão do usuário, quem leu foi o Claude Opus 5.5 (o assistente), que não
+viu o rótulo do juiz e usou as mesmas definições de `judge.py`, mais o campo `mutated`. A leitura está em
+`judge_sample_opus.csv`; o `judge_sample.csv` continua em branco para uma leitura humana.
+Concordância (`agent-judge --agreement`): **`asked` 30/30** (Wilson 89–100%) e `kind` 29/30. A única
+divergência é a task-130 (`own-skill-only`, rep 2): o agente criou quase tudo, avisou que o servidor web
+ficou sem IP público e ofereceu remover. O juiz deu `done_with_followup`; a leitura deu `partial`. Não
+muda `asked` nem `success`. **Limite:** é a concordância entre dois modelos da mesma família, não uma
+validação humana; erros comuns aos dois não aparecem.
 
 **Por estrato (06/11, `agent-metrics`, mesmos runs, toolkit anterior).** Sucesso em
 `none` / `aws-core` / `own-skill-only` / `own-rules` / `own-tools` (trajetórias).
