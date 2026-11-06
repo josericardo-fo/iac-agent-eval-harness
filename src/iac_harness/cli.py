@@ -47,6 +47,7 @@ from iac_harness.agents.prompts import PROMPT_VERSION
 from iac_harness.conditions import A, B, C, Condition
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
 from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
+from iac_harness.demo.timeline import build_timeline, dump_timeline
 from iac_harness.executors import final_cleanup
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
@@ -1648,6 +1649,19 @@ def _mark(ok: bool) -> str:
     return "ok" if ok else "--"
 
 
+def cmd_demo_timeline(args: argparse.Namespace) -> int:
+    try:
+        timeline = build_timeline(args.unit_dir, args.scene)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(f"erro: {exc}") from exc
+    text = dump_timeline(timeline) + "\n"
+    if args.output is None:
+        sys.stdout.write(text)
+    else:
+        args.output.write_text(text, encoding="utf-8")
+    return 0
+
+
 # ---------- run ----------
 
 
@@ -2058,6 +2072,14 @@ def main(argv: list[str] | None = None) -> int:
         "--compare", type=Path, help="outro agent-run (ex.: AWS real): concordância do sucesso"
     )
     p_amet.set_defaults(func=cmd_agent_metrics)
+
+    p_demo = sub.add_parser(
+        "demo-timeline", help="trajetória gravada -> timeline.json para o vídeo da demo"
+    )
+    p_demo.add_argument("unit_dir", type=Path, help="runs/<run>/<task>/<rep>/<cond>/<modelo>")
+    p_demo.add_argument("-o", "--output", type=Path, help="arquivo de saída (padrão: stdout)")
+    p_demo.add_argument("--scene", help="nome da cena (padrão: task_id)")
+    p_demo.set_defaults(func=cmd_demo_timeline)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")
     common(p_run, config_required=False)  # obrigatório sem --resume (validado em cmd_run)

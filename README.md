@@ -158,6 +158,7 @@ uv run iac-harness agent-judge runs/<id> --sample 30 --seed 20261106   # judge_s
 uv run iac-harness agent-judge runs/<id> --agreement runs/<id>/judge_sample.csv   # juiz × humano
 uv run iac-harness agent-metrics runs/<id> --format table           # condição × modelo, estratos, alvo
 uv run iac-harness agent-metrics runs/<floci> --compare runs/<aws>  # concordância Floci × AWS real
+uv run iac-harness demo-timeline runs/<id>/<task>/<rep>/<cond>/<modelo> -o cena.json   # timeline da demo animada
 ```
 
 - O agente roda como usuário não-root, com egresso só pelo proxy squid (perfil `agent`).

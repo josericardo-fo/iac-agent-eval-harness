@@ -63,7 +63,7 @@ class CodingAgent(Protocol):
     def version(self) -> dict[str, str | None]: ...
 
 
-def _secret_values(extra: dict[str, str] | None = None) -> list[str]:
+def secret_values(extra: dict[str, str] | None = None) -> list[str]:
     values = [os.environ.get(k) for k in SECRET_VARS]
     return [v for v in [*values, *(extra or {}).values()] if v]
 
@@ -143,7 +143,7 @@ class ClaudeCodeAgent:
         name = f"iac-agent-{uuid.uuid4().hex[:12]}"
         env = target.agent_env()
         argv, client_env = self.docker_argv(prompt, workdir, condition, model, target, name, env)
-        secrets = _secret_values(env.secret)
+        secrets = secret_values(env.secret)
         needs_init = not condition.loaded(None)  # condição `none` não depende do init
         init_ok = False
         out_dir.mkdir(parents=True, exist_ok=True)

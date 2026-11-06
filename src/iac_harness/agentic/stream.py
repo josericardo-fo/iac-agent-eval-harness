@@ -296,6 +296,27 @@ class _Classifier:
         return self.shell(body, depth + 1) if depth < 2 else []
 
 
+def _call_ops(clf: _Classifier, tool_calls: list[dict[str, Any]]) -> list[list[str]]:
+    out: list[list[str]] = []
+    for call in tool_calls:
+        name, data = call.get("name"), call.get("input") or {}
+        path = str(data.get("file_path", ""))
+        ops: list[str] = []
+        if name == "Write":
+            clf.write(path, str(data.get("content", "")))
+        elif name == "Edit":
+            clf.edit(path, str(data.get("old_string", "")), str(data.get("new_string", "")))
+        elif name == "Bash":
+            ops = clf.shell(str(data.get("command", "")))
+        out.append(ops)
+    return out
+
+
+def call_ops(tool_calls: list[dict[str, Any]]) -> list[list[str]]:
+    """Operações ("read"/"mutate") de cada chamada, na ordem (lista vazia = neutra)."""
+    return _call_ops(_Classifier(), tool_calls)
+
+
 def state_ops(tool_calls: list[dict[str, Any]]) -> StateOps:
     """Classifica as chamadas de ferramenta de uma trajetória (ver o topo desta seção).
 
@@ -304,16 +325,7 @@ def state_ops(tool_calls: list[dict[str, Any]]) -> StateOps:
     conta como mutação. Os scripts do toolkit (`.../scripts/verify.py` etc.) contam como leitura.
     """
     clf = _Classifier()
-    ops: list[str] = []
-    for call in tool_calls:
-        name, data = call.get("name"), call.get("input") or {}
-        path = str(data.get("file_path", ""))
-        if name == "Write":
-            clf.write(path, str(data.get("content", "")))
-        elif name == "Edit":
-            clf.edit(path, str(data.get("old_string", "")), str(data.get("new_string", "")))
-        elif name == "Bash":
-            ops += clf.shell(str(data.get("command", "")))
+    ops = [op for call in _call_ops(clf, tool_calls) for op in call]
     if "mutate" not in ops:
         return StateOps(False, None, clf.verify_calls)
     last = len(ops) - 1 - ops[::-1].index("mutate")
