@@ -34,7 +34,64 @@ services:
       # isso o LocalStack também fica na default. Diferença de ambiente em relação ao Floci.
       - default
 
+  # ---------- E3: agente real (perfis "agent" e "agent-workers"; não sobem por padrão) ----------
+  # Floci extras, um por worker paralelo do agent-run (configs/e3-agent.toml, workers = 4).
+  floci2: &floci-worker
+    profiles: ["agent-workers"]
+    image: floci/floci:2.1.0@sha256:f5aa8c18302cedb4f2385f5c4e455b3efc77fee6bf7b6e5d1712b2817ba102db
+    ports:
+      - "127.0.0.1:4567:4566"
+    networks:
+      - iac-sandbox
+      - default
+  floci3:
+    <<: *floci-worker
+    ports:
+      - "127.0.0.1:4568:4566"
+  floci4:
+    <<: *floci-worker
+    ports:
+      - "127.0.0.1:4569:4566"
+
+  # Proxy de egresso do agente no alvo Floci: allowlist só com o host do ANTHROPIC_BASE_URL.
+  # O agente fica só nas redes internal (iac-sandbox + iac-egress); a única saída é este proxy.
+  egress-proxy: &egress-proxy
+    profiles: ["agent"]
+    # Versão + digest fixados (protocolo §10).
+    image: ubuntu/squid:6.13-25.04_beta@sha256:3de2e64f0ca6efdac3e98557607dc0f23050037f3885016d5d5bfcf9950501b8
+    entrypoint: ["/bin/sh", "/opt/egress/render.sh"]
+    environment:
+      # Só o nome: o valor vem do ambiente de quem roda o compose (set -a; source .env; set +a).
+      - ANTHROPIC_BASE_URL
+      - EGRESS_ALLOW_AWS=0
+    volumes:
+      - ./egress/squid.conf:/etc/squid/egress.conf:ro
+      - ./egress/render.sh:/opt/egress/render.sh:ro
+    networks:
+      - iac-egress
+      # Saída para a internet (só o proxy está nesta rede).
+      - egress-out
+
+  # Proxy do alvo aws: a mesma allowlist + .amazonaws.com, numa rede internal à parte.
+  egress-proxy-aws:
+    <<: *egress-proxy
+    environment:
+      - ANTHROPIC_BASE_URL
+      - EGRESS_ALLOW_AWS=1
+    networks:
+      - iac-egress-aws
+      - egress-out
+
 networks:
   iac-sandbox:
     name: iac-sandbox
     internal: true
+  # Redes do agente: internal (sem rota para fora); só os proxies também estão na egress-out.
+  iac-egress:
+    name: iac-egress
+    internal: true
+  iac-egress-aws:
+    name: iac-egress-aws
+    internal: true
+  egress-out:
+    name: iac-egress-out

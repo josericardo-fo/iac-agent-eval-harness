@@ -23,8 +23,8 @@ packages = ["src/iac_harness"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
-# Cópias literais de checks de datasets (aws-bench): não podem ser reformatadas.
-extend-exclude = ["src/iac_harness/modalities/tasks/*/upstream"]
+# Cópias literais de checks de datasets (aws-bench) e código vendorizado: não podem ser reformatadas.
+extend-exclude = ["src/iac_harness/modalities/tasks/*/upstream", "third_party"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

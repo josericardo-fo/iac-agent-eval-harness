@@ -1,25 +1,53 @@
-"""CLI: prevalidate | run | metrics | modality-prevalidate. Mapeamentos simples, sem registry."""
+"""CLI: prevalidate | run | metrics | modality-* | agent-*. Mapeamentos simples, sem registry."""
 
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import tomllib
 from collections.abc import Callable, Container
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from iac_harness.agentic.agents import DEFAULT_AGENT_IMAGE, ClaudeCodeAgent
+from iac_harness.agentic.conditions import REGISTRY as AGENT_CONDITIONS
+from iac_harness.agentic.conditions import resolve_condition
+from iac_harness.agentic.judge import DEFAULT_JUDGE_MODEL, JUDGE_FILENAME, LlmJudge
+from iac_harness.agentic.metrics import (
+    JUDGE_SAMPLE_FIELDS,
+    by_condition_model,
+    compare_runs,
+    compute_agent_metrics,
+    judge_agreement,
+    judge_sample,
+    merge_judgments,
+)
+from iac_harness.agentic.runner import (
+    AGENT_PROMPT_VERSION,
+    AGENT_UNIT,
+    HARNESS_FAILURES,
+    AgentRunContext,
+    agent_prompt,
+    run_agent_pair,
+)
+from iac_harness.agentic.runner import unit_dir as agent_unit_dir
+from iac_harness.agentic.strata import DEFAULT_STRATA_FILE, load_strata
+from iac_harness.agentic.targets import FLOCI_WORKERS, AwsTarget, FlociTarget, Target
 from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend, parse_files
 from iac_harness.agents.prompts import PROMPT_VERSION
 from iac_harness.conditions import A, B, C, Condition
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
 from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
+from iac_harness.executors import final_cleanup
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
 from iac_harness.executors.localstack import LocalStackExecutor
@@ -64,6 +92,8 @@ EXECUTORS: dict[str, type[FlociExecutor]] = {
 DATA_DIR = Path("data")
 MIRROR_DIR = "/opt/terraform-providers"  # filesystem mirror dentro da imagem da toolchain
 _RESOURCE = re.compile(r"\b(aws(?:cc)?_\w+)\b")
+# E3: raiz dos plugins das condições (toolkit/, third_party/).
+AGENT_PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 _WITH_RESOURCE = re.compile(r"\bwith (aws(?:cc)?_\w+)\.")  # linha \"with aws_x.nome,\" do erro
 
 
@@ -107,20 +137,6 @@ def build_executor(
         return RealAwsExecutor(toolchain, **kwargs)
     kwargs = {k: sb[k] for k in ("endpoint", "host_endpoint", "container") if k in sb}
     return EXECUTORS[kind](toolchain, **kwargs)
-
-
-def final_cleanup(executor: FlociExecutor) -> None:
-    """Limpeza ao fim do run (chamada num `finally`): na AWS real, apaga as sobras do último par.
-
-    Se a limpeza falhar, o erro vai ao stderr; só sobe quando não há exceção original a preservar.
-    """
-    pending = sys.exc_info()[1] is not None
-    try:
-        executor.cleanup()
-    except Exception as exc:
-        print(f"falha na limpeza final ({executor.NAME}): {exc}", file=sys.stderr)
-        if not pending:
-            raise
 
 
 def build_gates(cfg: dict[str, Any], toolchain: Toolchain, executor: FlociExecutor) -> dict:
@@ -1081,6 +1097,35 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_run_config(run_dir: Path) -> tuple[Path, dict[str, Any]]:
+    """(caminho, conteúdo) do run_config.json de um run a retomar."""
+    config_path = run_dir / "run_config.json"
+    if not config_path.is_file():
+        raise SystemExit(f"erro: {config_path} não encontrado")
+    return config_path, json.loads(config_path.read_text(encoding="utf-8"))
+
+
+def _record_resume(
+    config_path: Path, saved: dict[str, Any], run_id: str, skipped: int, discarded: int,
+    pending: int, unit: str,
+) -> None:  # fmt: skip
+    """Anexa a entrada `resumes` (skipped_<unit>, discarded_<unit>) e avisa no stderr."""
+    saved.setdefault("resumes", []).append(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            **_git_provenance(),
+            f"skipped_{unit}": skipped,
+            f"discarded_{unit}": discarded,
+        }
+    )
+    config_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False))
+    print(
+        f"resume {run_id}: {skipped} completos pulados, "
+        f"{discarded} incompletos descartados, {pending} a rodar",
+        file=sys.stderr,
+    )
+
+
 def cmd_modality_resume(args: argparse.Namespace) -> int:
     given = [
         f"--{o}" for o in ("config", "tasks", "modalities", "reps") if getattr(args, o) is not None
@@ -1090,10 +1135,7 @@ def cmd_modality_resume(args: argparse.Namespace) -> int:
             f"erro: --resume não aceita {', '.join(given)} (a configuração vem do run_config.json)"
         )
     run_dir = Path(args.resume)
-    config_path = run_dir / "run_config.json"
-    if not config_path.is_file():
-        raise SystemExit(f"erro: {config_path} não encontrado")
-    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    config_path, saved = _load_run_config(run_dir)
     cfg, reps, modalities = saved["config"], saved["reps"], saved["modalities"]
     tasks, _ = _select_modality_run(cfg, saved["tasks"], modalities) if saved["tasks"] else ([], [])
     runs_dir, run_id = run_dir.parent, run_dir.name
@@ -1107,20 +1149,10 @@ def cmd_modality_resume(args: argparse.Namespace) -> int:
     pending = [p for p in planned if p not in complete]
     for key in pending:  # diretório sem evento (queda antes do 1º registro)
         shutil.rmtree(unit_dir(key), ignore_errors=True)
-    saved.setdefault("resumes", []).append(
-        {
-            "timestamp": datetime.now(UTC).isoformat(),
-            **_git_provenance(),
-            "skipped_pairs": len(planned) - len(pending),
-            "discarded_pairs": len(discarded),
-        }
-    )
-    config_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False))
-    print(
-        f"resume {run_id}: {len(planned) - len(pending)} completos pulados, "
-        f"{len(discarded)} incompletos descartados, {len(pending)} a rodar",
-        file=sys.stderr,
-    )
+    _record_resume(
+        config_path, saved, run_id, len(planned) - len(pending), len(discarded), len(pending),
+        "pairs",
+    )  # fmt: skip
     toolchain = build_toolchain(cfg)
     executor = build_executor(cfg, toolchain, allow_real_aws=True)
     _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, toolchain, executor, complete)
@@ -1235,6 +1267,385 @@ def cmd_modality_metrics(args: argparse.Namespace) -> int:
     else:
         print(json.dumps(metrics, indent=2, ensure_ascii=False))
     return 0
+
+
+# ---------- agent-* (E3: agente real em container) ----------
+
+
+def _agentic_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
+    ag = cfg.get("agentic")
+    if not ag:
+        raise SystemExit("erro: config sem a seção [agentic]")
+    unknown = set(ag.get("conditions", [])) - set(AGENT_CONDITIONS)
+    if unknown:
+        raise SystemExit(f"condições desconhecidas: {sorted(unknown)}")
+    return ag
+
+
+def _agent_workers(cfg: dict[str, Any]) -> int:
+    """W workers, um por Floci; o alvo aws roda em série (o sweep é da conta inteira)."""
+    workers = int(cfg["agentic"].get("workers", 1))
+    if cfg.get("sandbox", {}).get("kind") == RealAwsExecutor.KIND:
+        if workers != 1:
+            print(f"aviso: alvo aws força workers = 1 (config pedia {workers})", file=sys.stderr)
+        return 1
+    if not 1 <= workers <= len(FLOCI_WORKERS):
+        raise SystemExit(f"erro: workers deve estar entre 1 e {len(FLOCI_WORKERS)}")
+    return workers
+
+
+def _worker_cfg(cfg: dict[str, Any], worker: int) -> dict[str, Any]:
+    """Config do worker `worker` (0 = o Floci da config; 1.. = floci2.., compose agent-workers)."""
+    if worker == 0:
+        return cfg
+    floci = FLOCI_WORKERS[worker]
+    sandbox = {
+        **cfg.get("sandbox", {}),
+        "endpoint": floci.endpoint,
+        "host_endpoint": floci.host_endpoint,
+        "container": floci.container,
+    }
+    return {**cfg, "sandbox": sandbox}
+
+
+def _build_target(cfg: dict[str, Any]) -> Target:
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain, allow_real_aws=True)
+    if isinstance(executor, RealAwsExecutor):
+        return AwsTarget(toolchain, executor)
+    return FlociTarget(toolchain, executor)
+
+
+def _build_targets(cfg: dict[str, Any]) -> list[Target]:
+    """Um alvo por worker, montados uma vez por comando."""
+    return [_build_target(_worker_cfg(cfg, i)) for i in range(_agent_workers(cfg))]
+
+
+def _build_agent(cfg: dict[str, Any]) -> ClaudeCodeAgent:
+    ag = cfg["agentic"]
+    if ag.get("agent", ClaudeCodeAgent.name) != ClaudeCodeAgent.name:
+        raise SystemExit(
+            f"erro: agente desconhecido {ag['agent']!r} (use {ClaudeCodeAgent.name!r})"
+        )
+    return ClaudeCodeAgent(
+        image=ag.get("image", DEFAULT_AGENT_IMAGE),
+        max_turns=ag.get("max_turns", 60),
+        timeout_s=ag.get("timeout_s", 1200),
+    )
+
+
+def _agent_plan(cfg: dict[str, Any], tasks: list[Any], reps: int) -> list[tuple]:
+    """Unidades (tarefa, condição, modelo, rep); rep externo, como no modality-run."""
+    ag = cfg["agentic"]
+    return [
+        (t, c, m, r)
+        for r in range(1, reps + 1)
+        for t in tasks
+        for m in ag["models"]
+        for c in ag["conditions"]
+    ]
+
+
+def _agent_loop(
+    cfg: dict[str, Any], plan: list[tuple], runs_dir: Path, run_id: str, agent: ClaudeCodeAgent,
+    targets: list[Target],
+) -> None:  # fmt: skip
+    """Distribui as unidades entre os workers (um alvo cada); o recorder é compartilhado."""
+    ag = cfg["agentic"]
+    strata = load_strata(Path(ag.get("strata_file", DEFAULT_STRATA_FILE)))
+    for cond in ag["conditions"]:  # falha cedo: plugin ausente
+        resolve_condition(cond, AGENT_PLUGIN_ROOT)
+    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
+    ctx = AgentRunContext(
+        run_id=run_id, runs_dir=runs_dir, agent=agent,
+        plugin_root=AGENT_PLUGIN_ROOT, strata=strata,
+        max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
+    )  # fmt: skip
+    pending: queue.SimpleQueue[tuple] = queue.SimpleQueue()
+    for unit in plan:
+        pending.put(unit)
+    errors: list[BaseException] = []
+
+    def worker(index: int, target: Target) -> None:
+        try:
+            while not errors:
+                try:
+                    task, cond, model, rep = pending.get_nowait()
+                except queue.Empty:
+                    return
+                final = run_agent_pair(task, cond, model, rep, target, recorder, ctx)
+                print(
+                    f"[w{index + 1}] {task.task_id} × {cond} × {model} rep {rep}: "
+                    f"check={final['check_pass']} {final['termination']} "
+                    f"({final['duration_s']:.0f}s, US$ {final['cost_usd'] or 0:.4f})",
+                    file=sys.stderr,
+                )
+        except BaseException as exc:  # um worker que cai para os demais (sandbox sujo)
+            errors.append(exc)
+            raise
+        finally:
+            target.cleanup()
+
+    threads = [
+        threading.Thread(target=worker, args=(i, t), name=f"agent-w{i + 1}")
+        for i, t in enumerate(targets)
+    ]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        recorder.close()
+    if errors:
+        raise errors[0]
+
+
+def _agent_summary(events: list[dict[str, Any]]) -> str:
+    finals = [e for e in events if e.get("event") == "final"]
+    lines = [f"{len(finals)} trajetórias"]
+    for key, b in by_condition_model(finals).items():
+        lines.append(
+            f"{key:<28} estado {b['state_pass']['k']}/{b['state_pass']['n']}  "
+            f"tokens {b['tokens']['mean_total'] or 0:.0f}  US$ {b['cost_usd']:.4f}  "
+            f"{b['termination']}"
+        )
+    return "\n".join(lines)
+
+
+def _agent_run_config(
+    cfg: dict[str, Any], tasks: list[Any], reps: int, run_dir: Path, agent: ClaudeCodeAgent,
+    targets: list[Target],
+) -> dict[str, Any]:  # fmt: skip
+    toolchain, executor = targets[0].toolchain, targets[0].executor
+    return {
+        "config": cfg,
+        "reps": reps,
+        "tasks": [t.task_id for t in tasks],
+        "conditions": cfg["agentic"]["conditions"],
+        "models": cfg["agentic"]["models"],
+        "workers": len(targets),
+        "prompt_version": AGENT_PROMPT_VERSION,
+        **_git_provenance(),
+        "versions": {
+            **toolchain.versions(run_dir),
+            "toolchain_image": toolchain.image,
+            "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
+            **agent.version(),
+            **_sandbox_provenance(executor),
+        },
+    }
+
+
+def cmd_agent_run(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    _agentic_cfg(cfg)
+    tasks, _ = _select_modality_run(cfg, args.tasks, ["terraform"])
+    reps = args.reps or cfg["run"].get("reps", 1)
+    runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
+    run_id = new_run_id(cfg["run"]["name"])
+    run_dir = runs_dir / run_id
+    agent, targets = _build_agent(cfg), _build_targets(cfg)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    run_config = _agent_run_config(cfg, tasks, reps, run_dir, agent, targets)
+    (run_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, ensure_ascii=False))
+    _agent_loop(cfg, _agent_plan(cfg, tasks, reps), runs_dir, run_id, agent, targets)
+    print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
+    print(run_dir)
+    return 0
+
+
+def cmd_agent_resume(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir)
+    config_path, saved = _load_run_config(run_dir)
+    cfg, reps = saved["config"], saved["reps"]
+    tasks, _ = _select_modality_run(cfg, saved["tasks"], ["terraform"])
+    runs_dir, run_id = run_dir.parent, run_dir.name
+
+    def udir(key: tuple) -> Path:
+        task_id, cond, model, rep = key
+        return agent_unit_dir(runs_dir, run_id, task_id, cond, model, rep)
+
+    complete, discarded = discard_incomplete(runs_dir, run_id, None, AGENT_UNIT, udir)
+    plan = _agent_plan(cfg, tasks, reps)
+    pending = [u for u in plan if (u[0].task_id, u[1], u[2], u[3]) not in complete]
+    for task, cond, model, rep in pending:  # diretório sem evento (queda antes do registro)
+        shutil.rmtree(udir((task.task_id, cond, model, rep)), ignore_errors=True)
+    _record_resume(
+        config_path, saved, run_id, len(plan) - len(pending), len(discarded), len(pending),
+        "units",
+    )  # fmt: skip
+    _agent_loop(cfg, pending, runs_dir, run_id, _build_agent(cfg), _build_targets(cfg))
+    print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
+    print(run_dir)
+    return 0
+
+
+JUDGE_SAMPLE_FILENAME = "judge_sample.csv"
+
+
+def _mutated(e: dict[str, Any]) -> bool:
+    """Se a trajetória mudou o estado AWS; evento antigo sem `mutated`: verified_state não None."""
+    if "mutated" in e:
+        return bool(e["mutated"])
+    return e.get("verified_state") is not None
+
+
+def _agent_judge_sample(run_dir: Path, n: int, seed: int) -> int:
+    """Amostra para a leitura à mão: judge_sample.csv com `human_kind` vazio."""
+    judge_path = run_dir / JUDGE_FILENAME
+    if not judge_path.exists():
+        raise SystemExit(f"erro: {judge_path} não encontrado (rode agent-judge antes)")
+    rows = judge_sample(load_events(run_dir / "events.jsonl"), load_events(judge_path), n, seed)
+    out = run_dir / JUDGE_SAMPLE_FILENAME
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, JUDGE_SAMPLE_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"{len(rows)} trajetórias amostradas (seed {seed})", file=sys.stderr)
+    print(out)
+    return 0
+
+
+def _agent_judge_agreement(path: Path) -> int:
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    try:
+        print(json.dumps(judge_agreement(rows), indent=2, ensure_ascii=False))
+    except ValueError as exc:
+        raise SystemExit(f"erro: {exc}") from exc
+    return 0
+
+
+def cmd_agent_judge(args: argparse.Namespace) -> int:
+    """Classifica a mensagem final de cada trajetória ainda sem veredito (judge.jsonl).
+
+    `--sample N` amostra trajetórias já julgadas para a leitura à mão; `--agreement CSV` compara
+    o juiz com a leitura à mão. Nenhum dos dois chama o juiz.
+    """
+    if args.agreement is not None:
+        return _agent_judge_agreement(args.agreement)
+    if args.run_dir is None:
+        raise SystemExit("erro: informe o diretório do run (ou --agreement <csv>)")
+    run_dir = Path(args.run_dir)
+    if args.sample is not None:
+        return _agent_judge_sample(run_dir, args.sample, args.seed)
+    cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
+    judge = LlmJudge(model=args.model or cfg.get("judge", {}).get("model", DEFAULT_JUDGE_MODEL))
+    judge_path = run_dir / JUDGE_FILENAME
+    done = set()
+    if judge_path.exists() and not args.redo:
+        done = {j["trajectory_id"] for j in load_events(judge_path)}
+    prompts = {t.task_id: agent_prompt(t) for t in load_tasks()}
+    finals = [e for e in load_events(run_dir / "events.jsonl") if e.get("event") == "final"]
+    todo = [e for e in finals if e["trajectory_id"] not in done
+            and e.get("termination") not in HARNESS_FAILURES]  # fmt: skip
+    recorder = JsonlRecorder(judge_path)
+    try:
+        for e in todo:
+            verdict = judge.classify(e.get("final_text"), prompts[e["task_id"]], _mutated(e))
+            recorder.record(
+                {
+                    "trajectory_id": e["trajectory_id"],
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    **judge.params,
+                    **verdict,
+                }
+            )
+            print(f"{e['trajectory_id']}: {verdict.get('kind')}", file=sys.stderr)
+    finally:
+        recorder.close()
+    print(f"{len(todo)} classificadas, {len(done)} já tinham veredito", file=sys.stderr)
+    print(judge_path)
+    return 0
+
+
+def cmd_agent_metrics(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir)
+    events = load_events(run_dir / "events.jsonl")
+    judge_path = run_dir / JUDGE_FILENAME
+    judgments = load_events(judge_path) if judge_path.exists() else []
+    metrics = compute_agent_metrics(merge_judgments(events, judgments))
+    if args.compare is not None:
+        other = Path(args.compare)
+        other_judge = other / JUDGE_FILENAME
+        other_rows = merge_judgments(
+            load_events(other / "events.jsonl"),
+            load_events(other_judge) if other_judge.exists() else [],
+        )
+        metrics["compare"] = {
+            "run_dir": str(args.compare),
+            **compare_runs(merge_judgments(events, judgments), other_rows),
+        }
+    if args.format == "table":
+        print(_agent_metrics_table(metrics))
+    else:
+        print(json.dumps(metrics, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _agent_metrics_table(metrics: dict[str, Any]) -> str:
+    header = (
+        f"{'condição|modelo':<28} {'sucesso [IC 95%]':<20} {'estado':<9} {'perguntou':<10} "
+        f"{'colateral':<10} {'releu':<8} {'tokens':>9} {'custo US$':>10}"
+    )
+    lines = [
+        f"{metrics['n_trajectories']} trajetórias, {metrics['n_unjudged']} sem juiz, "
+        f"falhas do harness {metrics['harness_failures']}",
+        header,
+        "-" * len(header),
+    ]
+
+    def frac(r: dict[str, Any]) -> str:
+        return f"{r['k']}/{r['n']}"
+
+    for key, b in metrics["by_condition_model"].items():
+        lines.append(
+            f"{key:<28} {_short_rate(b['success']):<20} {frac(b['state_pass']):<9} "
+            f"{frac(b['asked']):<10} {frac(b['collateral_ok']):<10} "
+            f"{frac(b['verified_state']):<8} {b['tokens']['mean_total'] or 0:>9.0f} "
+            f"{b['cost_usd']:>10.4f}"
+        )
+    for model, cmps in metrics["vs_none"].items():
+        lines += ["", f"{model}: condição × none (sucesso; McNemar pela maioria das reps)"]
+        for c in cmps["success"]:
+            lo, hi = c["diff_ci95"]
+            lines.append(
+                f"  {c['pair']:<22} n={c['n_pairs']:<3} só none {c['only_first']:<3} "
+                f"só cond {c['only_second']:<3} p={c['mcnemar_p']:.3f} holm={c['holm_p']:.3f} "
+                f"dif {c['diff_mean']:+.2f} [{lo:+.2f}, {hi:+.2f}]"
+            )
+        for cond, harm in metrics["easy_harm"][model].items():
+            lines.append(
+                f"  piora nas fáceis {cond:<12} {frac(harm['harmed'])} "
+                f"{', '.join(harm['harmed_tasks'])}"
+            )
+        for cond, rows in metrics["per_task"][model].items():
+            lines.append(f"  por tarefa: none × {cond} (maioria das reps; razão de tokens)")
+            for r in rows:
+                ratio = "n/d" if r["tokens_ratio"] is None else f"{r['tokens_ratio']:.2f}"
+                lines.append(
+                    f"    {r['task_id']:<28} none {_mark(r['none_success'])} "
+                    f"cond {_mark(r['cond_success'])} tokens ×{ratio}"
+                )
+    cmp = metrics.get("compare")
+    if cmp:
+        lines += [
+            "",
+            f"concordância × {cmp['run_dir']}: {frac(cmp['agreement'])} "
+            f"(tarefa, condição, modelo); só neste {cmp['only_first']}, "
+            f"só no outro {cmp['only_second']}",
+        ]
+        lines += [
+            f"  {d['task_id']} {d['condition']} {d['model']}: "
+            f"{_mark(d['first'])} × {_mark(d['second'])}"
+            for d in cmp["discordant"]
+        ]
+    return "\n".join(lines)
+
+
+def _mark(ok: bool) -> str:
+    return "ok" if ok else "--"
 
 
 # ---------- run ----------
@@ -1607,6 +2018,46 @@ def main(argv: list[str] | None = None) -> int:
         help="run de forma fixa para comparar com um run da forma livre (E4)",
     )
     p_mmet.set_defaults(func=cmd_modality_metrics)
+
+    p_arun = sub.add_parser(
+        "agent-run", help="E3: roda o Claude Code de verdade (headless, em container) nas tarefas"
+    )
+    p_arun.add_argument("--config", type=Path, required=True)
+    p_arun.add_argument("--tasks", nargs="+")
+    p_arun.add_argument("--reps", type=int)
+    p_arun.set_defaults(func=cmd_agent_run)
+
+    p_ares = sub.add_parser(
+        "agent-resume",
+        help="retoma um agent-run: pula (tarefa, condição, modelo, rep) com evento final",
+    )
+    p_ares.add_argument("run_dir", type=Path)
+    p_ares.set_defaults(func=cmd_agent_resume)
+
+    p_ajud = sub.add_parser(
+        "agent-judge", help="juiz LLM: a mensagem final do agente pergunta algo? (judge.jsonl)"
+    )
+    p_ajud.add_argument("run_dir", type=Path, nargs="?")
+    p_ajud.add_argument("--model", help="modelo do juiz (padrão: [judge] model da config)")
+    p_ajud.add_argument("--redo", action="store_true", help="reclassifica todas as trajetórias")
+    p_ajud.add_argument(
+        "--sample", type=int, help="grava judge_sample.csv com N trajetórias para leitura à mão"
+    )
+    p_ajud.add_argument("--seed", type=int, default=0, help="semente da amostra (--sample)")
+    p_ajud.add_argument(
+        "--agreement", type=Path, help="judge_sample.csv preenchido: concordância juiz × humano"
+    )
+    p_ajud.set_defaults(func=cmd_agent_judge)
+
+    p_amet = sub.add_parser(
+        "agent-metrics", help="métricas de um agent-run (condição × modelo, estratos, alvo)"
+    )
+    p_amet.add_argument("run_dir", type=Path)
+    p_amet.add_argument("--format", choices=("json", "table"), default="json")
+    p_amet.add_argument(
+        "--compare", type=Path, help="outro agent-run (ex.: AWS real): concordância do sucesso"
+    )
+    p_amet.set_defaults(func=cmd_agent_metrics)
 
     p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")
     common(p_run, config_required=False)  # obrigatório sem --resume (validado em cmd_run)

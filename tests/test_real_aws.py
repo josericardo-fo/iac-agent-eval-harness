@@ -539,3 +539,16 @@ def test_build_default_kind_stays_emulator():
     tc = build_toolchain({})
     assert tc.target == "emulator"
     assert type(build_executor({}, tc)) is FlociExecutor
+
+
+def test_identity_is_cached_until_forgotten(iac_env):
+    tc = _StsToolchain(ARN)
+    executor = RealAwsExecutor(tc, expected_arn=ARN)
+    executor.identity()
+    executor.identity()
+    assert len(tc.calls) == 1  # cache: o comportamento das modalidades não muda
+    executor.forget_identity()
+    tc.arn = "arn:aws:iam::931493484341:root"  # credencial trocada no meio do run
+    with pytest.raises(RuntimeError, match="recusada"):
+        executor.identity()
+    assert len(tc.calls) == 2

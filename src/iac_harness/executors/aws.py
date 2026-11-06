@@ -89,6 +89,10 @@ class RealAwsExecutor(FlociExecutor):
             self._identity = {"account": data.get("Account", ""), "arn": arn}
         return self._identity
 
+    def forget_identity(self) -> None:
+        """Descarta o cache: o próximo `identity()` consulta o sts de novo."""
+        self._identity = None
+
     def _load_baseline(self, snapshot: bool) -> bool:
         """Carrega o baseline de `baseline_file`; sem arquivo e com `snapshot`, tira e grava.
 

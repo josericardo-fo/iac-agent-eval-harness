@@ -1,0 +1,36 @@
+# Piloto do E3 no Floci (plano E3, "Ordem de execução" passo 3): 3 tarefas × 5 condições × Haiku ×
+# N=1 = 15 trajetórias. Valida isolamento, carga dos plugins, tempo e tamanho do transcript.
+[run]
+name = "e3-pilot"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = ["mod-sqs-retention", "amb-del-s3", "query-sg-ssh-open"]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "aws-core", "own-skill-only", "own-rules", "own-tools"]
+models = ["Haiku 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+endpoint = "http://floci:4566"
+host_endpoint = "http://127.0.0.1:4566"
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 180

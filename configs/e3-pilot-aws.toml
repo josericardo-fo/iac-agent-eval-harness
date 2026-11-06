@@ -1,0 +1,41 @@
+# Piloto do E3 na AWS real: 4 tarefas (uma por categoria; a primeira só existe na real) × 1
+# condição (none) × Haiku × N=1 = 4 trajetórias. Mede o tempo por trajetória, o custo (Cost
+# Explorer) e se o sweep deixa a conta limpa. Os serviços (S3, SQS, EC2 SG) foram escolhidos
+# por serem baratos. Em série: o sweep do RealAwsExecutor é da conta inteira.
+[run]
+name = "e3-pilot-aws"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  "awsb-create-s3-bucket-with-config", "mod-sqs-retention", "del-sqs-dev", "query-sg-ssh-open",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none"]
+models = ["Haiku 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1   # obrigatório no alvo aws
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: conferida antes de cada trajetória.
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 1800   # RDS, EC2 e a limpeza levam minutos

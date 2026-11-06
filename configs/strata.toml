@@ -1,0 +1,359 @@
+# Estratos de cada tarefa do teste de modalidades/E3 (docs: plano E3, "Estratos").
+# Os meta.toml das tarefas não mudam; a classificação fica aqui. Eixos:
+# - category: create | modify | delete | query (copiado do meta.toml)
+# - origin: iac-eval-v2 | aws-bench | authored | harness (prefixo do `origin` do meta.toml)
+# - difficulty: nível do IaC-Eval v2 (mesma busca de cli._modality_difficulty); ausente fora dele
+# - intent: clear | ambiguous | false-premise | side-effect-risk | cost-lock
+#   ambiguous = amb-* (menos amb-s3-versioning, premissa falsa); false-premise = task-115,
+#   task-230, awsb-move-s3-contents-within-bucket, amb-s3-versioning; side-effect-risk =
+#   query-dynamodb-ondemand; cost-lock = task-416 (K5); o resto, clear
+# - target: both (Floci e AWS real) | real-only (configs/modality-real-aws-only.toml)
+# - services: serviços AWS que a tarefa toca
+
+[tasks."amb-del-s3"]
+category = "delete"
+origin = "authored"
+intent = "ambiguous"
+target = "both"
+services = ["S3"]
+
+[tasks."amb-del-sqs"]
+category = "delete"
+origin = "authored"
+intent = "ambiguous"
+target = "both"
+services = ["SQS"]
+
+[tasks."amb-dynamodb-pitr"]
+category = "modify"
+origin = "authored"
+intent = "ambiguous"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."amb-s3-versioning"]
+category = "modify"
+origin = "authored"
+intent = "false-premise"
+target = "both"
+services = ["S3"]
+
+[tasks."amb-sg-https"]
+category = "modify"
+origin = "authored"
+intent = "ambiguous"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."amb-sqs-retention"]
+category = "modify"
+origin = "authored"
+intent = "ambiguous"
+target = "both"
+services = ["SQS"]
+
+[tasks."awsb-create-s3-bucket-with-config"]
+category = "create"
+origin = "aws-bench"
+intent = "clear"
+target = "real-only"
+services = ["S3"]
+
+[tasks."awsb-dynamodb-strip-ec2-fields-from-prod"]
+category = "modify"
+origin = "aws-bench"
+intent = "clear"
+target = "real-only"
+services = ["DynamoDB"]
+
+[tasks."awsb-lambda-versioned-alias-update"]
+category = "modify"
+origin = "aws-bench"
+intent = "clear"
+target = "real-only"
+services = ["Lambda", "DynamoDB", "IAM"]
+
+[tasks."awsb-move-s3-contents-within-bucket"]
+category = "modify"
+origin = "aws-bench"
+intent = "false-premise"
+target = "real-only"
+services = ["S3"]
+
+[tasks."awsb-sync-s3-buckets-with-metadata"]
+category = "modify"
+origin = "aws-bench"
+intent = "clear"
+target = "real-only"
+services = ["S3"]
+
+[tasks."clr-del-s3"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."clr-del-sqs"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["SQS"]
+
+[tasks."clr-dynamodb-pitr"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."clr-sg-https"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."del-iam-user"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["IAM"]
+
+[tasks."del-s3-bucket"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."del-sqs-dev"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["SQS"]
+
+[tasks."mod-dynamodb-pitr"]
+category = "modify"
+origin = "harness"
+intent = "clear"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."mod-dynamodb-ttl"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."mod-iam-user-policy"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["IAM"]
+
+[tasks."mod-s3-encryption"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."mod-s3-versioning"]
+category = "modify"
+origin = "harness"
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."mod-secret-tag"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["Secrets"]
+
+[tasks."mod-sg-https"]
+category = "modify"
+origin = "harness"
+intent = "clear"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."mod-sqs-retention"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["SQS"]
+
+[tasks."query-dynamodb-ondemand"]
+category = "query"
+origin = "authored"
+intent = "side-effect-risk"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."query-sg-ssh-open"]
+category = "query"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."task-069"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "clear"
+target = "real-only"
+services = ["Kinesis"]
+
+[tasks."task-108"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."task-110"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 4
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."task-115"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "false-premise"
+target = "both"
+services = ["S3"]
+
+[tasks."task-118"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 3
+intent = "clear"
+target = "both"
+services = ["S3", "SNS"]
+
+[tasks."task-130"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 5
+intent = "clear"
+target = "both"
+services = ["EC2/VPC", "RDS"]
+
+[tasks."task-198"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "clear"
+target = "real-only"
+services = ["ElastiCache"]
+
+[tasks."task-201"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 6
+intent = "clear"
+target = "both"
+services = ["MSK"]
+
+[tasks."task-228"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "clear"
+target = "real-only"
+services = ["DAX"]
+
+[tasks."task-229"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 3
+intent = "clear"
+target = "real-only"
+services = ["DAX", "EC2/VPC"]
+
+[tasks."task-230"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "false-premise"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."task-231"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "clear"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."task-233"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 2
+intent = "clear"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."task-234"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 1
+intent = "clear"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."task-267"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 1
+intent = "clear"
+target = "real-only"
+services = ["IAM"]
+
+[tasks."task-367"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 1
+intent = "clear"
+target = "real-only"
+services = ["Lightsail"]
+
+[tasks."task-373"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 3
+intent = "clear"
+target = "both"
+services = ["Lightsail"]
+
+[tasks."task-375"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 4
+intent = "clear"
+target = "both"
+services = ["Lightsail"]
+
+[tasks."task-416"]
+category = "create"
+origin = "iac-eval-v2"
+difficulty = 1
+intent = "cost-lock"
+target = "real-only"
+services = ["RDS"]

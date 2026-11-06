@@ -1,0 +1,8 @@
+{
+  "name": "own-tools",
+  "version": "0.2.0",
+  "description": "Flow and rules for AWS infrastructure work, plus inventory, verify, diff-baseline and whoami scripts.",
+  "author": {
+    "name": "iac-agent-eval-harness"
+  }
+}

@@ -1293,3 +1293,48 @@ def test_compare_ratio_skips_zero_token_tasks():
     assert out["skipped_zero"] == ["z"] and out["n_tasks"] == 1
     assert out["ratio_geomean"] == pytest.approx(2.0)
     assert overall["ratio_vs_cheapest"]["total"]["skipped_zero"] == []
+
+
+def test_modality_resume_output_is_byte_identical(tmp_path, monkeypatch, capsys):
+    # trava o formato do run_config.json e da linha de stderr do resume (helper compartilhado E3)
+    run_dir = tmp_path / "runs" / "run1"
+    run_dir.mkdir(parents=True)
+    events = [
+        {"task_id": "task-108", "modality": "cli", "rep": 1, "event": "final",
+         **_final("cli", "create", True, 1, 10, "EXEC_OK", task_id="task-108")},
+        _attempt("boto3", True, task_id="task-108"),
+    ]  # fmt: skip
+    (run_dir / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    cfg = {"run": {"name": "x"}, "agent": {"provider": "anthropic", "model": "m"}}
+    (run_dir / "run_config.json").write_text(
+        json.dumps({"config": cfg, "reps": 1, "tasks": ["task-108"],
+                    "modalities": ["cli", "boto3"], "nota": "ação"})
+    )  # fmt: skip
+    monkeypatch.setattr(cli, "_modality_loop", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "_modality_summary", lambda events: "SUMMARY")
+    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False})
+
+    real_datetime = cli.datetime
+
+    class FixedDatetime:
+        @staticmethod
+        def now(tz):
+            return real_datetime(2026, 1, 2, 3, 4, 5, tzinfo=tz)
+
+    monkeypatch.setattr(cli, "datetime", FixedDatetime)
+    assert main(["modality-run", "--resume", str(run_dir)]) == 0
+    expected = (
+        '{\n  "config": {\n    "run": {\n      "name": "x"\n    },\n    "agent": {\n'
+        '      "provider": "anthropic",\n      "model": "m"\n    }\n  },\n  "reps": 1,\n'
+        '  "tasks": [\n    "task-108"\n  ],\n  "modalities": [\n    "cli",\n    "boto3"\n  ],\n'
+        '  "nota": "ação",\n  "resumes": [\n    {\n'
+        '      "timestamp": "2026-01-02T03:04:05+00:00",\n      "git_commit": "abc",\n'
+        '      "git_dirty": false,\n      "skipped_pairs": 1,\n      "discarded_pairs": 1\n'
+        "    }\n  ]\n}"
+    )
+    assert (run_dir / "run_config.json").read_text() == expected
+    out = capsys.readouterr()
+    assert out.err == (
+        "resume run1: 1 completos pulados, 1 incompletos descartados, 1 a rodar\nSUMMARY\n"
+    )
+    assert out.out == f"{run_dir}\n"

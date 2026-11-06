@@ -1,0 +1,56 @@
+# E3, fase AWS real (plano E3): 30 tarefas = as 18 comuns (configs/modality-real-aws-agent.toml,
+# validade externa contra o Floci) + as 12 só da real (configs/modality-real-aws-only.toml).
+# Em série (workers = 1): o sweep do RealAwsExecutor é da conta inteira. Só depois do piloto real
+# e do budget fixado pelo usuário.
+[run]
+name = "e3-agent-aws"
+reps = 3
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # 18 comuns: criação
+  "task-130", "task-230", "task-231", "task-233", "task-234",
+  # modificação
+  "mod-s3-versioning", "mod-dynamodb-pitr", "mod-sg-https",
+  "mod-s3-encryption", "mod-sqs-retention", "mod-iam-user-policy", "mod-dynamodb-ttl",
+  "mod-secret-tag",
+  # remoção
+  "del-s3-bucket", "del-sqs-dev", "del-iam-user",
+  # consulta
+  "query-sg-ssh-open", "query-dynamodb-ondemand",
+  # 12 só da real: IaC-Eval v2
+  "task-367", "task-267", "task-416", "task-069", "task-198", "task-228", "task-229",
+  # aws-bench
+  "awsb-create-s3-bucket-with-config", "awsb-move-s3-contents-within-bucket",
+  "awsb-sync-s3-buckets-with-metadata", "awsb-dynamodb-strip-ec2-fields-from-prod",
+  "awsb-lambda-versioned-alias-update",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "aws-core", "own-skill-only", "own-rules", "own-tools"]
+models = ["Haiku 5.5", "Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1   # obrigatório no alvo aws
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: conferida antes de cada trajetória.
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 1800   # RDS, EC2 e a limpeza levam minutos

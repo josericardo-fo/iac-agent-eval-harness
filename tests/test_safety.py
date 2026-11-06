@@ -90,3 +90,9 @@ def test_docker_command_passes_only_sandbox_env(monkeypatch):
 def test_toolchain_endpoint_must_be_allowed():
     with pytest.raises(EndpointNotAllowedError):
         Toolchain(mode="local", endpoint="https://s3.amazonaws.com")
+
+
+def test_agent_worker_floci_hosts_are_allowed():
+    # E3: um Floci por worker (floci, floci2, floci3, floci4), todos na rede interna
+    for host in ("floci", "floci2", "floci3", "floci4"):
+        FlociExecutor(Toolchain(mode="local"), endpoint=f"http://{host}:4566")

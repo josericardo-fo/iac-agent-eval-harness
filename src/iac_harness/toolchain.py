@@ -17,9 +17,12 @@ DEFAULT_IMAGE = "iac-harness-toolchain:latest"
 DEFAULT_NETWORK = "iac-sandbox"
 DEFAULT_TIMEOUT_S = 600.0
 DEFAULT_ENDPOINT = "http://floci:4566"
-# floci2: segunda instância do Floci na mesma rede interna (configs/miac.toml).
+# floci2: segunda instância do Floci na mesma rede interna (configs/miac.toml); floci2..4 também
+# servem aos workers paralelos do agente (configs/e3-agent.toml).
 # localstack: emulador alternativo (configs/modality-spike-localstack.toml).
-DEFAULT_ALLOWED_HOSTS = ("floci", "floci2", "localstack", "localhost", "127.0.0.1")
+DEFAULT_ALLOWED_HOSTS = (
+    "floci", "floci2", "floci3", "floci4", "localstack", "localhost", "127.0.0.1",
+)  # fmt: skip
 DEFAULT_REGION = "us-east-1"
 TARGETS = ("emulator", "aws")
 # Alvo aws: rede com internet e credenciais vindas destas variáveis do host.
