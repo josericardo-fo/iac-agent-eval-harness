@@ -1799,15 +1799,17 @@ def pair_completion(
     """(completos, incompletos) por unidade `fields`.
 
     Completo = tem um evento `final` para cada condição; com `conditions=None` (modalidades,
-    sem condição), basta um evento `final`.
+    sem condição, ou agente, cuja condição já está em `fields`), basta um evento `final`.
     """
     finals: dict[tuple, set[str | None]] = {}
     for e in events:
         done = finals.setdefault(tuple(e[f] for f in fields), set())
         if e["event"] == "final":
             done.add(e.get("condition"))
-    required = set(conditions) if conditions is not None else {None}
-    complete = {k for k, done in finals.items() if required <= done}
+    if conditions is None:
+        complete = {k for k, done in finals.items() if done}
+    else:
+        complete = {k for k, done in finals.items() if set(conditions) <= done}
     return complete, set(finals) - complete
 
 

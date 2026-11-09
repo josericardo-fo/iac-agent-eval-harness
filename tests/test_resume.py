@@ -47,6 +47,18 @@ def test_pair_completion():
     assert incomplete == {("aws/t1", 2), ("aws/t2", 1)}
 
 
+def test_pair_completion_agent_unit_counts_any_final():
+    # Agente: a condição faz parte da unidade; um `final` com condition="none" completa.
+    fields = ("task_id", "condition", "model", "rep")
+    events = [
+        {**ev("t1", 1, "none", "final"), "model": "Haiku"},
+        {**ev("t2", 1, "own-rules", "attempt"), "model": "Haiku"},
+    ]
+    complete, incomplete = pair_completion(events, None, fields)
+    assert complete == {("t1", "none", "Haiku", 1)}
+    assert incomplete == {("t2", "own-rules", "Haiku", 1)}
+
+
 def test_discard_incomplete_moves_events_and_removes_dirs(tmp_path):
     run_dir = tmp_path / "run1"
     write_events(run_dir, synthetic_events())
