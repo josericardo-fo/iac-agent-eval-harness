@@ -149,6 +149,51 @@ def test_cleanup_sweeps_when_baseline_exists(iac_env, tmp_path):
     assert _modes(tc) == ["sweep"]
 
 
+class _FlakyAwsToolchain(_AwsToolchain):
+    """O sweep falha `fails` vezes com `stderr` antes de responder normalmente."""
+
+    def __init__(self, arn, fails, stderr):
+        super().__init__(arn)
+        self.fails, self.stderr = fails, stderr
+
+    def run(self, args, workdir, timeout_s=None):
+        if args[:1] == ["python3"] and self.fails > 0:
+            self.fails -= 1
+            self.calls.append(list(args))
+            return subprocess.CompletedProcess(args, 1, "", self.stderr)
+        return super().run(args, workdir, timeout_s)
+
+
+def _flaky_cleanup(tmp_path, monkeypatch, tc):
+    monkeypatch.setattr("iac_harness.executors.aws.time.sleep", lambda s: None)
+    baseline_file = tmp_path / "aws-baseline.json"
+    baseline_file.write_text(json.dumps(_full_baseline()))
+    RealAwsExecutor(tc, expected_arn=ARN, baseline_file=baseline_file).cleanup()
+
+
+NET_ERR = 'botocore.exceptions.EndpointConnectionError: Could not connect to "https://kms"'
+
+
+def test_sweep_retries_connection_errors(iac_env, tmp_path, monkeypatch):
+    tc = _FlakyAwsToolchain(ARN, 2, NET_ERR)
+    _flaky_cleanup(tmp_path, monkeypatch, tc)
+    assert _modes(tc) == ["sweep", "sweep", "sweep"]
+
+
+def test_sweep_gives_up_after_max_connection_retries(iac_env, tmp_path, monkeypatch):
+    tc = _FlakyAwsToolchain(ARN, 10, NET_ERR)
+    with pytest.raises(RuntimeError, match="limpeza AWS falhou"):
+        _flaky_cleanup(tmp_path, monkeypatch, tc)
+    assert _modes(tc) == ["sweep"] * 4
+
+
+def test_sweep_does_not_retry_other_errors(iac_env, tmp_path, monkeypatch):
+    tc = _FlakyAwsToolchain(ARN, 1, "ClientError: AccessDenied")
+    with pytest.raises(RuntimeError, match="AccessDenied"):
+        _flaky_cleanup(tmp_path, monkeypatch, tc)
+    assert _modes(tc) == ["sweep"]
+
+
 def test_cleanup_without_baseline_does_not_snapshot(iac_env, tmp_path):
     baseline_file = tmp_path / "aws-baseline.json"
     tc = _AwsToolchain(ARN)

@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,10 @@ SWEEP_FILENAME = "aws_sweep.py"
 BASELINE_FILENAME = "baseline.json"
 # Baseline persistente (conta limpa): sobrevive a quedas, para o --resume apagar as sobras.
 DEFAULT_BASELINE_FILE = "runs/aws-baseline.json"
+# Internet instável: o sweep é repetido só quando o boto3 não alcança o endpoint.
+NET_ERROR_MARKERS = ("EndpointConnectionError", "ConnectTimeoutError", "ReadTimeoutError")
+SWEEP_NET_TRIES = 4
+SWEEP_NET_WAIT_S = 30
 
 
 def _last_json(proc: subprocess.CompletedProcess[str], what: str) -> Any:
@@ -145,10 +150,23 @@ class RealAwsExecutor(FlociExecutor):
             raise RuntimeError(f"limpeza AWS incompleta, sobrou fora do baseline: {remaining}")
 
     def _run_sweep(self, args: list[str], what: str) -> Any:
-        """Roda o aws_sweep.py (boto3 da imagem) num diretório temporário, com o baseline."""
-        with tempfile.TemporaryDirectory(prefix="iac-aws-") as tmp:
-            tmp_dir = Path(tmp)
-            (tmp_dir / SWEEP_FILENAME).write_text(SWEEP_SCRIPT.read_text())
-            (tmp_dir / BASELINE_FILENAME).write_text(json.dumps(self._baseline or {}))
-            proc = self._tc.run(["python3", SWEEP_FILENAME, *args], tmp_dir)
+        """Roda o aws_sweep.py (boto3 da imagem) num diretório temporário, com o baseline.
+
+        Falha de conexão (internet instável) é repetida com espera; o sweep é idempotente
+        (só apaga o que está fora do baseline). Qualquer outro erro sobe na hora.
+        """
+        for attempt in range(1, SWEEP_NET_TRIES + 1):
+            with tempfile.TemporaryDirectory(prefix="iac-aws-") as tmp:
+                tmp_dir = Path(tmp)
+                (tmp_dir / SWEEP_FILENAME).write_text(SWEEP_SCRIPT.read_text())
+                (tmp_dir / BASELINE_FILENAME).write_text(json.dumps(self._baseline or {}))
+                proc = self._tc.run(["python3", SWEEP_FILENAME, *args], tmp_dir)
+            if proc.returncode == 0 or attempt == SWEEP_NET_TRIES:
+                break
+            if not any(m in proc.stderr for m in NET_ERROR_MARKERS):
+                break
+            wait = SWEEP_NET_WAIT_S * attempt
+            print(f"{what}: falha de conexão (tentativa {attempt}); nova em {wait}s",
+                  file=sys.stderr)  # fmt: skip
+            time.sleep(wait)
         return _last_json(proc, what)
