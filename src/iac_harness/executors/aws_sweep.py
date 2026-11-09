@@ -110,6 +110,24 @@ def _nat_gateways(ec2: Any) -> list[str]:
     ]
 
 
+def _lambda_functions(session: Any) -> list[str]:
+    """Funções Lambda; `AccessDeniedException` vira lista vazia (opção B, registro E5).
+
+    A AWS restringiu o Lambda da conta (caso 179333530400472, 30/10/2026), até para o root.
+    Só esse código é tolerado: qualquer outro erro, ou de outro serviço, continua abortando.
+    """
+    try:
+        return [
+            f["FunctionName"]
+            for f in _pages(session.client("lambda"), "list_functions", "Functions")
+        ]
+    except Exception as exc:
+        if _error_code(exc) != "AccessDeniedException":
+            raise
+        print("aws_sweep: lambda negado (AccessDeniedException); sem Lambda", file=sys.stderr)
+        return []
+
+
 def inventory(session: Any) -> dict[str, list[str]]:
     ec2 = session.client("ec2")
     vpcs = _pages(ec2, "describe_vpcs", "Vpcs")
@@ -187,10 +205,7 @@ def inventory(session: Any) -> dict[str, list[str]]:
         "lightsail_databases": [
             d["name"] for d in lightsail.get_relational_databases().get("relationalDatabases", [])
         ],
-        "lambda_functions": [
-            f["FunctionName"]
-            for f in _pages(session.client("lambda"), "list_functions", "Functions")
-        ],
+        "lambda_functions": _lambda_functions(session),
         "cloudfront_distributions": [
             d["Id"] for d in _cloudfront_items(cloudfront.list_distributions, "DistributionList")
         ],

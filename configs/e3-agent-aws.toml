@@ -1,5 +1,6 @@
 # E3, fase AWS real (plano E3): 30 tarefas = as 18 comuns (configs/modality-real-aws-agent.toml,
 # validade externa contra o Floci) + as 12 só da real (configs/modality-real-aws-only.toml).
+# Desde 09/11, 29: a do Lambda saiu (opção B, registro E5).
 # Em série (workers = 1): o sweep do RealAwsExecutor é da conta inteira. Só depois do piloto real
 # e do budget fixado pelo usuário.
 [run]
@@ -24,7 +25,8 @@ tasks = [
   # aws-bench
   "awsb-create-s3-bucket-with-config", "awsb-move-s3-contents-within-bucket",
   "awsb-sync-s3-buckets-with-metadata", "awsb-dynamodb-strip-ec2-fields-from-prod",
-  "awsb-lambda-versioned-alias-update",
+  # Fora desde 09/11 (opção B, registro E5): Lambda bloqueado pela AWS na conta.
+  # "awsb-lambda-versioned-alias-update",
 ]
 
 [agentic]

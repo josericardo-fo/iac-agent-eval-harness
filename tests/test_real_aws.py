@@ -302,6 +302,52 @@ def test_inventory_excludes_aws_defaults():
     assert not any(n.startswith("default") for n in plan["dax_subnet_groups"])
 
 
+class _DeniedError(Exception):
+    def __init__(self, code):
+        self.response = {"Error": {"Code": code}}
+
+
+class _DeniedServiceSession(_FakeSession):
+    """Lambda (ou outro serviço) responde com erro no paginator, como a conta bloqueada."""
+
+    def __init__(self, service, code):
+        super().__init__(
+            {
+                "s3": {"list_buckets": {"Buckets": [{"Name": "b"}]}},
+                "cloudfront": {
+                    "list_distributions": {"DistributionList": {}},
+                    "list_origin_access_controls": {"OriginAccessControlList": {}},
+                },
+            }
+        )
+        self.denied, self.code = service, code
+
+    def client(self, service, **kwargs):
+        if service != self.denied:
+            return super().client(service, **kwargs)
+        code = self.code
+
+        class _Denied:
+            def get_paginator(self, op):
+                raise _DeniedError(code)
+
+        return _Denied()
+
+
+def test_inventory_tolerates_access_denied_only_on_lambda():
+    inv = inventory(_DeniedServiceSession("lambda", "AccessDeniedException"))
+    assert inv["lambda_functions"] == [] and inv["s3_buckets"] == ["b"]
+
+
+@pytest.mark.parametrize(
+    ("service", "code"),
+    [("lambda", "ThrottlingException"), ("sqs", "AccessDeniedException")],
+)
+def test_inventory_other_denials_still_abort(service, code):
+    with pytest.raises(_DeniedError):
+        inventory(_DeniedServiceSession(service, code))
+
+
 def test_inventory_lists_unassigned_mfa_devices_and_kinesis_video_streams():
     root_mfa = "arn:aws:iam::123:mfa/root-account-mfa-device"
     responses = {
