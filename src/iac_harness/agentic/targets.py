@@ -6,6 +6,7 @@ redes Docker e proxy de egresso.
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -20,6 +21,33 @@ EGRESS_NETWORK = "iac-egress"
 EGRESS_AWS_NETWORK = "iac-egress-aws"
 EGRESS_PROXY = "http://egress-proxy:3128"  # allowlist: só o host do ANTHROPIC_BASE_URL
 EGRESS_AWS_PROXY = "http://egress-proxy-aws:3128"  # allowlist: o gateway + .amazonaws.com
+
+
+# Containers dos proxies (projeto `iac-harness` do docker/compose.yaml).
+EGRESS_PROXY_CONTAINER = "iac-harness-egress-proxy-1"
+EGRESS_AWS_PROXY_CONTAINER = "iac-harness-egress-proxy-aws-1"
+
+
+class EgressProxyDownError(RuntimeError):
+    """O proxy de egresso do alvo não está rodando; toda trajetória viraria AGENT_ERROR."""
+
+
+def check_container_running(container: str) -> None:
+    """Levanta EgressProxyDownError se `container` não estiver rodando (ou não existir)."""
+    try:
+        proc = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", container],
+            capture_output=True, text=True, timeout=30,
+        )  # fmt: skip
+        running = proc.returncode == 0 and proc.stdout.strip() == "true"
+        reason = proc.stderr.strip() or f"State.Running={proc.stdout.strip()!r}"
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        running, reason = False, str(exc)
+    if not running:
+        raise EgressProxyDownError(
+            f"proxy de egresso {container} não está rodando ({reason}); "
+            "suba com `docker compose --profile agent up -d` e retome com agent-resume"
+        )
 
 
 @dataclass(frozen=True)
@@ -63,6 +91,10 @@ class Target(Protocol):
 
     def after_trajectory(self) -> None: ...
 
+    def check_proxy(self) -> None:
+        """Levanta EgressProxyDownError se o proxy de egresso do alvo não estiver rodando."""
+        ...
+
     def agent_env(self) -> AgentEnv: ...
 
     def agent_networks(self) -> list[str]: ...
@@ -95,6 +127,9 @@ class FlociTarget:
     def after_trajectory(self) -> None:
         """Nada: o próximo reset reinicia o emulador."""
 
+    def check_proxy(self) -> None:
+        check_container_running(EGRESS_PROXY_CONTAINER)
+
     def agent_env(self) -> AgentEnv:
         """Credenciais `test` e endpoint do Floci (as do sandbox_env); nunca as IAC_AWS_*."""
         no_proxy = f"{host_of(self.toolchain.endpoint)},localhost,127.0.0.1"
@@ -124,6 +159,9 @@ class AwsTarget:
     def after_trajectory(self) -> None:
         """Sweep contra o baseline logo depois da trajetória (não espera o próximo reset)."""
         self.executor.cleanup()
+
+    def check_proxy(self) -> None:
+        check_container_running(EGRESS_AWS_PROXY_CONTAINER)
 
     def agent_env(self) -> AgentEnv:
         """As IAC_AWS_* do host, renomeadas para AWS_*, só pelo nome; sem AWS_ENDPOINT_URL."""

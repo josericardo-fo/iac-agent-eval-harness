@@ -7,7 +7,9 @@ Alvo `emulator` (padrão): credenciais `test` e endpoint do emulador. Alvo `aws`
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -182,3 +184,21 @@ class Toolchain:
             except (subprocess.TimeoutExpired, OSError) as exc:
                 out["image_id"] = f"indisponível: {exc}"
         return out
+
+
+def remove_terraform_dir(path: Path, toolchain: Toolchain | None = None) -> None:
+    """Remove `<path>/.terraform` (cópia do provider, ~840 MB); nunca levanta.
+
+    Em Docker nativo no Linux os arquivos criados pelo container mantêm o dono (root/agent) e o
+    `rmtree` do host falha em silêncio; nesse caso apaga de dentro de um container (root da imagem).
+    Se ainda existir, avisa no stderr: a limpeza não pode mudar o resultado de uma trajetória.
+    """
+    target = Path(path) / ".terraform"
+    shutil.rmtree(target, ignore_errors=True)
+    if target.exists() and toolchain is not None and toolchain.mode == "docker":
+        try:
+            toolchain.run(["rm", "-rf", "/work/.terraform"], Path(path))
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            print(f"warning: falha ao remover {target} via container: {exc}", file=sys.stderr)
+    if target.exists():
+        print(f"warning: não foi possível remover {target} (disco pode encher)", file=sys.stderr)

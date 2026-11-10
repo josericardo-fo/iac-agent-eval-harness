@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -11,6 +10,7 @@ from iac_harness.agents.prompts import render_repair
 from iac_harness.conditions import Condition
 from iac_harness.feedback import DEFAULT_MAX_CHARS, build_feedback, classify
 from iac_harness.interfaces import AgentBackend, Executor, Recorder, Verifier
+from iac_harness.toolchain import Toolchain, remove_terraform_dir
 from iac_harness.types import (
     AgentReply,
     Artifact,
@@ -54,6 +54,8 @@ class RunContext:
     max_feedback_chars: int = DEFAULT_MAX_CHARS
     # Override de provider: texto fixo ou função do artefato (precisa ver os aliases do agente).
     override: str | Callable[[Artifact], str] | None = None
+    # Para apagar o `.terraform/` de dentro do container quando o rmtree do host não alcança.
+    toolchain: Toolchain | None = None
 
     def override_for(self, artifact: Artifact) -> str | None:
         return self.override(artifact) if callable(self.override) else self.override
@@ -64,6 +66,7 @@ def run_gates(
     gates: dict[Stage, Verifier],
     workspace: Workspace,
     oracle: TaskOracle,
+    toolchain: Toolchain | None = None,
 ) -> tuple[dict[str, str], CheckResult | None, dict[str, float]]:
     """Roda os gates em ordem e para na primeira falha; os demais ficam SKIPPED.
 
@@ -83,7 +86,7 @@ def run_gates(
     finally:
         # o `terraform init` copia o provider AWS (~700 MB) para cada workspace e nada
         # o usa depois dos gates; sem limpar, o disco enche. Mantém lock, .tf e planos.
-        shutil.rmtree(workspace.path / ".terraform", ignore_errors=True)
+        remove_terraform_dir(workspace.path, toolchain)
 
 
 def first_failure_of(failing: CheckResult | None) -> FirstFailure:
@@ -118,7 +121,7 @@ def evaluate_final(
         reply.artifact,
         ctx.override_for(reply.artifact),
     )
-    statuses, failing, _ = run_gates(stages, gates, ws, oracle)
+    statuses, failing, _ = run_gates(stages, gates, ws, oracle, ctx.toolchain)
     return statuses, first_failure_of(failing), failing, ws
 
 
@@ -159,7 +162,9 @@ def _run_condition(
             ctx.override_for(reply.artifact),
         )
         (ws.path / RESPONSE_FILENAME).write_text(reply.raw_text)
-        statuses, failing, durations = run_gates(condition.loop_stages, gates, ws, oracle)
+        statuses, failing, durations = run_gates(
+            condition.loop_stages, gates, ws, oracle, ctx.toolchain
+        )
 
         termination: Termination | None = None
         feedback = None

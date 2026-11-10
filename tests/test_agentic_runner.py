@@ -29,6 +29,9 @@ class FakeTarget:
     def after_trajectory(self):
         self.calls.append("after")
 
+    def check_proxy(self):
+        pass
+
 
 class FakeAgent:
     name = "fake"

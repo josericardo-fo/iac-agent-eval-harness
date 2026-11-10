@@ -79,7 +79,13 @@ from iac_harness.modalities.runner import (
 from iac_harness.modalities.spec import FREE, MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.runner import COMMON_CHAIN, RunContext, SandboxGate, run_gates, run_task
-from iac_harness.toolchain import DEFAULT_ENDPOINT, DEFAULT_REGION, DEFAULT_TIMEOUT_S, Toolchain
+from iac_harness.toolchain import (
+    DEFAULT_ENDPOINT,
+    DEFAULT_REGION,
+    DEFAULT_TIMEOUT_S,
+    Toolchain,
+    remove_terraform_dir,
+)
 from iac_harness.types import Artifact, CheckStatus, Stage, Task, TaskOracle
 from iac_harness.verifiers.opa import OpaVerifier
 from iac_harness.verifiers.terraform import PLAN_FILE, PlanVerifier, ValidateVerifier, error_blocks
@@ -286,13 +292,14 @@ def prevalidate_task(
     executor: FlociExecutor,
     runs_dir: Path,
     run_id: str,
+    toolchain: Toolchain | None = None,
 ) -> dict[str, Any]:
     artifact = Artifact(dict(oracle.reference_files))
     ws = create_workspace(
         runs_dir, run_id, task.task_id, 0, "reference", "final", artifact,
         executor.override_for(artifact.files),
     )  # fmt: skip
-    statuses, failing, _ = run_gates(COMMON_CHAIN, gates, ws, oracle)
+    statuses, failing, _ = run_gates(COMMON_CHAIN, gates, ws, oracle, toolchain)
     pre_ok = all(statuses[s.value] == CheckStatus.PASS for s in COMMON_CHAIN[:3])
     return {
         "task_id": task.task_id,
@@ -335,7 +342,7 @@ def cmd_prevalidate(args: argparse.Namespace) -> int:
     try:
         for task, oracle in pairs:
             executor.reset()
-            row = prevalidate_task(task, oracle, gates, executor, runs_dir, run_id)
+            row = prevalidate_task(task, oracle, gates, executor, runs_dir, run_id, toolchain)
             recorder.record(row)
             rows.append(row)
             print(f"{task.task_id}: {row['statuses']}", file=sys.stderr)
@@ -373,6 +380,7 @@ def prevalidate_config(
     executor: FlociExecutor,
     runs_dir: Path,
     run_id: str,
+    toolchain: Toolchain | None = None,
 ) -> dict[str, Any]:
     """Uma config (initial ou expected) pela cadeia validate → plan → apply no Floci."""
     executor.reset()  # o plan também consulta o Floci: começa de uma conta limpa
@@ -381,7 +389,7 @@ def prevalidate_config(
         runs_dir, run_id, triple_id, 0, variant, "final", artifact,
         executor.override_for(artifact.files),
     )  # fmt: skip
-    statuses, failing, _ = run_gates(MIAC_CHAIN, gates, ws, TaskOracle({}, ""))
+    statuses, failing, _ = run_gates(MIAC_CHAIN, gates, ws, TaskOracle({}, ""), toolchain)
     pre_ok = all(statuses[s.value] == CheckStatus.PASS for s in MIAC_CHAIN[:2])
     return {
         "statuses": statuses,
@@ -469,7 +477,7 @@ def sequential_check(
             out["replan"] = _plan_counts(replan.stdout)
         return out
     finally:
-        shutil.rmtree(path / ".terraform", ignore_errors=True)
+        remove_terraform_dir(path, toolchain)
 
 
 def cmd_prevalidate_miac(args: argparse.Namespace) -> int:
@@ -507,7 +515,7 @@ def cmd_prevalidate_miac(args: argparse.Namespace) -> int:
             for variant in ("initial", "expected"):
                 row[variant] = prevalidate_config(
                     triple.triple_id, variant, getattr(triple, variant), gates, executor,
-                    runs_dir, run_id,
+                    runs_dir, run_id, toolchain,
                 )  # fmt: skip
             row["usable"] = (
                 row["initial"]["sandbox_supported"] and row["expected"]["sandbox_supported"]
@@ -1456,6 +1464,24 @@ def cmd_agent_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _move_to_discarded(run_dir: Path, path: Path) -> bool:
+    """Move `path` (se existir) para `<run>/discarded/<caminho relativo>`; True se moveu.
+
+    Rename só exige escrita nos diretórios pai, então arquivos de outro dono (container) não
+    atrapalham. Evita sobrescrever um descarte anterior acrescentando `.1`, `.2`, ...
+    """
+    if not path.exists():
+        return False
+    dest = run_dir / "discarded" / path.relative_to(run_dir)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    final, n = dest, 0
+    while final.exists():
+        n += 1
+        final = dest.with_name(f"{dest.name}.{n}")
+    path.rename(final)
+    return True
+
+
 def cmd_agent_resume(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     config_path, saved = _load_run_config(run_dir)
@@ -1470,11 +1496,15 @@ def cmd_agent_resume(args: argparse.Namespace) -> int:
     complete, discarded = discard_incomplete(runs_dir, run_id, None, AGENT_UNIT, udir)
     plan = _agent_plan(cfg, tasks, reps)
     pending = [u for u in plan if (u[0].task_id, u[1], u[2], u[3]) not in complete]
-    for task, cond, model, rep in pending:  # diretório sem evento (queda antes do registro)
-        shutil.rmtree(udir((task.task_id, cond, model, rep)), ignore_errors=True)
+    # Diretório sem `final` (queda antes do 1º evento, ou resto que o rmtree não apagou por causa
+    # do dono dos arquivos): vai para discarded/ em vez de apagar, e libera o caminho do worker.
+    orphans = sum(
+        _move_to_discarded(run_dir, udir((task.task_id, cond, model, rep)))
+        for task, cond, model, rep in pending
+    )
     _record_resume(
-        config_path, saved, run_id, len(plan) - len(pending), len(discarded), len(pending),
-        "units",
+        config_path, saved, run_id, len(plan) - len(pending), len(discarded) + orphans,
+        len(pending), "units",
     )  # fmt: skip
     _agent_loop(cfg, pending, runs_dir, run_id, _build_agent(cfg), _build_targets(cfg))
     print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
@@ -1725,6 +1755,7 @@ def _run_pairs(
         model_provider=cfg["agent"]["provider"],
         max_feedback_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
         override=lambda artifact: executor.override_for(artifact.files),
+        toolchain=build_toolchain(cfg),
     )
     recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
     try:

@@ -258,3 +258,57 @@ model = "m"
     with pytest.raises(SystemExit, match="tarefas não encontradas"):
         main(["run", "--config", str(config), "--no-prevalidation", "--tasks", "aws/nada"])
     assert not runs_dir.exists()
+
+
+def _agent_resume_setup(tmp_path, monkeypatch):
+    """Run de agente com t1 completa e t2 órfã (diretório sem nenhum evento)."""
+    from types import SimpleNamespace
+
+    from iac_harness.agentic.runner import unit_dir
+
+    runs_dir, run_id = tmp_path / "runs", "r1"
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True)
+    cfg = {"agentic": {"models": ["M"], "conditions": ["none"]}}
+    (run_dir / "run_config.json").write_text(
+        json.dumps({"config": cfg, "reps": 1, "tasks": ["t1", "t2"]})
+    )
+    final = {
+        "event": "final", "task_id": "t1", "condition": "none", "model": "M", "rep": 1,
+        "trajectory_id": "t1|none|M|1",
+    }  # fmt: skip
+    (run_dir / "events.jsonl").write_text(json.dumps(final) + "\n")
+    done = unit_dir(runs_dir, run_id, "t1", "none", "M", 1)
+    (done / "work").mkdir(parents=True)
+    (done / "work" / "answer.txt").write_text("ok")
+    orphan = unit_dir(runs_dir, run_id, "t2", "none", "M", 1)
+    (orphan / "work" / ".terraform").mkdir(parents=True)
+    (orphan / "work" / ".terraform" / "provider").write_text("x")
+    # Como os arquivos de container (outro dono): o rmtree do host não consegue apagar.
+    (orphan / "work" / ".terraform").chmod(0o500)
+
+    tasks = [SimpleNamespace(task_id="t1"), SimpleNamespace(task_id="t2")]
+    ran: list[list] = []
+    monkeypatch.setattr(cli, "_select_modality_run", lambda *a, **k: (tasks, None))
+    monkeypatch.setattr(cli, "_build_agent", lambda cfg: None)
+    monkeypatch.setattr(cli, "_build_targets", lambda cfg: [])
+    monkeypatch.setattr(cli, "_agent_loop", lambda cfg, plan, *a, **k: ran.append(plan))
+    monkeypatch.setattr(cli, "_agent_summary", lambda events: "")
+    return run_dir, done, orphan, ran
+
+
+def test_agent_resume_discards_orphan_unit_dir_and_reruns_only_it(tmp_path, monkeypatch, capsys):
+    run_dir, done, orphan, ran = _agent_resume_setup(tmp_path, monkeypatch)
+    try:
+        assert main(["agent-resume", str(run_dir)]) == 0
+    finally:
+        for p in run_dir.rglob(".terraform"):
+            p.chmod(0o700)
+    assert done.exists()  # a unidade completa fica intacta
+    assert not orphan.exists()  # liberado: o worker pode recriar com exist_ok=False
+    assert [(t.task_id, c, m, r) for t, c, m, r in ran[0]] == [("t2", "none", "M", 1)]
+    moved = list((run_dir / "discarded").rglob("provider"))  # evidência preservada
+    assert len(moved) == 1
+    assert "1 incompletos descartados" in capsys.readouterr().err
+    saved = json.loads((run_dir / "run_config.json").read_text())
+    assert saved["resumes"][-1]["discarded_units"] == 1

@@ -16,7 +16,7 @@ from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS, TRUNCATION_MARK, strip_ansi
 from iac_harness.modalities.loader import UPSTREAM_DIRNAME, ModalityTask
 from iac_harness.modalities.spec import MODALITIES, Modality
-from iac_harness.toolchain import Toolchain
+from iac_harness.toolchain import Toolchain, remove_terraform_dir
 from iac_harness.types import Artifact, CheckStatus
 from iac_harness.workspace import create_workspace
 
@@ -93,7 +93,7 @@ def _run_commands(
         return ExecResult(True, truncate(full, max_chars), raw=full)
     finally:
         # Mesmo motivo de runner.run_gates: o provider copiado pelo init enche o disco.
-        shutil.rmtree(path / ".terraform", ignore_errors=True)
+        remove_terraform_dir(path, toolchain)
 
 
 def run_artifact(

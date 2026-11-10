@@ -31,6 +31,7 @@ from iac_harness.modalities.execute import (
 )
 from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.spec import MODALITIES
+from iac_harness.toolchain import remove_terraform_dir
 from iac_harness.workspace import _safe_name, pair_dir
 
 AGENT_PROMPT_VERSION = "e3-agent-v1"
@@ -161,6 +162,8 @@ def run_agent_pair(
     ctx: AgentRunContext,
 ) -> dict[str, Any]:
     """Uma trajetória: reset → initial → /work → retrato → agente → check → retrato → `final`."""
+    # Proxy parado: aborta o run antes de gravar qualquer evento (senão viram AGENT_ERROR).
+    target.check_proxy()
     start = time.monotonic()
     condition = resolve_condition(condition_name, ctx.plugin_root)
     udir = unit_dir(ctx.runs_dir, ctx.run_id, task.task_id, condition_name, model, rep)
@@ -235,7 +238,7 @@ def run_agent_pair(
             else:
                 diff = diff_snapshots(before, after)
                 final.update(collateral_ok=not diff, collateral_details={"changed": diff})
-        shutil.rmtree(work / ".terraform", ignore_errors=True)  # provider copiado enche o disco
+        remove_terraform_dir(work, target.toolchain)  # provider copiado enche o disco
     finally:
         # AWS real: sweep contra o baseline logo após a trajetória (também se algo levantou).
         target.after_trajectory()
