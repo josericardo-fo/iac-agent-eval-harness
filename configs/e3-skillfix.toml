@@ -1,0 +1,63 @@
+# E3 no Floci com o toolkit corrigido (registro E8, 10/11): o mesmo texto da matriz real (commit 93e3f9c).
+# Só as 3 condições com skill, Haiku e Sonnet, N=1 (igual à real): 35 × 3 × 2 = 210 trajetórias.
+# Base: fatia da matriz E3 (configs/e3-agent.toml), mudam só condições, modelos e reps.
+# E3, fase Floci: o Claude Code de verdade (claude -p, headless, em container) age sozinho no
+# emulador (plano E3). 35 tarefas = as 25 do e4-free-haiku.toml + as 10 amb-*/clr-* do E2;
+# 5 condições × 2 modelos × N=3 = 1050 trajetórias. Rode com `iac-harness agent-run --config`.
+# Antes: docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest . e
+# set -a; source .env; set +a; docker compose -f docker/compose.yaml --profile agent \
+#   --profile agent-workers up -d --wait
+[run]
+name = "e3-skillfix"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # criação
+  "task-108", "task-115", "task-230", "task-231", "task-234",
+  "task-110", "task-118", "task-130", "task-201", "task-233", "task-373", "task-375",
+  # modificação
+  "mod-s3-versioning", "mod-dynamodb-pitr", "mod-sg-https",
+  "mod-s3-encryption", "mod-sqs-retention", "mod-iam-user-policy", "mod-dynamodb-ttl",
+  "mod-secret-tag",
+  # remoção
+  "del-s3-bucket", "del-sqs-dev", "del-iam-user",
+  # consulta
+  "query-sg-ssh-open", "query-dynamodb-ondemand",
+  # E2: 6 ambíguas + 4 claras do par
+  "amb-dynamodb-pitr", "amb-s3-versioning", "amb-sqs-retention", "amb-sg-https",
+  "amb-del-sqs", "amb-del-s3",
+  "clr-dynamodb-pitr", "clr-sg-https", "clr-del-sqs", "clr-del-s3",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["own-skill-only", "own-rules", "own-tools"]
+# IDs aceitos pelo gateway atual (smoke de 30/10/2026: "Haiku 5.5").
+models = ["Haiku 5.5", "Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+# Um worker por Floci (floci, floci2, floci3, floci4: compose, perfil agent-workers).
+workers = 4
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# Worker 1; os workers 2..W usam floci<N>, 127.0.0.1:456<5+N>, iac-harness-floci<N>-1.
+endpoint = "http://floci:4566"
+host_endpoint = "http://127.0.0.1:4566"
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+# Timeout por comando do harness (initial.tf, check.py, retrato).
+timeout_s = 180
