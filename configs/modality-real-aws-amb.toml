@@ -1,0 +1,44 @@
+# Gate das tarefas do E11 na AWS real: estado inicial passa no check (ambíguas: estado
+# intocado) e a referência reprova (ask) ou passa (act). Só Terraform: é a forma do E3.
+[run]
+name = "modality-real-aws-amb"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # E2 na real (registro E11): 6 ambíguas + 4 claras do par. As claras dos pares 2 e 3
+  # (mod-s3-versioning, mod-sqs-retention) já estão na matriz real (E6) e na E12.
+  "amb-dynamodb-pitr", "amb-s3-versioning", "amb-sqs-retention", "amb-sg-https",
+  "amb-del-sqs", "amb-del-s3",
+  "clr-dynamodb-pitr", "clr-sg-https", "clr-del-sqs", "clr-del-s3",
+]
+modalities = ["terraform"]
+
+[agent]
+provider = "anthropic"
+# ID aceito pelo gateway atual (middleware); a API direta usa "claude-sonnet-5-5".
+model = "Haiku 5.5"
+max_tokens = 8192
+# effort = "medium"   # opcional; só é enviado quando definido
+
+[feedback]
+# Truncagem da saída de execução (a mesma do feedback do agente).
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: o run recusa qualquer outra identidade (root, outra conta).
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"   # docker | local
+image = "iac-harness-toolchain:latest"
+# Timeout por comando (terraform, bash run.sh, python3 main.py, check.py).
+timeout_s = 1800   # RDS, Lightsail DB, CloudFront e a limpeza levam minutos
+
+# US$ por milhão de tokens: [entrada, saída]. Confirme os valores vigentes antes de reportar custo.
+[prices]
+"Haiku 5.5" = [0.10, 0.50]

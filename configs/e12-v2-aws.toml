@@ -1,0 +1,55 @@
+# E12 (registro): o toolkit v2 nas 29 tarefas claras da matriz real (E6).
+# 29 tarefas × own-rules-v2 × Haiku/Sonnet × N=1 = 58 trajetórias; none e own-rules vêm do E6.
+[run]
+name = "e12-v2-aws"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # 18 comuns: criação
+  "task-130", "task-230", "task-231", "task-233", "task-234",
+  # modificação
+  "mod-s3-versioning", "mod-dynamodb-pitr", "mod-sg-https",
+  "mod-s3-encryption", "mod-sqs-retention", "mod-iam-user-policy", "mod-dynamodb-ttl",
+  "mod-secret-tag",
+  # remoção
+  "del-s3-bucket", "del-sqs-dev", "del-iam-user",
+  # consulta
+  "query-sg-ssh-open", "query-dynamodb-ondemand",
+  # 12 só da real: IaC-Eval v2
+  "task-367", "task-267", "task-416", "task-069", "task-198", "task-228", "task-229",
+  # aws-bench
+  "awsb-create-s3-bucket-with-config", "awsb-move-s3-contents-within-bucket",
+  "awsb-sync-s3-buckets-with-metadata", "awsb-dynamodb-strip-ec2-fields-from-prod",
+  # Fora desde 09/11 (opção B, registro E5): Lambda bloqueado pela AWS na conta.
+  # "awsb-lambda-versioned-alias-update",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["own-rules-v2"]
+models = ["Haiku 5.5", "Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1   # obrigatório no alvo aws
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: conferida antes de cada trajetória.
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 1800   # RDS, EC2 e a limpeza levam minutos

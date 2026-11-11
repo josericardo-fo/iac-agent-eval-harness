@@ -1,0 +1,8 @@
+{
+  "name": "own-rules-v2",
+  "version": "0.2.0",
+  "description": "Flow and rules for creating, changing, deleting and querying AWS infrastructure.",
+  "author": {
+    "name": "iac-agent-eval-harness"
+  }
+}

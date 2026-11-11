@@ -22,6 +22,8 @@ REGISTRY: dict[str, tuple[str | None, str | None]] = {
     "own-skill-only": ("toolkit/plugins/own-rules", None),
     "own-rules": ("toolkit/plugins/own-rules", "toolkit/plugins/own-rules/RULES.md"),
     "own-tools": ("toolkit/plugins/own-tools", "toolkit/plugins/own-tools/RULES.md"),
+    # own-rules-v2: texto revisado (registro E11); a v1 fica intacta
+    "own-rules-v2": ("toolkit/plugins/own-rules-v2", "toolkit/plugins/own-rules-v2/RULES.md"),
 }
 
 

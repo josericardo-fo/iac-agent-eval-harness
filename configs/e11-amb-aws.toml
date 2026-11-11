@@ -1,0 +1,43 @@
+# E11 (registro): as tarefas ambíguas do E2 na AWS real, com o toolkit v1 e a v2.
+# 10 tarefas × 3 condições × Haiku/Sonnet × N=1 = 60 trajetórias, em série.
+[run]
+name = "e11-amb-aws"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # E2 na real (registro E11): 6 ambíguas + 4 claras do par. As claras dos pares 2 e 3
+  # (mod-s3-versioning, mod-sqs-retention) já estão na matriz real (E6) e na E12.
+  "amb-dynamodb-pitr", "amb-s3-versioning", "amb-sqs-retention", "amb-sg-https",
+  "amb-del-sqs", "amb-del-s3",
+  "clr-dynamodb-pitr", "clr-sg-https", "clr-del-sqs", "clr-del-s3",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "own-rules", "own-rules-v2"]
+models = ["Haiku 5.5", "Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1   # obrigatório no alvo aws
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: conferida antes de cada trajetória.
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 1800   # RDS, EC2 e a limpeza levam minutos

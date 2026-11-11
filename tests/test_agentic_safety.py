@@ -33,12 +33,13 @@ def _plugin_root(tmp_path: Path) -> Path:
     for rel in (
         "toolkit/plugins/own-rules",
         "toolkit/plugins/own-tools",
+        "toolkit/plugins/own-rules-v2",
         "third_party/agent-toolkit-for-aws/plugins/aws-core",
         "third_party/agent-toolkit-for-aws/rules",
     ):
         (tmp_path / rel).mkdir(parents=True, exist_ok=True)
     (tmp_path / "third_party/agent-toolkit-for-aws/rules/aws-agent-rules.md").write_text("r")
-    for plugin in ("own-rules", "own-tools"):
+    for plugin in ("own-rules", "own-tools", "own-rules-v2"):
         (tmp_path / f"toolkit/plugins/{plugin}/RULES.md").write_text("r")
     return tmp_path
 
@@ -117,7 +118,7 @@ def test_aws_networks_are_only_egress(host_env, tmp_path):
     assert "HTTPS_PROXY=http://egress-proxy-aws:3128" in _flag_values(argv, "-e")
 
 
-CONDITIONS = ["none", "aws-core", "own-skill-only", "own-rules", "own-tools"]
+CONDITIONS = ["none", "aws-core", "own-skill-only", "own-rules", "own-tools", "own-rules-v2"]
 
 
 @pytest.mark.parametrize("condition", CONDITIONS)
@@ -130,6 +131,7 @@ def test_mounts_are_only_work_rw_and_condition_dirs_ro(host_env, tmp_path, condi
     assert all(Path(m.split(":")[0]).is_relative_to(tmp_path) for m in others)
     assert len(others) == {
         "none": 0, "aws-core": 2, "own-skill-only": 1, "own-rules": 2, "own-tools": 2,
+        "own-rules-v2": 2,
     }[condition]
     joined = " ".join(argv)
     assert ".claude" not in joined and ".aws" not in joined

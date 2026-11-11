@@ -1,7 +1,8 @@
 """Monta os plugins do toolkit a partir de `toolkit/src/` (fonte única).
 
 - `own-rules`: só a skill (fluxo + regras);
-- `own-tools`: a mesma skill com a seção de ferramentas e os scripts.
+- `own-tools`: a mesma skill com a seção de ferramentas e os scripts;
+- `own-rules-v2`: como `own-rules`, a partir de `toolkit/src-v2/` (texto revisado, registro E11).
 
 Os dois levam também `RULES.md`: regras curtas que o harness injeta no system prompt (como o
 aws-core faz com `rules/`), para que o agente carregue a skill.
@@ -19,6 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 SRC = HERE / "src"
+SRC_V2 = HERE / "src-v2"
 OUT = HERE / "plugins"
 SKILL_NAME = "iac-cloud"
 VERSION = "0.2.0"
@@ -27,6 +29,8 @@ PLUGINS = {
     "own-rules": "Flow and rules for creating, changing, deleting and querying AWS infrastructure.",
     "own-tools": "Flow and rules for AWS infrastructure work, plus inventory, verify, "
     "diff-baseline and whoami scripts.",
+    "own-rules-v2": "Flow and rules for creating, changing, deleting and querying AWS "
+    "infrastructure.",
 }
 
 
@@ -34,8 +38,8 @@ def tools_section() -> str:
     return (SRC / "TOOLS.md").read_text()
 
 
-def skill_text(with_tools: bool) -> str:
-    return (SRC / "SKILL.md").read_text().replace("{tools}", tools_section() if with_tools else "")
+def skill_text(with_tools: bool, src: Path = SRC) -> str:
+    return (src / "SKILL.md").read_text().replace("{tools}", tools_section() if with_tools else "")
 
 
 def _manifest(name: str) -> str:
@@ -58,8 +62,9 @@ def build(out: Path = OUT) -> None:
         skill_dir = root / "skills" / SKILL_NAME
         skill_dir.mkdir(parents=True)
         with_tools = name == "own-tools"
-        (skill_dir / "SKILL.md").write_text(skill_text(with_tools))
-        shutil.copyfile(SRC / "RULES.md", root / "RULES.md")
+        src = SRC_V2 if name == "own-rules-v2" else SRC
+        (skill_dir / "SKILL.md").write_text(skill_text(with_tools, src))
+        shutil.copyfile(src / "RULES.md", root / "RULES.md")
         if with_tools:
             shutil.copytree(
                 SRC / "scripts", root / "scripts", ignore=shutil.ignore_patterns("__pycache__")

@@ -78,7 +78,7 @@ def test_own_tools_ships_every_script_and_skill_references_it():
     assert not (PLUGINS / "own-rules" / "scripts").exists()
 
 
-@pytest.mark.parametrize("plugin", ["own-rules", "own-tools"])
+@pytest.mark.parametrize("plugin", ["own-rules", "own-tools", "own-rules-v2"])
 def test_plugin_manifest_is_valid(plugin):
     manifest = json.loads((PLUGINS / plugin / ".claude-plugin" / "plugin.json").read_text())
     assert manifest["name"] == plugin
@@ -87,7 +87,7 @@ def test_plugin_manifest_is_valid(plugin):
     assert manifest["author"]["name"]
 
 
-@pytest.mark.parametrize("plugin", ["own-rules", "own-tools"])
+@pytest.mark.parametrize("plugin", ["own-rules", "own-tools", "own-rules-v2"])
 def test_skill_has_frontmatter_and_no_harness_terms(plugin):
     text = _skill(plugin)
     assert text.startswith("---\nname: iac-cloud\ndescription: ")
@@ -103,6 +103,16 @@ def test_rules_file_is_shipped_identically_and_has_no_harness_terms():
     lowered = src.lower()
     for term in HARNESS_TERMS:
         assert term not in lowered, term
+
+
+def test_v2_ships_its_own_rules_and_no_tools():
+    src = (TOOLKIT / "src-v2" / "RULES.md").read_text()
+    assert (PLUGINS / "own-rules-v2" / "RULES.md").read_text() == src
+    assert src != (TOOLKIT / "src" / "RULES.md").read_text()
+    for term in HARNESS_TERMS:
+        assert term not in src.lower(), term
+    assert "CLAUDE_PLUGIN_ROOT" not in _skill("own-rules-v2")
+    assert not (PLUGINS / "own-rules-v2" / "scripts").exists()
 
 
 # --- scripts: --help -----------------------------------------------------
