@@ -70,8 +70,10 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 | E4 | Trava de custo (IAM) e task-416 como "bloqueio de permissão" | Própria | ABC [2] R.8/R.11 (relatar o impacto de falhas inevitáveis). Separada dos erros do agente, com totais com e sem ela. | Manter |
 | E5 | Opção B na AWS real do E3: o Lambda está bloqueado pela AWS na conta (caso 179333530400472, aberto em 30/10, até para o root, sem resposta da AWS até 09/11). O inventário do sweep trata `AccessDeniedException` **só** do Lambda como lista vazia, avisando no stderr; outro erro, ou o mesmo erro em outro serviço, continua abortando. `awsb-lambda-versioned-alias-update` sai de `configs/e3-agent-aws.toml` (30 → 29 tarefas) e segue só no Floci. | Própria | ABC [2] R.8/R.11 (relatar o impacto de falhas inevitáveis). O dataset não muda; muda o recorte da real. | Registrado em 09/11, antes do piloto e da matriz real. **Desvio declarado:** a real não cobre Lambda; o estrato `target` compara 29 tarefas. Nenhuma tarefa do piloto real usa Lambda. Se a AWS liberar antes da matriz, volta à lista de 30 e isto é anotado aqui. |
 | E6 | Recorte e máquina da matriz real do E3: 29 tarefas × 5 condições × Haiku/Sonnet × **N=1** (290 trajetórias, `configs/e3-agent-aws.toml` com `--reps 1`), em série. Roda no homelab (Windows, WSL2 Ubuntu 24.04 `Ubuntu-IAC`, Docker Engine próprio, amd64), e não no Mac (arm64), porque são ~20 h de relógio e o homelab fica ligado. A ordem do plano intercala modelos e condições por tarefa: se parar no meio, as tarefas já feitas estão pareadas. | Própria | S4 (N=1 na real é exploratório); ABC [2] T.4/T.6 (ambiente fixado: as imagens são construídas do mesmo Dockerfile, com versões fixadas). | Registrado em 09/11, antes da matriz real. **Desvios declarados:** (1) N=1 em vez de N=3 da config, pelo prazo do gate S9 (12/11): a leitura da real é exploratória (S4) e a comparação com o Floci usa a 1ª rep do Floci ou a maioria, declarado na análise. (2) Arquitetura e host diferentes dos do Floci e do piloto real (amd64/WSL × arm64/macOS); o smoke test no homelab (`query-sg-ssh-open`, check ok, sweep limpo) repetiu o piloto. |
-| E7 | Falha de infraestrutura na matriz real não conta como trajetória: um `final` com `AGENT_ERROR` cujo `final_text` traz `EAI_AGAIN` ("Can't reach the API server") vai para `events.discarded.jsonl` e a unidade é refeita pelo `agent-resume`. Incidente: o proxy `egress-proxy-aws` (Squid `6.13-25.04_beta`, sem restart policy) caiu às 23:08 (-03) de 09/11 com `FATAL: check failed: waiting()` (`HappyConnOpener.cc:226`), e as 121 trajetórias seguintes falharam sem chegar à API. | Própria | ABC [2] R.8/R.11 (relatar o impacto de falhas inevitáveis); T.6 (separar falha do ambiente de falha do agente). | Registrado em 10/11. O critério é a mensagem de erro de rede, não o resultado: as 121 com `AGENT_ERROR` no run eram todas `EAI_AGAIN`, inclusive uma que perdeu a conexão no meio (US$ 0,28). Backup em `events.jsonl.bak-20261110-proxy`. Proxy religado e matriz retomada às 10:28 de 10/11 (204 a rodar). Fix no código (restart policy + checar o proxy antes de cada trajetória) feito em 10/11 no Mac, junto com a limpeza do `.terraform` (o `rmtree` do host falhava calado em arquivos do container) e o diretório órfão no `agent-resume`; só vai para o homelab depois da matriz. Correção de infra: não muda a medida. Não cobre o proxy de pé sem internet (`ERR_PROXY_TUNNEL`, E8), que segue descartado à mão pelo mesmo critério. |
+| E7 | Falha de infraestrutura na matriz real não conta como trajetória: um `final` com `AGENT_ERROR` cujo `final_text` traz `EAI_AGAIN` ("Can't reach the API server") vai para `events.discarded.jsonl` e a unidade é refeita pelo `agent-resume`. Incidente: o proxy `egress-proxy-aws` (Squid `6.13-25.04_beta`, sem restart policy) caiu às 23:08 (-03) de 09/11 com `FATAL: check failed: waiting()` (`HappyConnOpener.cc:226`), e as 121 trajetórias seguintes falharam sem chegar à API. | Própria | ABC [2] R.8/R.11 (relatar o impacto de falhas inevitáveis); T.6 (separar falha do ambiente de falha do agente). | Registrado em 10/11. O critério é a mensagem de erro de rede, não o resultado: as 121 com `AGENT_ERROR` no run eram todas `EAI_AGAIN`, inclusive uma que perdeu a conexão no meio (US$ 0,28). Backup em `events.jsonl.bak-20261110-proxy`. Proxy religado e matriz retomada às 10:28 de 10/11 (204 a rodar). Fix no código (restart policy + checar o proxy antes de cada trajetória) feito em 10/11 no Mac, junto com a limpeza do `.terraform` (o `rmtree` do host falhava calado em arquivos do container) e o diretório órfão no `agent-resume`; só vai para o homelab depois da matriz. Correção de infra: não muda a medida. Não cobre o proxy de pé sem internet (`ERR_PROXY_TUNNEL`, E8), que segue descartado à mão pelo mesmo critério. **11/11:** fix levado ao homelab (`0100023`); piloto real `runs/20261111T122554-e3-pilot-aws` 4/4, conta limpa e nenhum `.terraform` restante com o timer `iac-tf-cleanup` já desligado; proxies com `unless-stopped` vindo do compose. |
 | E8 | Comparação Floci × real do E3. (1) A real não tem as tarefas ambíguas (`amb-*`/`clr-*` do E2) nem a task-118: o efeito "perguntar no ambíguo" é medido só no Floci, e a real mede se o toolkit atrapalha nas tarefas claras e quanto custa. A `awsb-move-s3-contents-within-bucket` (ambígua por acaso, L5 da agenda) é relatada à parte. (2) A matriz Floci de 06/11 usou o toolkit anterior à correção do passo 5 (task-118); a real usa o texto corrigido (commit `93e3f9c`). Para comparar o mesmo toolkit, o Floci roda de novo **só nas 3 condições com skill**, Haiku e Sonnet, **N=1** (igual à real), 35 tarefas (210 trajetórias, `configs/e3-skillfix.toml`). `none` e `aws-core` não dependem do texto da skill e ficam com a 1ª rep da matriz de 06/11. | Própria | ABC [2] T.6 (ambiente e artefato fixados entre alvos); S4 (N=1 exploratório). | Registrado em 10/11, antes do run e antes de ver a real completa (vistas só 108 de 290 parciais, para testar o pipeline). A matriz de 06/11 continua no registro como "toolkit anterior"; não se escolhe entre as duas pelo resultado: a comparação Floci × real usa a nova, e a de 06/11 é relatada como versão anterior. **Limite:** `none`/`aws-core` são de outro dia (deriva do gateway). **10/11, durante o run:** a internet do Mac caiu e 13 trajetórias saíram `AGENT_ERROR` com `ERR_PROXY_TUNNEL` ("Couldn't connect through your proxy"), sem chegar à API. Mesmo critério do E7 (mensagem de erro de rede, não o resultado): foram para `events.discarded.jsonl` (backup `events.jsonl.bak-20261110-net`, pastas em `runs/20261110T144440-e3-skillfix-discarded/`) e refeitas pelo `agent-resume`. Nenhum outro `AGENT_ERROR` no run. |
+| E9 | task-130 na AWS real (E3) é bloqueio da conta, não erro do agente. Ela falha nas 10 células da matriz real: em 8, o `RunInstances` volta `Blocked: This account is currently blocked and not recognized as a valid account`; nas 2 do Haiku em `none` e `own-tools`, o agente para antes, em `iam:CreateRole` negado ao `iac-harness`. Em 28/10, antes do caso de fraude (179333530400472, aberto em 30/10), a mesma tarefa passou na real. Tratamento igual ao da task-416 (E4): fica no run e nos totais, e o relato traz os totais **com e sem** ela. Não se refaz nem se tira do pareamento. | Própria | ABC [2] R.8/R.11 (relatar o impacto de falhas inevitáveis); T.6 (falha do ambiente × do agente). | Registrado em 11/11, **depois** de ver a matriz real (declarado): achado ao investigar a única discordância sistemática Floci × real. O critério é a mensagem de erro da AWS, não o resultado. Como falha nas 10 células, não muda nenhuma comparação entre condições; muda as taxas (n 29 → 28) e a concordância Floci × real (165/180 → 165/170). Só a task-130 traz a mensagem nas 290 trajetórias. Mostra que a limitação da conta pelo caso de fraude vai além do Lambda (E5). |
+| E10 | Agenda E8 (pedido leigo): o pedido em linguagem leiga derruba o acerto, e a regra "calibre ao nível da pessoa" (`regras-achados.md`, linha 2, hoje [E]) muda isso? 10 tarefas claras do Floci, sorteadas com semente (T1) entre as do estrato `clear` do E3, fora as ambíguas, as de premissa falsa e a task-118. Cada uma ganha uma paráfrase leiga com **o mesmo check**: mantém os identificadores e valores que o check lê (nomes, números) e o nome do serviço como aparece no console; troca o jargão por uma descrição do efeito (ex.: PITR → "poder voltar a tabela a um momento anterior"); não acrescenta nem tira informação. Condições `none` e `own-rules`, Haiku, Floci, técnica × leiga na mesma corrida, N=3 (10 × 2 × 2 × 3 = 120 trajetórias). Desfecho: sucesso do E3 (P6); efeito do pedido leigo = leiga × técnica pareado por tarefa, em cada condição. | Própria | Agenda §5, E8 (L6); Sclar [10] (sensibilidade ao prompt); ABC [2] R.5 (construto). | Registrado em 11/11, antes de escrever as paráfrases e antes do run; roda depois do gate S9 e antes do congelamento (S10). As paráfrases são lidas pelo usuário antes do run. **Limites:** paráfrases de autoria nossa (T5), uma redação por tarefa (D3), só Floci, só Haiku. |
 
 ### Estatística
 
@@ -463,6 +465,65 @@ validação humana; erros comuns aos dois não aparecem.
   O que pesa é o enunciado vago, não o tamanho da infraestrutura.
 - O alvo é só o Floci; o estrato `target` fica para quando houver a real.
 
+### E3: matriz na AWS real (09–11/11/2026)
+
+Decisões P6, E5–E9. Run `runs/20261109T163420-e3-agent-aws` (homelab, `configs/e3-agent-aws.toml`,
+`--reps 1`): 29 tarefas × 5 condições × Haiku/Sonnet × N=1 = 290/290 `DONE`, nenhuma falha do
+harness, nenhum `AGENT_ERROR` depois das descartadas do E7. Terminou às 23:23 de 10/11; o proxy
+caiu de novo às 20:11 e a restart policy o religou sem perda. Toolkit: o texto corrigido do passo 5
+(os plugins construídos já o tinham no `ba45db4`, o commit levado ao homelab). Juiz `e3-judge-v2`
+nas 290 (11/11). Todas as tarefas da real são `act` (E8): perguntar conta como falha.
+
+| Modelo | Condição | Sucesso (sem task-130) | Perguntou | Skill acionada | Releu o estado | Tokens (média) |
+|---|---|---|---|---|---|---|
+| Haiku | none | 25/29 (25/28) | 2 | — | 21/25 | 166k |
+| Haiku | aws-core | 22/29 (22/28) | 3 | 20/29 | 17/22 | 250k |
+| Haiku | own-skill-only | 24/29 (24/28) | 4 | 11/29 | 22/24 | 186k |
+| Haiku | own-rules | 23/29 (23/28) | 5 | 29/29 | 21/21 | 211k |
+| Haiku | own-tools | 23/29 (23/28) | 5 | 29/29 | 22/22 | 232k |
+| Sonnet | none | 25/29 (25/28) | 2 | — | 17/23 | 117k |
+| Sonnet | aws-core | 21/29 (21/28) | 4 | 24/29 | 18/24 | 172k |
+| Sonnet | own-skill-only | 25/29 (25/28) | 3 | 26/29 | 21/24 | 151k |
+| Sonnet | own-rules | 24/29 (24/28) | 3 | 29/29 | 23/24 | 145k |
+| Sonnet | own-tools | 24/29 (24/28) | 4 | 29/29 | 22/22 | 186k |
+
+"Releu" = `verified_state` entre as que chegaram ao estado certo. `own-tools` chamou `verify.py` em
+24/29 nos dois modelos. Colateral 10/10 em todas as células, menos `none` e `own-rules` do Haiku
+(9/10, ambas em `mod-sqs-retention`). O custo em US$ é estimado (o Claude Code não reconhece o ID do
+gateway) e não acompanha os tokens; a comparação de custo usa os tokens.
+
+- **Sucesso total:** nenhuma condição difere de `none` (McNemar pela tarefa, Holm ≥ 0,5). Diferença
+  média × `none`: Haiku −0,10 (`aws-core`), −0,07, −0,03, −0,07; Sonnet −0,14, −0,03, 0,00, −0,03.
+  O único IC do bootstrap que não cruza o zero é `aws-core` × `none` no Sonnet (−0,28 a −0,03): ele
+  perde 4 tarefas que `none` acerta e não ganha nenhuma.
+- **Onde o toolkit perde: pergunta nas claras.** Fora a task-130, as falhas do toolkit próprio são
+  quase todas perguntas: task-231 ("configure um TTL", sem tabela) e task-367 ("Lightsail que cria
+  um banco gerenciado") repetem o achado do Floci (pedido vago sem recurso a procurar);
+  `awsb-move-s3-contents-within-bucket` (caminho `sourc/` errado de propósito) é a ambígua por acaso
+  (E8), onde perguntar é defensável; na task-416 (trava de custo, E4) o Haiku perguntou em
+  `own-rules` e `own-tools` em vez de escolher a opção barata, que `none` escolheu. Todas as 10
+  células perguntaram na task-230 (premissa falsa).
+- **Onde o toolkit ganha:** task-069 (Kinesis Video): `none` e `aws-core` escreveram o Terraform e
+  pararam sem `apply` nos dois modelos (0/4); as 3 condições do toolkit próprio aplicaram (6/6).
+- **A regra aciona a skill (replica o Floci):** Haiku 11/29 só com a skill × 29/29 com a regra no
+  system prompt; Sonnet aciona sozinho (26/29).
+- **Releitura:** com o toolkit, o agente confere o estado depois de agir em quase todas
+  (`own-tools` 22/22 nos dois modelos) × 17–21 em `none`. Não muda o sucesso.
+- **Tokens:** +12–51% (Haiku) e +24–59% (Sonnet) × `none`; `aws-core` e `own-tools` são os mais caros.
+- **Por categoria:** remover 3/3 e consultar 2/2 em todas as células; modificar 9–11/11; criar
+  concentra as perdas (5–10/13).
+- **Floci × real** (E8; referência = `skillfix` nas 3 condições com skill + 1ª rep de 06/11 em
+  `none`/`aws-core`; `agent-metrics --compare`): 165/180 pares (tarefa, condição, modelo) concordam
+  no sucesso. 10 das 15 discordâncias são a task-130 (E9): sem ela, 165/170. As outras 5:
+  `mod-dynamodb-pitr` e `mod-sg-https` (`own-skill-only`, Haiku, uma para cada lado), task-231
+  (`aws-core`, Sonnet) e task-234 (`aws-core`, os dois modelos), passando no Floci e falhando na real.
+- **Leitura:** na real, o toolkit próprio não melhora o acerto nas tarefas claras e também não piora
+  de forma significativa; o custo é perguntar mais em pedido vago e gastar mais tokens. O `aws-core`
+  é a condição com a pior tendência. O ganho principal do toolkit, perguntar no ambíguo, **só foi
+  medido no Floci**: a real não tem ambíguas (E8).
+- **Limites:** N=1 (S4, exploratório); juiz conferido só por outro modelo no Floci, não na real;
+  conta limitada pela AWS (E5, E9); estratos e tarefas de autoria nossa (T5, T8).
+
 ## 4. Plano
 
 **Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
@@ -482,6 +543,8 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - AWS real do E3 (06/11, com o usuário): esperar a liberação do Lambda (caso 179333530400472) até 09/11. Se não sair, opção B: o sweep tolera `AccessDenied` só no Lambda, registrado como desvio, e `awsb-lambda-versioned-alias-update` sai da real. Antes da matriz real, avisar a AWS no caso que o harness cria e apaga usuários IAM.
 - 09/11: a AWS não liberou o Lambda (caso ainda em "Ação do cliente concluída", sem resposta desde 06/11). Seguimos com a opção B (E5).
 - 09/11: piloto real feito (4/4, conta limpa) e AWS avisada no caso. Matriz real registrada (E6): 290 trajetórias, N=1, no homelab.
+- 11/11: matriz real concluída (290/290) e julgada (§3, "E3: matriz na AWS real"). task-130 declarada como bloqueio da conta (E9), depois de ver os dados.
+- 11/11 (com o usuário): agenda E8 (pedido leigo) registrada como E10, para rodar depois do gate S9 e antes do congelamento. Agenda E5–E7 ficam como trabalho futuro.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
