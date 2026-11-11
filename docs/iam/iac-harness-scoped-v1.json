@@ -1,0 +1,136 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "TaskServicesUsEast1",
+            "Effect": "Allow",
+            "Action": [
+                "s3:*",
+                "dynamodb:*",
+                "ec2:*",
+                "sqs:*",
+                "sns:*",
+                "secretsmanager:*",
+                "kms:*",
+                "rds:*",
+                "lightsail:*",
+                "kafka:*",
+                "tag:GetResources",
+                "tag:GetTagKeys",
+                "tag:GetTagValues",
+                "sts:GetCallerIdentity",
+                "logs:*",
+                "cloudwatch:Describe*",
+                "cloudwatch:Get*",
+                "cloudwatch:List*",
+                "ssm:GetParameter",
+                "ssm:GetParameters"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestedRegion": "us-east-1"
+                }
+            }
+        },
+        {
+            "Sid": "IamReadForTerraform",
+            "Effect": "Allow",
+            "Action": [
+                "iam:Get*",
+                "iam:List*",
+                "iam:CreateServiceLinkedRole"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "IamWriteOnlyTaskPrefixes",
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateUser",
+                "iam:DeleteUser",
+                "iam:TagUser",
+                "iam:UntagUser",
+                "iam:CreateGroup",
+                "iam:DeleteGroup",
+                "iam:AddUserToGroup",
+                "iam:RemoveUserFromGroup",
+                "iam:CreateAccessKey",
+                "iam:DeleteAccessKey",
+                "iam:UpdateAccessKey",
+                "iam:PutUserPolicy",
+                "iam:DeleteUserPolicy",
+                "iam:AttachUserPolicy",
+                "iam:DetachUserPolicy",
+                "iam:AttachGroupPolicy",
+                "iam:DetachGroupPolicy"
+            ],
+            "Resource": [
+                "arn:aws:iam::931493484341:user/del-*",
+                "arn:aws:iam::931493484341:user/mod-*",
+                "arn:aws:iam::931493484341:group/del-*",
+                "arn:aws:iam::931493484341:group/mod-*"
+            ]
+        },
+        {
+            "Sid": "OnlyReadOnlyManagedPolicy",
+            "Effect": "Deny",
+            "Action": [
+                "iam:AttachUserPolicy",
+                "iam:AttachGroupPolicy"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "ArnNotEquals": {
+                    "iam:PolicyARN": "arn:aws:iam::aws:policy/ReadOnlyAccess"
+                }
+            }
+        },
+        {
+            "Sid": "CheapEc2Only",
+            "Effect": "Deny",
+            "Action": "ec2:RunInstances",
+            "Resource": "arn:aws:ec2:*:*:instance/*",
+            "Condition": {
+                "StringNotEquals": {
+                    "ec2:InstanceType": [
+                        "t2.micro",
+                        "t3.micro",
+                        "t2.nano",
+                        "t3.nano"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "CheapRdsOnly",
+            "Effect": "Deny",
+            "Action": [
+                "rds:CreateDBInstance",
+                "rds:ModifyDBInstance"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringNotEquals": {
+                    "rds:DatabaseClass": [
+                        "db.t3.micro",
+                        "db.t4g.micro"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "NoLongTermPurchases",
+            "Effect": "Deny",
+            "Action": [
+                "ec2:Purchase*",
+                "ec2:AllocateHosts",
+                "ec2:*CapacityReservation*",
+                "rds:PurchaseReservedDBInstancesOffering",
+                "lightsail:CreateDomain",
+                "lightsail:RegisterDomain*"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
