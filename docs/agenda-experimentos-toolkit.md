@@ -5,6 +5,12 @@ artigos lidos na Residência e deriva: (1) as lacunas do que testamos; (2) os ex
 faltam; (3) o que o toolkit próprio deve ter. Números detalhados no `registro-metodologico.md`
 (§3, incluindo as análises de 29/10). A dissecação do Agent Toolkit for AWS e as regras R1–R12 estão nos Anexos A e B.
 
+> **Status em 11/11/2026.** Esta agenda é o plano de 29/10 e não foi atualizada depois. Feitos: E1,
+> E2, E4 e E3 (Floci e AWS real). O E8 (pedido leigo) virou a decisão **E10** do registro e roda
+> antes do S10. E5–E7 ficaram como trabalho futuro. Depois vieram E11/E12 (ambíguas na real e
+> toolkit v2), que não estão aqui. Os números E5–E12 do registro **não** são os desta agenda: o
+> mapa está em `registro-metodologico.md`, seção "Experimentos".
+
 ## 1. Objetivo final
 
 Um fluxo/skill que ajude um agente a **manter a nuvem de uma pessoa leiga**: criar, mudar,

@@ -1,14 +1,29 @@
 # iac-agent-eval-harness
 
-Harness para medir o ganho incremental de feedback (validate, plan, OPA e sandbox Floci) no loop de
-um agente que gera Terraform, usando o IaC-Eval v2. O protocolo completo está em
-[docs/protocolo.md](docs/protocolo.md).
+Harness para avaliar agentes que mantêm infraestrutura AWS. Pergunta: em que casos usar cada forma
+(Terraform, AWS CLI, boto3), por tipo de caso e dificuldade. O projeto fecha com um toolkit
+próprio (skill + regras) para ajudar agentes a manter a nuvem de pessoas leigas, com cada regra
+ligada a um achado ([docs/regras-achados.md](docs/regras-achados.md)).
 
 ## Estado
 
-Harness v1: dataset IaC-Eval v2, backend Anthropic, toolchain Docker, verificadores (validate, plan,
-OPA), executor Floci com reset por restart, procedência registrada (git, imagens, providers) e CLI
-(`prevalidate`, `run`, `metrics`, com controle pass@k).
+O projeto teve três fases. Todas usam o mesmo harness (emulador Floci ou AWS real, toolchain em
+Docker, procedência registrada em cada run):
+
+1. **Feedback no loop (Semanas 4–6):** quanto validate, plan, OPA e sandbox ajudam um agente que
+   gera Terraform (IaC-Eval v2, condições A/B/C). Protocolo em [docs/protocolo.md](docs/protocolo.md).
+2. **Modalidades (Semanas 6–8):** a mesma tarefa em Terraform, CLI e boto3, no Floci e na AWS
+   real. Nenhuma forma domina; a forma muda o custo em tokens, não o acerto.
+3. **Toolkit (Semanas 8–9):** experimentos E1–E4 e E11/E12, incluindo o Claude Code de verdade
+   com 5 condições de toolkit. O toolkit troca chute por pergunta nos pedidos ambíguos e não perde
+   nas claras; a v2 (`toolkit/src-v2/`) substitui a v1.
+
+Onde ler:
+
+- Decisões de método e resultados: [docs/registro-metodologico.md](docs/registro-metodologico.md).
+  A seção "Experimentos" mapeia experimento → config → run.
+- Configs por fase: [configs/README.md](configs/README.md).
+- Os runs ficam em `runs/` (fora do git).
 
 ## Uso
 

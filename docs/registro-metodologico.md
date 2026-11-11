@@ -12,6 +12,37 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 - **Ação:** **Manter**; **Reanalisar** (os dados existentes bastam, custo zero); **Re-rodar**
   (precisa de run novo); **Declarar** (só escrever como limitação).
 
+## Experimentos
+
+**Atenção à numeração.** "E" nomeia duas coisas diferentes neste projeto:
+
+- **Experimentos E1–E4** vêm da agenda (`agenda-experimentos-toolkit.md`, §5) e dão nome às
+  seções do §3.
+- **Decisões E1–E12** são as linhas da tabela "Ambiente" (§1): E1–E4 são decisões de ambiente,
+  E5–E9 são decisões tomadas durante o E3, e E10–E12 são experimentos novos, registrados como
+  decisão antes do run.
+
+Por isso "E3" é ao mesmo tempo um experimento (o agente real) e uma decisão de ambiente ("AWS real
+só num subconjunto"), e "E8" é uma decisão do E3 (Floci com o toolkit corrigido), enquanto na
+agenda E8 é o pedido leigo, que aqui virou a decisão E10. Os números ficam como estão, porque
+aparecem em commits e runs. A tabela abaixo é a referência; no texto, "decisão E8" quer dizer a
+linha da tabela.
+
+| Experimento | Pergunta | Decisões | Config | Run(s) | Resultado (§3) |
+|---|---|---|---|---|---|
+| Modalidades (Sem. 6–8) | Terraform, AWS CLI ou boto3: qual forma, em que caso? | §1 inteiro, A1–A4 | `modality-*.toml` | `20261020T184924`, `20261027T150905`, `20261028T*`, `20261029T003159` | Nenhuma forma domina; a forma muda o custo em tokens, não o acerto |
+| E1 (agenda) | Os agentes mexem no que não deviam? | O7 | nenhuma (`modality-replay`) | `20261029T19*-replay-*` | Nenhum efeito colateral em 180 trajetórias |
+| E2 (agenda) | O agente pergunta quando deve? | P4, T7 | `e2-ask-haiku.toml` | `20261030T131533` | Perguntou em 49/54 ambíguas e 0/54 claras; os chutes são em remoção e em premissa falsa |
+| E4 (agenda) | Sem dica, o agente escolhe a forma mais barata? | P5 | `e4-free-haiku.toml` | `20261030T153918` | Escolhe pelo tipo de caso (Terraform para criar e modificar, CLI para consultar) |
+| E3 Floci (agenda) | Toolkit próprio × agente real (Claude Code), 5 condições | P6, T8, decisão E8 | `e3-agent*.toml`, `e3-skillfix.toml` | `20261106T143311`, `20261106T170449`, `20261110T144440` | Pergunta nas ambíguas (18/18 com a skill × 10–12/18 sem); não ganha no total |
+| E3 real (agenda) | O mesmo na AWS real | P6, decisões E5–E9 | `e3-agent-aws.toml` | `20261109T163420` | Nas claras, não ganha nem perde de forma significativa |
+| E11 (decisão) | Ambíguas na AWS real, toolkit v1 × v2 | E11 | `e11-amb-aws.toml` | `20261111T132723` | `none` 8/12 × v1 12/12 × v2 11/12 |
+| E12 (decisão) | Toolkit v2 nas 29 claras da real | E12 | `e12-v2-aws.toml` | `20261111T162415` | v2 52/58 × v1 47/58; o ganho vem das 3 tarefas que originaram a v2. A v2 substitui a v1 |
+| E10 (decisão) | O pedido leigo derruba o acerto? | E10 | ainda não existe | ainda não rodou | Roda antes do S10 |
+
+Agenda E5–E7 (mais tarefas de consulta e remoção, ciclo de vida, drift) ficaram como trabalho
+futuro. Índice completo das configs: `configs/README.md`.
+
 ## 1. Decisões
 
 ### Desenho
