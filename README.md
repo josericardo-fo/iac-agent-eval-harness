@@ -141,8 +141,9 @@ uv run iac-harness modality-metrics runs/<id>
 ## E3: agente real (Claude Code headless em container)
 
 O Claude Code (`claude -p`) age sozinho no Floci ou na AWS real, sob 5 condições de toolkit
-(`none`, `aws-core`, `own-skill-only`, `own-rules`, `own-tools`). Código em
-`src/iac_harness/agentic/`; o toolkit próprio sai de `toolkit/src/` com
+(`none`, `aws-core`, `own-skill-only`, `own-rules`, `own-tools`), mais `own-rules-v2` desde o
+E11/E12 (texto em `toolkit/src-v2/`; pela regra de decisão do registro, a v2 substitui a v1). Código
+em `src/iac_harness/agentic/`; o toolkit próprio sai de `toolkit/src/` e `toolkit/src-v2/` com
 `uv run python toolkit/build.py`.
 
 ```bash

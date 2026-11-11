@@ -132,7 +132,7 @@ def test_mounts_are_only_work_rw_and_condition_dirs_ro(host_env, tmp_path, condi
     assert len(others) == {
         "none": 0, "aws-core": 2, "own-skill-only": 1, "own-rules": 2, "own-tools": 2,
         "own-rules-v2": 2,
-    }[condition]
+    }[condition]  # fmt: skip
     joined = " ".join(argv)
     assert ".claude" not in joined and ".aws" not in joined
     assert str(Path.home()) not in " ".join(mounts)

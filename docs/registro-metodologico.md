@@ -522,14 +522,63 @@ gateway) e não acompanha os tokens; a comparação de custo usa os tokens.
 - **Leitura:** na real, o toolkit próprio não melhora o acerto nas tarefas claras e também não piora
   de forma significativa; o custo é perguntar mais em pedido vago e gastar mais tokens. O `aws-core`
   é a condição com a pior tendência. O ganho principal do toolkit, perguntar no ambíguo, **só foi
-  medido no Floci**: a real não tem ambíguas (E8).
+  medido no Floci**: a matriz real não tem ambíguas (E8). O E11 mediu isso na real depois (abaixo).
 - **Conta e custo AWS (11/11, root):** inventário (`aws_sweep.py inventory`, 37 categorias) sem nada
   fora de `runs/aws-baseline.json`; o Lambda segue negado (E5). Cost Explorer, novembro até 11/11
   (estimado; o dia 11 ainda não aparece): **US$ 0,32** (RDS 0,13; EC2-Other 0,09; Cost Explorer 0,05;
   imposto 0,02; S3 0,02; Secrets Manager 0,01), US$ 0,27 deles em 10/11. O custo da matriz real é quase
   todo de API do modelo (estimado pelo harness, ~US$ 124), não da AWS.
-- **Limites:** N=1 (S4, exploratório); juiz conferido só por outro modelo no Floci, não na real;
-  conta limitada pela AWS (E5, E9); estratos e tarefas de autoria nossa (T5, T8).
+- **Limites:** N=1 (S4, exploratório); juiz conferido por outro modelo (no Floci e, desde 11/11,
+  no E11/E12); conta limitada pela AWS (E5, E9); estratos e tarefas de autoria nossa (T5, T8).
+
+### E11/E12: ambíguas na AWS real e toolkit v2 (11/11/2026)
+
+Decisões E11 e E12. O gate (`runs/20261111T125751-modality-prevalidate`) deu 10/10 válidas.
+Runs no homelab, em série: `runs/20261111T132723-e11-amb-aws` (60/60 `DONE`) e
+`runs/20261111T162415-e12-v2-aws` (58: 57 `DONE`, 1 `TIMEOUT` do agente, task-367 com Haiku, estado
+certo e juiz `partial`). Nenhuma falha do harness. Juiz `e3-judge-v2` nas 118. Custo estimado pelo
+harness: US$ 24,47 + US$ 24,69.
+
+| Run | Modelo | none | own-rules (v1) | own-rules-v2 |
+|---|---|---|---|---|
+| E11 ambíguas (`ask`) | Haiku | 4/6 | 6/6 | 6/6 |
+| E11 ambíguas (`ask`) | Sonnet | 4/6 | 6/6 | 5/6 |
+| E11 claras (`act`) | os dois | 8/8 | 8/8 | 8/8 |
+| E12 claras (v1 e `none` do E6) | Haiku | 25/29 | 23/29 | 25/29 |
+| E12 claras (v1 e `none` do E6) | Sonnet | 25/29 | 24/29 | 27/29 |
+
+- **Regra de decisão (E11):** ambíguas somando os modelos, v2 11/12 contra v1 12/12 (o mínimo
+  exigido era v1 − 1 = 11); claras do E12, v2 52/58 contra v1 47/58 (≥ v1). **A v2 substitui a
+  v1**, no limite pelo lado das ambíguas.
+- **Sobreajuste (declarado no E11):** sem task-231, task-367 e task-416, as claras empatam (v2 47/52,
+  v1 47/52, `none` 45/52). Todo o ganho da v2 nas claras vem das 3 tarefas que a originaram. O teste
+  fora da amostra (as 10 do E11) deu v2 1 abaixo da v1: `amb-sqs-retention` com Sonnet, em que o
+  agente escolheu a retenção e aplicou sem perguntar.
+- **O toolkit pergunta no ambíguo também na real:** `none` 8/12 (chutou em `amb-s3-versioning` nos
+  dois modelos, em `amb-sg-https` com Haiku e em `amb-sqs-retention` com Sonnet) × v1 12/12 × v2
+  11/12. Isso replica o Floci (E3, ambíguas 18/18 com a skill acionada). Nas claras do E11, nenhuma
+  condição perguntou a mais (8/8).
+- **Estatística do P6 (E12 pareado com o E6, por tarefa):** v2 × v1: Haiku +2 (McNemar p = 0,5),
+  Sonnet +3 (p = 0,25), ICs do bootstrap [0; +0,17] e [0; +0,21]. v2 × `none`: Haiku 2 × 2 (p = 1),
+  Sonnet +2 (p = 0,5). Nada significativo.
+- **Onde a v2 muda o resultado:** task-416 (trava de custo) passa nos dois modelos (v1 0/2); task-367
+  passa nos dois (v1 0/2); task-231 passa com Sonnet e continua pergunta com Haiku. Perguntas nas
+  claras: Haiku 3 (v1 5), Sonnet 1 (v1 3). A task-230 (premissa falsa) continua pergunta nos dois e
+  a task-130 continua bloqueada pela conta (E9). `awsb-move-s3-contents-within-bucket` com Haiku
+  pergunta, como na v1.
+- **Tokens (média por trajetória, E12):** Haiku 202k (v1 211k, `none` 166k); Sonnet 152k (v1 145k,
+  `none` 117k). A v2 custa o mesmo que a v1.
+- **Conferência do juiz (11/11, mesmo método de 06/11):** um Opus 5.5 sem acesso aos vereditos
+  (subagente novo, ids anônimos, sem condição nem modelo) leu as 60 do E11 e uma amostra de 30 do
+  E12 (`--seed 20261111`), em `judge_sample_opus.csv` de cada run. `asked` 60/60 e 30/30; `kind`
+  60/60 e 27/30. As 3 divergências são entre `done` e `done_with_followup`, que não mudam `asked`
+  nem `success`.
+- **Leitura:** na real, o toolkit troca chute por pergunta nos pedidos ambíguos, como no Floci. A v2
+  tira as perguntas a mais em pedidos de criação sem alvo e na trava de custo sem perder isso de
+  forma visível. O ganho nas claras está nas tarefas que a motivaram.
+- **Limites:** N=1 (S4); a v2 foi escrita olhando 3 falhas do E6; a v1 e o `none` do E12 são de outro
+  dia (deriva do gateway e da AWS); juiz conferido por outro modelo da mesma família, sem leitura
+  humana; 6 ambíguas de autoria nossa (T5).
 
 ## 4. Plano
 
@@ -552,6 +601,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - 09/11: piloto real feito (4/4, conta limpa) e AWS avisada no caso. Matriz real registrada (E6): 290 trajetórias, N=1, no homelab.
 - 11/11: matriz real concluída (290/290) e julgada (§3, "E3: matriz na AWS real"). task-130 declarada como bloqueio da conta (E9), depois de ver os dados.
 - 11/11 (com o usuário): agenda E8 (pedido leigo) registrada como E10, para rodar depois do gate S9 e antes do congelamento. Agenda E5–E7 ficam como trabalho futuro.
+- 11/11: E11 e E12 registrados antes do run, rodados no homelab e julgados (§3, "E11/E12"). Pela regra de decisão, a v2 substitui a v1. Juiz conferido de novo às cegas.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
