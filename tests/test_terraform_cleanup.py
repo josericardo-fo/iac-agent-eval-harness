@@ -1,4 +1,4 @@
-"""remove_terraform_dir: rmtree primeiro, fallback via container, nunca levanta."""
+"""remove_terraform_dir: rmtree primeiro, fallback via container, nunca levanta; pega subpastas."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class _FakeToolchain:
         if self.raises:
             raise OSError("docker indisponível")
         if self.really_remove:
-            _REAL_RMTREE(Path(workdir) / ".terraform")
+            _REAL_RMTREE(Path(workdir) / args[-1].removeprefix("/work/"))
         return subprocess.CompletedProcess(args, 0, "", "")
 
 
@@ -104,6 +104,36 @@ def test_timeout_does_not_raise(tmp_path, monkeypatch, capsys):
 
     remove_terraform_dir(tmp_path, _Slow())
     assert "warning" in capsys.readouterr().err
+
+
+def test_nested_terraform_dirs_are_removed(tmp_path):
+    # o agente pode rodar o Terraform numa subpasta de work/ (task-234 no E12: 830 MB esquecidos)
+    _make_tf_dir(tmp_path)
+    (tmp_path / "vpc").mkdir()
+    _make_tf_dir(tmp_path / "vpc")
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    _make_tf_dir(tmp_path / "a" / "b")
+    remove_terraform_dir(tmp_path, _FakeToolchain())
+    assert not list(tmp_path.rglob(".terraform"))
+    assert (tmp_path / "vpc" / "terraform.tfstate").exists()
+
+
+def test_nested_fallback_uses_relative_container_path(tmp_path, monkeypatch):
+    (tmp_path / "vpc").mkdir()
+    _make_tf_dir(tmp_path / "vpc")
+    _stub_rmtree_noop(monkeypatch)
+    tc = _FakeToolchain()
+    remove_terraform_dir(tmp_path, tc)
+    assert tc.calls == [(["rm", "-rf", "/work/vpc/.terraform"], tmp_path)]
+    assert not (tmp_path / "vpc" / ".terraform").exists()
+
+
+def test_nested_still_present_warns_with_its_path(tmp_path, monkeypatch, capsys):
+    (tmp_path / "vpc").mkdir()
+    _make_tf_dir(tmp_path / "vpc")
+    _stub_rmtree_noop(monkeypatch)
+    remove_terraform_dir(tmp_path, _FakeToolchain(really_remove=False))
+    assert str(tmp_path / "vpc" / ".terraform") in capsys.readouterr().err
 
 
 def test_missing_dir_is_a_noop(tmp_path):

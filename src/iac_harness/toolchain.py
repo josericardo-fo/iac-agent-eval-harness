@@ -186,19 +186,33 @@ class Toolchain:
         return out
 
 
-def remove_terraform_dir(path: Path, toolchain: Toolchain | None = None) -> None:
-    """Remove `<path>/.terraform` (cópia do provider, ~840 MB); nunca levanta.
+def _terraform_dirs(root: Path) -> list[Path]:
+    """Todos os `.terraform` sob `root`, inclusive em subpastas, sem descer neles nem em links."""
+    found = []
+    for dirpath, dirnames, _ in os.walk(root):
+        if ".terraform" in dirnames:
+            found.append(Path(dirpath) / ".terraform")
+            dirnames.remove(".terraform")
+    return sorted(found)
 
+
+def remove_terraform_dir(path: Path, toolchain: Toolchain | None = None) -> None:
+    """Remove todo `.terraform` sob `path` (cópia do provider, ~840 MB cada); nunca levanta.
+
+    O agente pode rodar o Terraform numa subpasta de `work/`, então a busca é recursiva.
     Em Docker nativo no Linux os arquivos criados pelo container mantêm o dono (root/agent) e o
     `rmtree` do host falha em silêncio; nesse caso apaga de dentro de um container (root da imagem).
     Se ainda existir, avisa no stderr: a limpeza não pode mudar o resultado de uma trajetória.
     """
-    target = Path(path) / ".terraform"
-    shutil.rmtree(target, ignore_errors=True)
-    if target.exists() and toolchain is not None and toolchain.mode == "docker":
-        try:
-            toolchain.run(["rm", "-rf", "/work/.terraform"], Path(path))
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            print(f"warning: falha ao remover {target} via container: {exc}", file=sys.stderr)
-    if target.exists():
-        print(f"warning: não foi possível remover {target} (disco pode encher)", file=sys.stderr)
+    root = Path(path)
+    for target in _terraform_dirs(root):
+        shutil.rmtree(target, ignore_errors=True)
+        if target.exists() and toolchain is not None and toolchain.mode == "docker":
+            rel = target.relative_to(root).as_posix()
+            try:
+                toolchain.run(["rm", "-rf", f"/work/{rel}"], root)
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                print(f"warning: falha ao remover {target} via container: {exc}", file=sys.stderr)
+        if target.exists():
+            msg = f"warning: não foi possível remover {target} (disco pode encher)"
+            print(msg, file=sys.stderr)
