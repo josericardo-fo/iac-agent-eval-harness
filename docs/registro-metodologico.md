@@ -521,6 +521,11 @@ gateway) e não acompanha os tokens; a comparação de custo usa os tokens.
   de forma significativa; o custo é perguntar mais em pedido vago e gastar mais tokens. O `aws-core`
   é a condição com a pior tendência. O ganho principal do toolkit, perguntar no ambíguo, **só foi
   medido no Floci**: a real não tem ambíguas (E8).
+- **Conta e custo AWS (11/11, root):** inventário (`aws_sweep.py inventory`, 37 categorias) sem nada
+  fora de `runs/aws-baseline.json`; o Lambda segue negado (E5). Cost Explorer, novembro até 11/11
+  (estimado; o dia 11 ainda não aparece): **US$ 0,32** (RDS 0,13; EC2-Other 0,09; Cost Explorer 0,05;
+  imposto 0,02; S3 0,02; Secrets Manager 0,01), US$ 0,27 deles em 10/11. O custo da matriz real é quase
+  todo de API do modelo (estimado pelo harness, ~US$ 124), não da AWS.
 - **Limites:** N=1 (S4, exploratório); juiz conferido só por outro modelo no Floci, não na real;
   conta limitada pela AWS (E5, E9); estratos e tarefas de autoria nossa (T5, T8).
 
