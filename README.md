@@ -25,6 +25,24 @@ Onde ler:
 - Configs por fase: [configs/README.md](configs/README.md).
 - Os runs ficam em `runs/` (fora do git).
 
+## Instalar o toolkit no Claude Code
+
+O toolkit distribuído é o plugin `iac-cloud`, com o mesmo texto da condição `own-rules-v2`
+medida no E11/E12 (um teste garante isso). Para instalar:
+
+```bash
+claude plugin marketplace add josericardo-fo/iac-agent-eval-harness
+claude plugin install iac-cloud@iac-cloud-toolkit
+```
+
+Ou, numa sessão: `/plugin install iac-cloud --marketplace josericardo-fo/iac-agent-eval-harness`.
+
+**Diferença em relação ao experimento:** no harness, o `RULES.md` entra pelo
+`--append-system-prompt-file`. Num plugin isso não é possível, então um hook `SessionStart` põe
+o mesmo texto no contexto da sessão. A regra chega ao agente, mas por outro caminho, e esse
+caminho não foi medido. O efeito esperado vem do E3 e do E11/E12: com a regra, o Haiku aciona a
+skill sempre; sem ela, só em parte dos pedidos.
+
 ## Uso
 
 ```bash

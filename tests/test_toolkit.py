@@ -325,3 +325,25 @@ def test_inventory_global_collectors_run_once(scripts):
 
     inv.collect(None, ["us-east-1", "eu-west-1"], {"iam": (iam, True)})
     assert calls == ["us-east-1"]
+
+
+# --- distribuição --------------------------------------------------------
+
+
+def test_distributed_plugin_is_the_measured_v2():
+    """O `iac-cloud` instalável leva o mesmo texto da condição `own-rules-v2` (E11/E12)."""
+    assert _skill("iac-cloud") == _skill("own-rules-v2")
+    v2, dist = PLUGINS / "own-rules-v2", PLUGINS / "iac-cloud"
+    assert (dist / "RULES.md").read_text() == (v2 / "RULES.md").read_text()
+    hook = json.loads((dist / "hooks" / "hooks.json").read_text())
+    command = hook["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert command == 'cat "${CLAUDE_PLUGIN_ROOT}/RULES.md"'
+
+
+def test_marketplace_lists_the_distributed_plugin():
+    root = TOOLKIT.parent
+    market = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
+    [entry] = market["plugins"]
+    source = root / entry["source"]
+    manifest = json.loads((source / ".claude-plugin" / "plugin.json").read_text())
+    assert entry["name"] == manifest["name"] == "iac-cloud"

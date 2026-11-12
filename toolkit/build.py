@@ -3,6 +3,9 @@
 - `own-rules`: só a skill (fluxo + regras);
 - `own-tools`: a mesma skill com a seção de ferramentas e os scripts;
 - `own-rules-v2`: como `own-rules`, a partir de `toolkit/src-v2/` (texto revisado, registro E11).
+- `iac-cloud`: a versão distribuída (a v2, que substituiu a v1 pelo E12), instalável pelo
+  marketplace na raiz do repo. Fora do harness não há `--append-system-prompt-file`; um hook
+  `SessionStart` põe o `RULES.md` no contexto da sessão.
 
 Os dois levam também `RULES.md`: regras curtas que o harness injeta no system prompt (como o
 aws-core faz com `rules/`), para que o agente carregue a skill.
@@ -31,6 +34,17 @@ PLUGINS = {
     "diff-baseline and whoami scripts.",
     "own-rules-v2": "Flow and rules for creating, changing, deleting and querying AWS "
     "infrastructure.",
+    "iac-cloud": "Helps an agent look after an AWS account safely: inventory before acting, ask "
+    "when the request is ambiguous, verify the final state.",
+}
+# Plugin distribuído: o hook lê o RULES.md do próprio plugin no início de cada sessão.
+DIST = "iac-cloud"
+SESSION_START_HOOK = {
+    "hooks": {
+        "SessionStart": [
+            {"hooks": [{"type": "command", "command": 'cat "${CLAUDE_PLUGIN_ROOT}/RULES.md"'}]}
+        ]
+    }
 }
 
 
@@ -62,9 +76,14 @@ def build(out: Path = OUT) -> None:
         skill_dir = root / "skills" / SKILL_NAME
         skill_dir.mkdir(parents=True)
         with_tools = name == "own-tools"
-        src = SRC_V2 if name == "own-rules-v2" else SRC
+        src = SRC_V2 if name in ("own-rules-v2", DIST) else SRC
         (skill_dir / "SKILL.md").write_text(skill_text(with_tools, src))
         shutil.copyfile(src / "RULES.md", root / "RULES.md")
+        if name == DIST:
+            (root / "hooks").mkdir()
+            (root / "hooks" / "hooks.json").write_text(
+                json.dumps(SESSION_START_HOOK, indent=2) + "\n"
+            )
         if with_tools:
             shutil.copytree(
                 SRC / "scripts", root / "scripts", ignore=shutil.ignore_patterns("__pycache__")

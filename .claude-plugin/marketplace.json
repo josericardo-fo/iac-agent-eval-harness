@@ -1,0 +1,14 @@
+{
+  "name": "iac-cloud-toolkit",
+  "description": "Toolkit from the iac-agent-eval-harness study: a skill and rules that help coding agents look after AWS accounts.",
+  "owner": {
+    "name": "josericardo-fo"
+  },
+  "plugins": [
+    {
+      "name": "iac-cloud",
+      "source": "./toolkit/plugins/iac-cloud",
+      "description": "Inventory before acting, ask when the request is ambiguous, verify the final state from the API."
+    }
+  ]
+}

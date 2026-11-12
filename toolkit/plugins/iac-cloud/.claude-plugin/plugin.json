@@ -1,0 +1,8 @@
+{
+  "name": "iac-cloud",
+  "version": "0.2.0",
+  "description": "Helps an agent look after an AWS account safely: inventory before acting, ask when the request is ambiguous, verify the final state.",
+  "author": {
+    "name": "iac-agent-eval-harness"
+  }
+}
