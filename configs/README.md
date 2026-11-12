@@ -55,6 +55,6 @@ Desenho em `docs/desenho-modalidades.md`. Tarefas e gates em `docs/selecao-taref
 | E11 | `modality-real-aws-amb.toml` | Gate das ambíguas na real | `20261111T125751-modality-prevalidate` | histórica |
 | E11 | `e11-amb-aws.toml` | Ambíguas na real, v1 × v2 | `20261111T132723-e11-amb-aws` | histórica |
 | E12 | `e12-v2-aws.toml` | Toolkit v2 nas 29 claras da real | `20261111T162415-e12-v2-aws` | histórica |
+| E10 | `e10-lay-haiku.toml` | Pedido leigo × técnico no Floci (20 × `none`/v2 × Haiku × N=3); sorteio em `e10-selection.json` | ainda não rodou | ativa |
 | todos | `strata.toml` | Estratos das tarefas, lidos pelo `agent-metrics` | n/a | ativa |
 
-O E10 (pedido leigo) ainda não tem config.

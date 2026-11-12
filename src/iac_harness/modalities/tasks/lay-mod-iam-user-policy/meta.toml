@@ -1,0 +1,8 @@
+# E10 (pedido leigo): paráfrase leiga de mod-iam-user-policy. Só o prompt.md muda; check, initial,
+# referências e o resto do meta são cópias exatas, menos origin: a redação é nossa
+# (T5), não do dataset (teste em test_modalities.py).
+id = "lay-mod-iam-user-policy"
+category = "modify"
+origin = "authored"
+region = "us-east-1"
+paraphrase_of = "mod-iam-user-policy"

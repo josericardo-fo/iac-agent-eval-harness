@@ -1,5 +1,6 @@
 import json
 import subprocess
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from iac_harness.modalities.spec import MODALITIES
 from iac_harness.workspace import OVERRIDE_FILENAME
 from test_floci import FakeToolchain
 
+ROOT = Path(__file__).parent.parent
+
 EXPECTED_TASKS = {
     "task-108", "task-115", "task-230", "task-231", "task-234",
     "task-110", "task-118", "task-130", "task-201", "task-233", "task-373", "task-375",
@@ -41,6 +44,10 @@ EXPECTED_TASKS = {
     # E2: pares claro × ambíguo (as claras mod-s3-versioning e mod-sqs-retention já estão acima)
     "amb-dynamodb-pitr", "clr-dynamodb-pitr", "amb-s3-versioning", "amb-sqs-retention",
     "amb-sg-https", "clr-sg-https", "amb-del-sqs", "clr-del-sqs", "amb-del-s3", "clr-del-s3",
+    # E10: paráfrases leigas (configs/e10-selection.json)
+    "lay-clr-del-sqs", "lay-clr-dynamodb-pitr", "lay-del-s3-bucket", "lay-mod-iam-user-policy",
+    "lay-mod-s3-encryption", "lay-mod-secret-tag", "lay-mod-sg-https", "lay-mod-sqs-retention",
+    "lay-task-234", "lay-task-373",
 }  # fmt: skip
 
 
@@ -69,6 +76,27 @@ def test_load_tasks_has_all_with_required_files():
         assert (t.category != "create") == (t.initial_tf is not None)
         assert "## Intent" not in t.prompt
         assert "terraform" not in t.prompt.lower()
+
+
+def test_lay_paraphrases_match_their_original():
+    """E10: a paráfrase leiga só troca o prompt.md; o resto é cópia byte a byte."""
+    selected = json.loads((ROOT / "configs" / "e10-selection.json").read_text())["selected"]
+    lay_dirs = sorted(p for p in TASKS_DIR.iterdir() if p.name.startswith("lay-"))
+    assert [p.name for p in lay_dirs] == [f"lay-{t}" for t in selected]
+    for lay in lay_dirs:
+        original = TASKS_DIR / lay.name.removeprefix("lay-")
+        files = {p.name for p in lay.iterdir() if p.is_file()}
+        assert files == {p.name for p in original.iterdir() if p.is_file()}, lay.name
+        for name in files - {"prompt.md", "meta.toml"}:
+            assert (lay / name).read_bytes() == (original / name).read_bytes(), (lay.name, name)
+        assert (lay / "prompt.md").read_text() != (original / "prompt.md").read_text()
+        meta = tomllib.loads((lay / "meta.toml").read_text())
+        assert meta.pop("id") == lay.name and meta.pop("paraphrase_of") == original.name
+        assert meta.pop("origin") == "authored"  # a redação é nossa, não do dataset
+        orig_meta = tomllib.loads((original / "meta.toml").read_text())
+        orig_meta.pop("id")
+        orig_meta.pop("origin")
+        assert meta == orig_meta, lay.name
 
 
 def test_load_task_rejects_missing_initial_in_modify(tmp_path):
@@ -511,6 +539,9 @@ COLLATERAL_TASKS = {
     "mod-s3-versioning", "mod-s3-encryption", "mod-dynamodb-pitr", "mod-dynamodb-ttl",
     "mod-sg-https", "mod-sqs-retention", "mod-iam-user-policy", "mod-secret-tag",
     "query-sg-ssh-open", "query-dynamodb-ondemand",
+    # E10: cópias das originais acima
+    "lay-mod-s3-encryption", "lay-mod-sg-https", "lay-mod-sqs-retention",
+    "lay-mod-iam-user-policy", "lay-mod-secret-tag",
 }  # fmt: skip
 
 

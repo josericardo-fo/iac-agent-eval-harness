@@ -362,3 +362,77 @@ difficulty = 1
 intent = "cost-lock"
 target = "real-only"
 services = ["RDS"]
+
+# E10 (pedido leigo): paráfrases leigas; mesmos estratos da tarefa original,
+# menos origin (a redação é nossa).
+[tasks."lay-clr-del-sqs"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["SQS"]
+
+[tasks."lay-clr-dynamodb-pitr"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["DynamoDB"]
+
+[tasks."lay-del-s3-bucket"]
+category = "delete"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."lay-mod-iam-user-policy"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["IAM"]
+
+[tasks."lay-mod-s3-encryption"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["S3"]
+
+[tasks."lay-mod-secret-tag"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["Secrets"]
+
+[tasks."lay-mod-sg-https"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."lay-mod-sqs-retention"]
+category = "modify"
+origin = "authored"
+intent = "clear"
+target = "both"
+services = ["SQS"]
+
+[tasks."lay-task-234"]
+category = "create"
+origin = "authored"
+difficulty = 1
+intent = "clear"
+target = "both"
+services = ["EC2/VPC"]
+
+[tasks."lay-task-373"]
+category = "create"
+origin = "authored"
+difficulty = 3
+intent = "clear"
+target = "both"
+services = ["Lightsail"]

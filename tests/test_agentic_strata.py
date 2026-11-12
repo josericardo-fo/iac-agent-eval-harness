@@ -8,7 +8,13 @@ from iac_harness.modalities.loader import TASKS_DIR, load_tasks
 
 ROOT = Path(__file__).parent.parent
 STRATA = ROOT / "configs" / "strata.toml"
-AGENT_CONFIGS = ("e3-agent.toml", "e3-agent-aws.toml", "e3-pilot.toml", "e3-pilot-aws.toml")
+AGENT_CONFIGS = (
+    "e3-agent.toml",
+    "e3-agent-aws.toml",
+    "e3-pilot.toml",
+    "e3-pilot-aws.toml",
+    "e10-lay-haiku.toml",
+)
 
 
 def test_every_task_dir_has_strata():

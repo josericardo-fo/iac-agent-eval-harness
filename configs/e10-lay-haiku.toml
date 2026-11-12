@@ -1,0 +1,52 @@
+# E10 (registro): pedido leigo × técnico no Floci. As 10 tarefas sorteadas
+# (configs/e10-selection.json, semente 20261111) e as paráfrases leigas lay-* (só o prompt.md
+# muda; o check é o mesmo). 20 tarefas × 2 condições × Haiku × N=3 = 120 trajetórias.
+# Antes: docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest . e
+# set -a; source .env; set +a; docker compose -f docker/compose.yaml --profile agent \
+#   --profile agent-workers up -d --wait
+[run]
+name = "e10-lay-haiku"
+reps = 3
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  # técnicas (o enunciado original)
+  "clr-del-sqs", "clr-dynamodb-pitr", "del-s3-bucket", "mod-iam-user-policy",
+  "mod-s3-encryption", "mod-secret-tag", "mod-sg-https", "mod-sqs-retention",
+  "task-234", "task-373",
+  # leigas (paráfrases)
+  "lay-clr-del-sqs", "lay-clr-dynamodb-pitr", "lay-del-s3-bucket", "lay-mod-iam-user-policy",
+  "lay-mod-s3-encryption", "lay-mod-secret-tag", "lay-mod-sg-https", "lay-mod-sqs-retention",
+  "lay-task-234", "lay-task-373",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "own-rules-v2"]  # v2: registro E10, 12/11
+models = ["Haiku 5.5"]
+max_turns = 60
+timeout_s = 1200
+# Um worker por Floci (floci, floci2, floci3, floci4: compose, perfil agent-workers).
+workers = 4
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# Worker 1; os workers 2..W usam floci<N>, 127.0.0.1:456<5+N>, iac-harness-floci<N>-1.
+endpoint = "http://floci:4566"
+host_endpoint = "http://127.0.0.1:4566"
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+# Timeout por comando do harness (initial.tf, check.py, retrato).
+timeout_s = 180

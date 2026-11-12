@@ -1,0 +1,8 @@
+# E10 (pedido leigo): paráfrase leiga de mod-s3-encryption. Só o prompt.md muda; check, initial,
+# referências e o resto do meta são cópias exatas, menos origin: a redação é nossa
+# (T5), não do dataset (teste em test_modalities.py).
+id = "lay-mod-s3-encryption"
+category = "modify"
+origin = "authored"
+region = "us-east-1"
+paraphrase_of = "mod-s3-encryption"
