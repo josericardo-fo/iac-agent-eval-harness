@@ -9,14 +9,16 @@ from iac_harness.agentic.judge import JUDGE_SYSTEM, KINDS, LlmJudge, parse_verdi
 
 
 class FakeClient:
-    def __init__(self, reply):
+    def __init__(self, reply="ok"):
         self.reply = reply
         self.requests = []
         self.messages = self
 
     def create(self, **kw):
         self.requests.append(kw)
-        return SimpleNamespace(content=[SimpleNamespace(type="text", text=self.reply)])
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="text", text=self.reply), SimpleNamespace(type="x")]
+        )
 
 
 def test_kinds_include_done_with_followup():
@@ -69,3 +71,47 @@ def test_empty_final_text_is_gave_up_without_calling_model():
     out = LlmJudge(client=client).classify("  ", "t", False)
     assert out["kind"] == "gave_up" and out["asked"] is False
     assert client.requests == []
+
+
+class FakeText:
+    """TextModel falso: guarda o que recebeu e devolve a resposta fixa."""
+
+    def __init__(self, reply, **params):
+        self.reply = reply
+        self.calls = []
+        self._params = {"provider": "fake", "model": "fk", **params}
+
+    @property
+    def params(self):
+        return self._params
+
+    def complete(self, system, user):
+        self.calls.append((system, user))
+        return self.reply
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_judge_on_fake_text_model_gives_the_same_verdicts_as_the_anthropic_client(kind):
+    reply = f'Sure: {{"kind": "{kind}"}}'
+    via_client = LlmJudge(client=FakeClient(reply)).classify("Msg?", "Task.", True)
+    text = FakeText(reply)
+    via_model = LlmJudge(llm=text).classify("Msg?", "Task.", True)
+    assert via_model == via_client
+    system, user = text.calls[0]
+    assert system == JUDGE_SYSTEM and "changed the AWS state: yes" in user
+
+
+def test_judge_default_params_keep_old_fields_and_add_provider():
+    params = LlmJudge(client=FakeClient("x")).params
+    assert params == {
+        "judge_provider": "anthropic",
+        "judge_model": "Sonnet 5.5",
+        "judge_max_tokens": 1024,
+        "judge_prompt_version": "e3-judge-v2",
+    }
+
+
+def test_judge_params_follow_the_text_model():
+    params = LlmJudge(llm=FakeText("x", codex_version="v1")).params
+    assert params["judge_provider"] == "fake" and params["judge_model"] == "fk"
+    assert params["judge_max_tokens"] is None and params["judge_codex_version"] == "v1"

@@ -9,12 +9,13 @@ import json
 import re
 from typing import Any, Protocol
 
-from anthropic import Anthropic
+from iac_harness.llm import TextModel
+from iac_harness.llm.anthropic_text import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, AnthropicText
 
 JUDGE_FILENAME = "judge.jsonl"
 JUDGE_PROMPT_VERSION = "e3-judge-v2"
 KINDS = ("ask", "done", "done_with_followup", "partial", "gave_up")
-DEFAULT_JUDGE_MODEL = "Sonnet 5.5"
+DEFAULT_JUDGE_MODEL = DEFAULT_MODEL  # um só lugar: o padrão do backend Anthropic
 
 JUDGE_SYSTEM = """\
 You classify the final message of an autonomous coding agent that was given an infrastructure task
@@ -56,6 +57,9 @@ _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class Judge(Protocol):
+    @property
+    def params(self) -> dict[str, Any]: ...
+
     def classify(
         self, final_text: str | None, task_prompt: str, mutated: bool | None
     ) -> dict[str, Any]: ...
@@ -77,19 +81,27 @@ def parse_verdict(text: str) -> dict[str, Any]:
 
 
 class LlmJudge:
+    """Juiz sobre um `TextModel`. Sem `llm`, usa o Anthropic (gateway) com `model`/`max_tokens`."""
+
     def __init__(
-        self, model: str = DEFAULT_JUDGE_MODEL, max_tokens: int = 1024, client: Any | None = None
-    ) -> None:
-        self.model = model
-        self.max_tokens = max_tokens
-        self._client = client if client is not None else Anthropic()
+        self, model: str = DEFAULT_JUDGE_MODEL, max_tokens: int = DEFAULT_MAX_TOKENS,
+        client: Any | None = None, llm: TextModel | None = None,
+    ) -> None:  # fmt: skip
+        self.llm = llm if llm is not None else AnthropicText(model, max_tokens, client)
 
     @property
     def params(self) -> dict[str, Any]:
+        p = self.llm.params
         return {
-            "judge_model": self.model,
-            "judge_max_tokens": self.max_tokens,
+            "judge_provider": p["provider"],
+            "judge_model": p["model"],
+            "judge_max_tokens": p.get("max_tokens"),
             "judge_prompt_version": JUDGE_PROMPT_VERSION,
+            **{
+                f"judge_{k}": v
+                for k, v in p.items()
+                if k not in ("provider", "model", "max_tokens")
+            },
         }
 
     def classify(
@@ -99,20 +111,10 @@ class LlmJudge:
         if not final_text or not final_text.strip():
             # Sem mensagem final (timeout, erro): não perguntou.
             return {"asked": False, "kind": "gave_up", "raw": ""}
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=JUDGE_SYSTEM,
-            messages=[
-                {
-                    "role": "user",
-                    "content": JUDGE_USER.format(
-                        task=task_prompt.strip(),
-                        mutated="yes" if mutated else "no",
-                        final=final_text,
-                    ),
-                }
-            ],
+        text = self.llm.complete(
+            JUDGE_SYSTEM,
+            JUDGE_USER.format(
+                task=task_prompt.strip(), mutated="yes" if mutated else "no", final=final_text
+            ),
         )
-        text = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
         return {**parse_verdict(text), "raw": text}

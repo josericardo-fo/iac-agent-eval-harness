@@ -23,6 +23,8 @@ DEFAULT_AGENT_IMAGE = "iac-harness-agent:latest"
 AGENT_USER = "agent"  # não-root: como root, o bypassPermissions é recusado
 TRANSCRIPT_FILENAME = "transcript.jsonl"
 STDERR_FILENAME = "agent.stderr.txt"
+# Onde o Claude Code guarda as sessões (`projects/<cwd>/<id>.jsonl`) no usuário do container.
+SESSION_MOUNT = f"/home/{AGENT_USER}/.claude"
 # Mesmo conjunto em toda condição: só o contexto muda. Sem AskUserQuestion (não há quem responda),
 # sem web, sem subagentes.
 AGENT_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,Skill"
@@ -50,14 +52,28 @@ class AgentResult:
     subtype: str | None = None
     permission_denials: list[Any] = field(default_factory=list)
     condition_load_fail: bool = False  # system/init sem o plugin da condição: abortado
+    session_id: str | None = None  # do system/init: permite retomar a sessão (--resume)
+
+
+def turn_filename(base: str, turn: int) -> str:
+    """Nome do arquivo do turno: o 1º é `base`; os seguintes levam `.turnN` antes da extensão."""
+    if turn == 1:
+        return base
+    stem, dot, ext = base.partition(".")
+    return f"{stem}.turn{turn}{dot}{ext}"
 
 
 class CodingAgent(Protocol):
+    """`run` de um turno. Com `session_dir`, a sessão é persistida nele (em vez de se perder com o
+    container) e `resume_session` retoma a sessão anterior com `prompt` como a nova mensagem;
+    só são passados quando há usuário simulado."""
+
     name: str
 
     def run(
         self, prompt: str, workdir: Path, condition: Condition, model: str, target: Target,
-        out_dir: Path,
+        out_dir: Path, session_dir: Path | None = None, resume_session: str | None = None,
+        turn: int = 1,
     ) -> AgentResult: ...  # fmt: skip
 
     def version(self) -> dict[str, str | None]: ...
@@ -94,9 +110,14 @@ class ClaudeCodeAgent:
 
     def docker_argv(
         self, prompt: str, workdir: Path, condition: Condition, model: str, target: Target,
-        name: str, env: AgentEnv | None = None,
+        name: str, env: AgentEnv | None = None, session_dir: Path | None = None,
+        resume_session: str | None = None,
     ) -> tuple[list[str], dict[str, str]]:  # fmt: skip
-        """(argv do `docker run`, env do cliente docker com os valores secretos)."""
+        """(argv do `docker run`, env do cliente docker com os valores secretos).
+
+        `session_dir` (host) é montado em `SESSION_MOUNT` para a sessão sobreviver ao `--rm`;
+        `resume_session` acrescenta `--resume <id>`. Os demais flags são os mesmos em todo turno.
+        """
         env = env if env is not None else target.agent_env()
         missing = [k for k in GATEWAY_VARS if not os.environ.get(k)]
         if missing:
@@ -112,9 +133,11 @@ class ClaudeCodeAgent:
             *(a for k in secret_values for a in ("-e", k)),
             "-v", f"{Path(workdir).resolve()}:/work",
             *(a for host, cont in condition.mounts for a in ("-v", f"{host}:{cont}:ro")),
+            *(("-v", f"{Path(session_dir).resolve()}:{SESSION_MOUNT}") if session_dir else ()),
             "-w", "/work",
             self.image,
             "claude", "-p", prompt,
+            *(("--resume", resume_session) if resume_session else ()),
             "--model", model,
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", "bypassPermissions",
@@ -131,9 +154,13 @@ class ClaudeCodeAgent:
 
     def run(
         self, prompt: str, workdir: Path, condition: Condition, model: str, target: Target,
-        out_dir: Path,
+        out_dir: Path, session_dir: Path | None = None, resume_session: str | None = None,
+        turn: int = 1,
     ) -> AgentResult:  # fmt: skip
         """Roda o container e grava o transcript (segredos filtrados, linha a linha) em out_dir.
+
+        Turno > 1 (retomada): mesmo comando e flags, com `--resume`; o transcript e o stderr
+        ganham o sufixo `.turnN` e o `system/init` é conferido de novo (plugin da condição).
 
         O stdout é lido em fluxo. O `system/init` pode vir depois de eventos de hook ou de
         instalação de plugin; se ele mostra que o plugin da condição não carregou, ou se uma
@@ -142,13 +169,15 @@ class ClaudeCodeAgent:
         """
         name = f"iac-agent-{uuid.uuid4().hex[:12]}"
         env = target.agent_env()
-        argv, client_env = self.docker_argv(prompt, workdir, condition, model, target, name, env)
+        argv, client_env = self.docker_argv(
+            prompt, workdir, condition, model, target, name, env, session_dir, resume_session
+        )
         secrets = secret_values(env.secret)
         needs_init = not condition.loaded(None)  # condição `none` não depende do init
         init_ok = False
         out_dir.mkdir(parents=True, exist_ok=True)
-        transcript = out_dir / TRANSCRIPT_FILENAME
-        stderr_path = out_dir / STDERR_FILENAME
+        transcript = out_dir / turn_filename(TRANSCRIPT_FILENAME, turn)
+        stderr_path = out_dir / turn_filename(STDERR_FILENAME, turn)
         start = time.monotonic()
         timed_out = load_fail = False
         lines: list[str] = []
@@ -209,6 +238,7 @@ class ClaudeCodeAgent:
             subtype=parsed.subtype,
             permission_denials=parsed.permission_denials,
             condition_load_fail=load_fail,
+            session_id=(parsed.init or {}).get("session_id"),
         )
 
     @staticmethod

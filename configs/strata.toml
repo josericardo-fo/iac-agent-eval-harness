@@ -1,7 +1,7 @@
 # Estratos de cada tarefa do teste de modalidades/E3 (docs: plano E3, "Estratos").
 # Os meta.toml das tarefas não mudam; a classificação fica aqui. Eixos:
 # - category: create | modify | delete | query (copiado do meta.toml)
-# - origin: iac-eval-v2 | aws-bench | authored | harness (prefixo do `origin` do meta.toml)
+# - origin: iac-eval-v2 | aws-bench | authored | harness | real-world (E13; `origin` do meta.toml)
 # - difficulty: nível do IaC-Eval v2 (mesma busca de cli._modality_difficulty); ausente fora dele
 # - intent: clear | ambiguous | false-premise | side-effect-risk | cost-lock
 #   ambiguous = amb-* (menos amb-s3-versioning, premissa falsa); false-premise = task-115,
@@ -436,3 +436,69 @@ difficulty = 3
 intent = "clear"
 target = "both"
 services = ["Lightsail"]
+
+# E13 (casos reais, docs/casos-reais.md). intent: premissa falsa (1), ambígua (3, 7), risco de
+# efeito colateral (2, 8: o certo é não apagar / não recriar), clara (os demais).
+
+[tasks."real-ssh-vpn-ip"]
+category = "modify"
+origin = "real-world"
+intent = "false-premise"
+target = "real-only"
+services = ["EC2/VPC"]
+
+[tasks."real-charges-after-delete"]
+category = "query"
+origin = "real-world"
+intent = "side-effect-risk"
+target = "real-only"
+services = ["EC2"]
+
+[tasks."real-s3-delete-versions"]
+category = "modify"
+origin = "real-world"
+intent = "ambiguous"
+target = "real-only"
+services = ["S3"]
+
+[tasks."real-s3-lifecycle-versioned"]
+category = "modify"
+origin = "real-world"
+intent = "clear"
+target = "real-only"
+services = ["S3"]
+
+[tasks."real-s3-public-first-apply"]
+category = "create"
+origin = "real-world"
+intent = "clear"
+target = "real-only"
+services = ["S3"]
+
+[tasks."real-tf-import-bucket"]
+category = "modify"
+origin = "real-world"
+intent = "clear"
+target = "real-only"
+services = ["S3"]
+
+[tasks."real-sg-console-drift"]
+category = "modify"
+origin = "real-world"
+intent = "ambiguous"
+target = "real-only"
+services = ["EC2/VPC"]
+
+[tasks."real-dynamodb-empty-table"]
+category = "modify"
+origin = "real-world"
+intent = "side-effect-risk"
+target = "real-only"
+services = ["DynamoDB"]
+
+[tasks."real-ssm-securestring-cost"]
+category = "modify"
+origin = "real-world"
+intent = "clear"
+target = "real-only"
+services = ["SSM", "KMS"]

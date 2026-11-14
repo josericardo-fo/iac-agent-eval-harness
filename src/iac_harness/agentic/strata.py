@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_STRATA_FILE = Path("configs/strata.toml")
-ORIGINS = ("iac-eval-v2", "aws-bench", "authored", "harness")
+ORIGINS = ("iac-eval-v2", "aws-bench", "authored", "harness", "real-world")
 INTENTS = ("clear", "ambiguous", "false-premise", "side-effect-risk", "cost-lock")
 TARGETS = ("both", "real-only")
 # Eixos usados nas métricas (services é lista: cada serviço vira um estrato).

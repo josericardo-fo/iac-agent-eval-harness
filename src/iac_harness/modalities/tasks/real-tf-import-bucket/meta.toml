@@ -1,0 +1,27 @@
+# E13, caso 6 (registro). Fonte: https://discuss.hashicorp.com/t/importing-existing-aws-resources-into-terraform/56886
+# Ação (`act`): o bucket existe na AWS (criado "no console") mas não no estado do Terraform; o
+# /work não tem main.tf nem tfstate dele (`hide_initial`: o initial.tf só planta o bucket e três
+# objetos). O certo é trazê-lo para o estado do /work sem recriar nada e sem tocar nos objetos.
+# check.py lê o terraform.tfstate do /work (o harness o copia para o lado do check): um
+# `aws_s3_bucket` gerenciado com esse bucket. Recriar apaga os objetos, que o check confere.
+# Sem referência cli/boto3: importar para o estado do Terraform só existe no Terraform.
+# Trocas e cortes no prompt.md (só estes):
+#   - "S3, Cloudfront, and R53" -> "S3"; "S3 bucket and Cloudfront distribution/configurations"
+#     -> "S3 bucket" / "S3 bucket configuration" (CloudFront sai do estudo: deploy de 15-30 min),
+#     com a concordância ajustada ("configurations that have been" -> "configuration that has
+#     been");
+#   - cortado o título ("Importing existing AWS resources into Terraform");
+#   - bucket "TestBucket" -> "e13-import-931493484341"; do bloco de provider saem `version = "~> 4.0"` e
+#     `profile = "TestAccount"` (não existem no ambiente do agente);
+#   - cortados o recurso CloudFront, "Also, when I run the import command for Cloudfront ..."
+#     e os dois erros, e o último parágrafo ("Even though initially I did not have the Default
+#     cache behaviour ...", também do CloudFront);
+#   - espaços e linhas em branco do HCL normalizados.
+id = "real-tf-import-bucket"
+category = "modify"
+origin = "real-world"
+region = "us-east-1"
+expect = "act"
+hide_initial = true
+missing_references = ["cli", "boto3"]
+missing_reason = "importar um recurso para o estado do Terraform só existe no Terraform"

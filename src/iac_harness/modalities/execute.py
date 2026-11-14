@@ -14,7 +14,7 @@ from typing import Any
 
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS, TRUNCATION_MARK, strip_ansi
-from iac_harness.modalities.loader import UPSTREAM_DIRNAME, ModalityTask
+from iac_harness.modalities.loader import SETUP_FILENAME, UPSTREAM_DIRNAME, ModalityTask
 from iac_harness.modalities.spec import MODALITIES, Modality
 from iac_harness.toolchain import Toolchain, remove_terraform_dir
 from iac_harness.types import Artifact, CheckStatus
@@ -24,6 +24,7 @@ from iac_harness.workspace import create_workspace
 INHERITED_TF_FILES = ("terraform.tfstate", ".terraform.lock.hcl")
 CHECK_FILENAME = "check.py"
 COLLATERAL_FILENAME = "collateral.py"
+TFSTATE_FILENAME = "terraform.tfstate"
 ANSWER_FILENAME = "answer.json"
 # Erro fixo de resposta ausente/inválida nas consultas (volta ao agente como erro de execução).
 ANSWER_ERROR = {
@@ -196,10 +197,37 @@ def apply_initial(
     """Aplica o initial.tf com Terraform, no workspace próprio <modalidade>/<name>."""
     if task.initial_tf is None:
         raise ValueError(f"{task.task_id}: tarefa sem estado inicial")
-    return run_artifact(
+    result, path = run_artifact(
         toolchain, executor, MODALITIES["terraform"], task.initial_tf, runs_dir, run_id,
         task.task_id, name, max_chars=max_chars, group=modality.name, rep=rep,
     )  # fmt: skip
+    return run_setup(toolchain, task, result, max_chars), path
+
+
+def run_setup(
+    toolchain: Toolchain,
+    task: ModalityTask,
+    initial: ExecResult,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> ExecResult:
+    """Roda o setup.py da tarefa depois do apply inicial (mesmo ambiente do check).
+
+    Completa o estado que o initial.tf não expressa (objeto versionado, regra criada fora do
+    Terraform). Sem setup.py, ou se o apply já falhou, devolve `initial` como veio; falha do
+    setup vira falha do estado inicial (o `output` leva a saída do script).
+    """
+    if task.setup is None or not initial.ok:
+        return initial
+    proc = _run_task_script(toolchain, task, SETUP_FILENAME, task.setup, None)
+    if isinstance(proc, str):
+        output = f"falha ao executar o setup: {proc}"
+    elif proc.returncode != 0:
+        output = truncate(
+            f"setup.py falhou ({proc.returncode}): {proc.stdout}\n{proc.stderr}", max_chars
+        )
+    else:
+        return initial
+    return ExecResult(False, output, raw=initial.raw + "\n" + output)
 
 
 def last_json_line(stdout: str) -> tuple[str | None, Any]:
@@ -232,8 +260,12 @@ def run_check(
     task: ModalityTask,
     workspace: Path | None = None,
     settle: bool = False,
+    final: bool = False,
 ) -> tuple[bool, dict[str, Any]]:
     """Roda o check.py num diretório temporário FORA do workspace (como o OpaVerifier).
+
+    Com `final` (estado depois da resposta do usuário simulado), roda o `check_final.py` da
+    tarefa se existir; sem ele, o `check.py`.
 
     Se `workspace` tiver answer.json (consulta), ele é copiado para o lado do check.
     Com `settle` no alvo aws, um check reprovado é refeito a cada CHECK_SETTLE_INTERVAL_S
@@ -241,12 +273,12 @@ def run_check(
     Só para checks pós-solução: o baseline deve reprovar e não pode ser refeito.
     """
     if not (settle and toolchain.target == "aws"):
-        return _run_check_once(toolchain, task, workspace)
+        return _run_check_once(toolchain, task, workspace, final)
     max_attempts = 1 + CHECK_SETTLE_WINDOW_S // CHECK_SETTLE_INTERVAL_S
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
             time.sleep(CHECK_SETTLE_INTERVAL_S)
-        passed, details = _run_check_once(toolchain, task, workspace)
+        passed, details = _run_check_once(toolchain, task, workspace, final)
         if passed:
             break
     return passed, {**details, "check_attempts": attempt}
@@ -257,7 +289,8 @@ def _run_task_script(
 ) -> subprocess.CompletedProcess | str:
     """Roda `python3 <filename> <region>` num diretório temporário FORA do workspace.
 
-    Mesmo ambiente do check: upstream/ ao lado e answer.json do workspace, se houver. Devolve o
+    Mesmo ambiente do check: upstream/ ao lado, answer.json e terraform.tfstate do workspace, se
+    houver. Devolve o
     processo, ou a mensagem de erro se nem foi possível executar.
     """
     with tempfile.TemporaryDirectory(prefix="iac-check-") as tmp:
@@ -268,8 +301,10 @@ def _run_task_script(
             (tmp_dir / UPSTREAM_DIRNAME).mkdir()
             for name, content in task.upstream.items():
                 (tmp_dir / UPSTREAM_DIRNAME / name).write_text(content)
-        if workspace is not None and (workspace / ANSWER_FILENAME).is_file():
-            shutil.copy(workspace / ANSWER_FILENAME, tmp_dir / ANSWER_FILENAME)
+        for name in (ANSWER_FILENAME, TFSTATE_FILENAME):
+            # tfstate: checks de importação conferem o estado que o agente deixou no workspace.
+            if workspace is not None and (workspace / name).is_file():
+                shutil.copy(workspace / name, tmp_dir / name)
         try:
             return toolchain.run(["python3", filename, task.region], tmp_dir)
         except (subprocess.TimeoutExpired, OSError) as exc:
@@ -277,9 +312,10 @@ def _run_task_script(
 
 
 def _run_check_once(
-    toolchain: Toolchain, task: ModalityTask, workspace: Path | None
+    toolchain: Toolchain, task: ModalityTask, workspace: Path | None, final: bool = False
 ) -> tuple[bool, dict[str, Any]]:
-    proc = _run_task_script(toolchain, task, CHECK_FILENAME, task.check, workspace)
+    code = task.check_final if final and task.check_final is not None else task.check
+    proc = _run_task_script(toolchain, task, CHECK_FILENAME, code, workspace)
     if isinstance(proc, str):
         return False, {"error": f"falha ao executar o check: {proc}"}
     passed, details = parse_check_output(proc.stdout)
@@ -349,7 +385,8 @@ def prevalidate_pair(
         "expect": task.expect, "initial_ok": None, "initial_output": "", "baseline_pass": None,
         "baseline_details": {},
         "ref_exec_ok": None, "ref_output": "", "ref_unsupported_pattern": None,
-        "ref_check_pass": None, "ref_check_details": {}, "ref_missing": False, "valid": False,
+        "ref_check_pass": None, "ref_check_details": {}, "ref_final_pass": None,
+        "ref_final_details": {}, "ref_missing": False, "valid": False,
     }  # fmt: skip
     if modality.name in task.missing_references:
         row.update(ref_missing=True, valid=None)
@@ -375,7 +412,15 @@ def prevalidate_pair(
         toolchain, task, ref_path, settle=True
     )
     if task.expect == "ask":
-        row["valid"] = row["baseline_pass"] is True and ref.ok and row["ref_check_pass"] is False
+        if task.check_final is not None:
+            # A referência é a resposta certa depois da pergunta: deve passar o check final.
+            row["ref_final_pass"], row["ref_final_details"] = run_check(
+                toolchain, task, ref_path, settle=True, final=True
+            )
+        row["valid"] = (
+            row["baseline_pass"] is True and ref.ok and row["ref_check_pass"] is False
+            and row["ref_final_pass"] is not False
+        )  # fmt: skip
     else:
         row["valid"] = row["baseline_pass"] is False and ref.ok and row["ref_check_pass"] is True
     return row

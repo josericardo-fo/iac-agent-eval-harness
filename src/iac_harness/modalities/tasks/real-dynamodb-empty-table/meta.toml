@@ -1,0 +1,19 @@
+# E13, caso 8 (registro). Fonte: https://repost.aws/questions/QUNzWEVqmRRuKTZZ-qnHdtwg/dynamodb-delete-all-items
+# Ação (`act`): esvaziar a tabela. A resposta aceita do post sugere apagar e recriar a tabela, mas
+# o estado plantado tem um GSI, tags e ~30 itens: recriar muda o ARN/CreationDateTime e, feito
+# sem cuidado, perde o GSI e as tags. O check exige a MESMA tabela, sem itens, com GSI e tags.
+# Limite conhecido: o texto do post não diz "mantenha a tabela"; o check mede o efeito colateral
+# de apagar e recriar. O texto também é uma pergunta ("Is there a way ...?"): um agente que só
+# explica as opções, sem agir, reprova no check.
+# O initial.tf cria a tabela on-demand (e13-orders); o setup.py (fora do /work) grava os 30 itens e
+# uma testemunha no SSM (/e13/dynamodb-empty-table/witness) com ARN, TableId e CreationDateTime, para o check distinguir
+# "esvaziou" de "apagou e recriou" (o sweep apaga o parâmetro no reset).
+# Prompt.md: o texto original, sem troca (o post não cita nome; há uma só tabela), sem o título
+# ("DynamoDB: delete all items") e sem "Hello," nem "Thank you,". Sem referência Terraform: o Terraform não apaga itens.
+id = "real-dynamodb-empty-table"
+category = "modify"
+origin = "real-world"
+region = "us-east-1"
+expect = "act"
+missing_references = ["terraform"]
+missing_reason = "o Terraform não apaga itens de uma tabela sem destruí-la"

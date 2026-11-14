@@ -48,6 +48,10 @@ EXPECTED_TASKS = {
     "lay-clr-del-sqs", "lay-clr-dynamodb-pitr", "lay-del-s3-bucket", "lay-mod-iam-user-policy",
     "lay-mod-s3-encryption", "lay-mod-secret-tag", "lay-mod-sg-https", "lay-mod-sqs-retention",
     "lay-task-234", "lay-task-373",
+    # E13: casos reais (docs/casos-reais.md)
+    "real-ssh-vpn-ip", "real-charges-after-delete", "real-s3-delete-versions",
+    "real-s3-lifecycle-versioned", "real-s3-public-first-apply", "real-tf-import-bucket",
+    "real-sg-console-drift", "real-dynamodb-empty-table", "real-ssm-securestring-cost",
 }  # fmt: skip
 
 
@@ -75,7 +79,8 @@ def test_load_tasks_has_all_with_required_files():
         assert all(body.strip() for body in t.references.values())
         assert (t.category != "create") == (t.initial_tf is not None)
         assert "## Intent" not in t.prompt
-        assert "terraform" not in t.prompt.lower()
+        if t.origin != "real-world":  # os casos reais citam o Terraform: é o texto do post
+            assert "terraform" not in t.prompt.lower()
 
 
 def test_lay_paraphrases_match_their_original():
@@ -542,6 +547,9 @@ COLLATERAL_TASKS = {
     # E10: cópias das originais acima
     "lay-mod-s3-encryption", "lay-mod-sg-https", "lay-mod-sqs-retention",
     "lay-mod-iam-user-policy", "lay-mod-secret-tag",
+    # E13: casos reais em que o efeito colateral importa (consulta e ações sem pergunta)
+    "real-charges-after-delete", "real-s3-lifecycle-versioned", "real-dynamodb-empty-table",
+    "real-ssm-securestring-cost",
 }  # fmt: skip
 
 

@@ -125,3 +125,56 @@ def test_transcript_redacts_target_secret(tmp_path, fake_docker):
     leak = {**RESULT, "result": "key is s3cr3t-value-01"}
     result, _, _ = _run(tmp_path, [INIT_OK, leak], fake_docker)
     assert "s3cr3t-value-01" not in result.transcript.read_text()
+
+
+# ---------- retomada de sessão (usuário simulado) ----------
+
+
+def _argv(tmp_path, **kw):
+    cond = resolve_condition("none", tmp_path)
+    return ClaudeCodeAgent().docker_argv(
+        "the prompt", tmp_path, cond, "Haiku 5.5", FakeTarget(), "c1", **kw
+    )[0]
+
+
+def test_docker_argv_without_session_is_the_old_one(tmp_path, fake_docker):
+    fake_docker([])
+    argv = _argv(tmp_path)
+    assert "--resume" not in argv and not any("/home/agent/.claude" in a for a in argv)
+
+
+def test_docker_argv_with_session_mounts_it_and_resumes(tmp_path, fake_docker):
+    fake_docker([])
+    plain = _argv(tmp_path)
+    argv = _argv(tmp_path, session_dir=tmp_path / "sess", resume_session="abc-123")
+    assert argv[argv.index("--resume") + 1] == "abc-123"
+    assert f"{tmp_path / 'sess'}:/home/agent/.claude" in argv
+    # mesmos flags, condição e modelo: só o mount e o --resume a mais
+    k = argv.index(f"{tmp_path / 'sess'}:/home/agent/.claude")
+    rest = argv[: k - 1] + argv[k + 1 :]
+    r = rest.index("--resume")
+    assert rest[:r] + rest[r + 2 :] == plain
+
+
+def test_session_id_comes_from_init_and_turn_files_are_separate(tmp_path, fake_docker):
+    init = {**INIT_OK, "session_id": "sess-xyz"}
+    calls = fake_docker([init, ASSISTANT, RESULT])
+    cond = resolve_condition("own-tools", _plugin_root(tmp_path))
+    work = tmp_path / "work"
+    work.mkdir()
+    agent, target, out = ClaudeCodeAgent(), FakeTarget(), tmp_path / "out"
+    first = agent.run("p", work, cond, "Haiku 5.5", target, out, session_dir=tmp_path / "s")
+    second = agent.run("r", work, cond, "Haiku 5.5", target, out, session_dir=tmp_path / "s",
+                       resume_session="sess-xyz", turn=2)  # fmt: skip
+    assert first.session_id == "sess-xyz" and calls["popen"] == 2
+    assert first.transcript.name == "transcript.jsonl"
+    assert second.transcript.name == "transcript.turn2.jsonl"
+    assert (out / "agent.turn2.stderr.txt").exists()
+
+
+def test_turn_filename():
+    from iac_harness.agentic.agents import turn_filename
+
+    assert turn_filename("transcript.jsonl", 1) == "transcript.jsonl"
+    assert turn_filename("transcript.jsonl", 3) == "transcript.turn3.jsonl"
+    assert turn_filename("agent.stderr.txt", 2) == "agent.turn2.stderr.txt"

@@ -1,0 +1,47 @@
+# Usuário simulado com uma resposta (smoke no Floci): quando o agente para para perguntar, um
+# GPT (Codex CLI, login do ChatGPT) responde a partir do user.md oculto da tarefa e a mesma sessão
+# do Claude Code é retomada. Tarefa-fixture em tests/fixtures/user-sim-tasks (não é do estudo).
+# Rodar: `uv run iac-harness agent-run configs/e13-usersim-floci.toml`, depois `agent-judge` e
+# `agent-metrics` (mostram o turno 1 e o desfecho final).
+[run]
+name = "e13-usersim-floci"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks_dir = "tests/fixtures/user-sim-tasks"   # padrão: o catálogo em src/.../modalities/tasks
+tasks = ["sim-fixture-bucket"]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none"]
+models = ["Haiku 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1
+
+[judge]
+# Também classifica, inline, a mensagem final do turno 1 (decide se o usuário responde).
+# provider = "anthropic"   # padrão; "codex" usa o Codex CLI
+model = "Sonnet 5.5"
+
+[user_sim]
+provider = "codex"
+model = "gpt-6-luna"
+reasoning_effort = "low"   # opcional; sem ele vale o padrão do modelo
+max_replies = 1
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+endpoint = "http://floci:4566"
+host_endpoint = "http://127.0.0.1:4566"
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 180

@@ -643,3 +643,128 @@ def test_identity_is_cached_until_forgotten(iac_env):
     with pytest.raises(RuntimeError, match="recusada"):
         executor.identity()
     assert len(tc.calls) == 2
+
+
+# ---------- cobertura ampliada do sweep (us-west-2, volumes, snapshots, SSM) ----------
+
+NEW_CATEGORIES = [
+    "ec2_snapshots", "ec2_volumes", "usw2_elastic_ips", "usw2_snapshots", "usw2_volumes",
+    "ssm_parameters",
+]  # fmt: skip
+
+
+class _RegionalSession:
+    """Sessão falsa que separa as respostas por região (us-east-1 padrão)."""
+
+    def __init__(self, by_region):
+        self.by_region = by_region
+        self.clients = []
+
+    def client(self, service, **kwargs):
+        region = kwargs.get("region_name", "us-east-1")
+        self.clients.append((service, region))
+        return _FakeClient(self.by_region.get(region, {}).get(service, {}))
+
+
+def test_inventory_covers_second_region_storage_and_ssm():
+    east = {
+        "ec2": {
+            "describe_snapshots": {"Snapshots": [{"SnapshotId": "snap-e"}]},
+            "describe_volumes": {"Volumes": [{"VolumeId": "vol-e"}]},
+            "describe_addresses": {"Addresses": [{"AllocationId": "eipalloc-e"}]},
+        },
+        "ssm": {"describe_parameters": {"Parameters": [{"Name": "/app/k"}]}},
+        "cloudfront": {
+            "list_distributions": {"DistributionList": {}},
+            "list_origin_access_controls": {"OriginAccessControlList": {}},
+        },
+    }
+    west = {
+        "ec2": {
+            "describe_snapshots": {"Snapshots": [{"SnapshotId": "snap-w"}]},
+            "describe_volumes": {"Volumes": [{"VolumeId": "vol-w"}]},
+            "describe_addresses": {"Addresses": [{"AllocationId": "eipalloc-w"}]},
+        }
+    }
+    inv = inventory(_RegionalSession({"us-east-1": east, "us-west-2": west}))
+    assert set(inv) == set(ORDER) and set(NEW_CATEGORIES) <= set(ORDER)
+    assert inv["ec2_snapshots"] == ["snap-e"] and inv["ec2_volumes"] == ["vol-e"]
+    assert inv["ec2_elastic_ips"] == ["eipalloc-e"]
+    assert inv["usw2_snapshots"] == ["snap-w"] and inv["usw2_volumes"] == ["vol-w"]
+    assert inv["usw2_elastic_ips"] == ["eipalloc-w"]
+    assert inv["ssm_parameters"] == ["/app/k"]
+
+
+def test_plan_deletes_snapshots_before_volumes_and_new_categories_are_swept():
+    current = {c: [f"{c}-1"] for c in NEW_CATEGORIES}
+    plan = plan_deletions(current, {})
+    assert list(plan) == [c for c in ORDER if c in NEW_CATEGORIES]
+    assert list(plan).index("ec2_snapshots") < list(plan).index("ec2_volumes")
+    assert list(plan).index("usw2_snapshots") < list(plan).index("usw2_volumes")
+    assert plan_deletions(current, current) == {}
+
+
+def test_new_deleters_call_the_right_api_in_the_right_region():
+    calls = []
+
+    class Client:
+        def __init__(self, region):
+            self.region = region
+
+        def __getattr__(self, op):
+            def call(**kw):
+                calls.append((self.region, op, kw))
+                return {"Addresses": [{}]}
+
+            return call
+
+    class Session:
+        def client(self, service, **kwargs):
+            return Client(kwargs.get("region_name", "us-east-1"))
+
+    deleters = aws_sweep._deleters(Session())
+    deleters["ec2_snapshots"]("snap-1")
+    deleters["usw2_volumes"]("vol-2")
+    deleters["usw2_snapshots"]("snap-3")
+    deleters["usw2_elastic_ips"]("eipalloc-4")
+    deleters["ssm_parameters"]("/p")
+    assert ("us-east-1", "delete_snapshot", {"SnapshotId": "snap-1"}) in calls
+    assert ("us-west-2", "delete_volume", {"VolumeId": "vol-2"}) in calls
+    assert ("us-west-2", "delete_snapshot", {"SnapshotId": "snap-3"}) in calls
+    assert ("us-west-2", "release_address", {"AllocationId": "eipalloc-4"}) in calls
+    assert ("us-east-1", "delete_parameter", {"Name": "/p"}) in calls
+
+
+def test_volume_and_snapshot_not_found_are_not_failures():
+    class NotFound(Exception):
+        response = {"Error": {"Code": "InvalidVolume.NotFound"}}
+
+    class SnapNotFound(Exception):
+        response = {"Error": {"Code": "InvalidSnapshot.NotFound"}}
+
+    class Ec2:
+        def delete_volume(self, VolumeId):
+            raise NotFound()
+
+        def delete_snapshot(self, SnapshotId):
+            raise SnapNotFound()
+
+    class Session:
+        def client(self, service, **kwargs):
+            return Ec2() if service == "ec2" else _FakeClient({})
+
+    deleters = aws_sweep._deleters(Session())
+    deleters["ec2_volumes"]("vol-gone")
+    deleters["usw2_volumes"]("vol-gone")
+    deleters["ec2_snapshots"]("snap-gone")
+
+
+@pytest.mark.parametrize("category", NEW_CATEGORIES)
+def test_baseline_without_new_category_is_rejected(iac_env, tmp_path, category):
+    baseline = _full_baseline()
+    del baseline[category]
+    baseline_file = tmp_path / "aws-baseline.json"
+    baseline_file.write_text(json.dumps(baseline))
+    ex = RealAwsExecutor(_AwsToolchain(ARN), expected_arn=ARN, baseline_file=baseline_file)
+    with pytest.raises(RuntimeError, match=category):
+        ex.reset()

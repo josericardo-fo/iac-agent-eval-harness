@@ -1,0 +1,1 @@
+currently my instance security group inbound source is 0.0.0.0/0, I want to change that to a specific VPN IP example 125.25.456.88 of my organization and I want to access the ssh only throught this ip.

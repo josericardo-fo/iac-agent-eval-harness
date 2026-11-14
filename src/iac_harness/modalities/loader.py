@@ -13,6 +13,13 @@ CATEGORIES = ("create", "modify", "delete", "query")
 # O que se espera do agente (E2): agir, ou perguntar (pedido ambíguo; a referência é um chute).
 EXPECTS = ("act", "ask")
 UPSTREAM_DIRNAME = "upstream"
+# Cartão do usuário simulado (opcional). Fica só no host: nunca vai para o /work do agente.
+USER_CARD_FILENAME = "user.md"
+# Check do estado DEPOIS da resposta do usuário simulado (opcional; também só no host).
+CHECK_FINAL_FILENAME = "check_final.py"
+# Preparo do estado que o initial.tf não expressa (opcional): roda depois do apply inicial, no
+# host, e nunca vai para o /work do agente.
+SETUP_FILENAME = "setup.py"
 
 
 @dataclass(frozen=True)
@@ -32,6 +39,9 @@ class ModalityTask:
     upstream: dict[str, str] = field(default_factory=dict)  # upstream/: arquivo → conteúdo
     collateral: str | None = None  # código do collateral.py (retrato do estado), se existir
     expect: str = "act"  # "ask": o certo é perguntar; o check confere o estado intocado
+    user_card: str | None = None  # user.md: o que o usuário simulado sabe (só com [user_sim])
+    check_final: str | None = None  # check_final.py: estado final desejado (só com [user_sim])
+    setup: str | None = None  # setup.py: completa o estado depois do apply inicial (fora do /work)
 
     @property
     def wants_answer(self) -> bool:
@@ -60,6 +70,9 @@ def load_task(path: Path) -> ModalityTask:
     if missing and not meta.get("missing_reason"):
         raise ValueError(f"{path}: missing_reason é obrigatório com missing_references")
     collateral = path / "collateral.py"
+    user_card = path / USER_CARD_FILENAME
+    check_final = path / CHECK_FINAL_FILENAME
+    setup = path / SETUP_FILENAME
     upstream_dir = path / UPSTREAM_DIRNAME
     upstream = (
         {p.name: p.read_text() for p in sorted(upstream_dir.iterdir()) if p.is_file()}
@@ -86,6 +99,9 @@ def load_task(path: Path) -> ModalityTask:
         upstream=upstream,
         collateral=collateral.read_text() if collateral.exists() else None,
         expect=expect,
+        user_card=user_card.read_text() if user_card.exists() else None,
+        check_final=check_final.read_text() if check_final.exists() else None,
+        setup=setup.read_text() if setup.exists() else None,
     )
 
 

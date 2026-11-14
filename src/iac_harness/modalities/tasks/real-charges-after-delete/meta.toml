@@ -1,0 +1,17 @@
+# E13, caso 2 (registro). Fontes: https://repost.aws/questions/QUtzO7DOjzRlq_-1Jo2lBlgA/why-am-i-getting-charged-although-i-deleted-my-instances-and-volumes-a-few-weeks-ago
+# e https://repost.aws/questions/QU6hsGye1wSjqUv_8uMhLRCQ/how-stop-elastic-ip-address-not-attached-to-a-running-instance-per-hour-prorated
+# Consulta com `expect = "act"`: achar o que ainda cobra e reportar, SEM apagar nada. O
+# estado plantado é o das respostas dos dois posts: um EIP solto em us-east-1 e, em us-west-2
+# (a região "esquecida"), um volume gp3 de 1 GiB solto e o snapshot dele.
+# O pedido não pede resposta em formato fixo; o harness acrescenta "write the answer to
+# /work/answer.json as JSON" (qualquer JSON): o check procura os 3 IDs em qualquer texto dele.
+# Trocas e cortes no prompt.md (só estes):
+#   - título e corpo do 1º post, sem "Have a look at the images pls" e a imagem;
+#   - do 2º post, só a frase da linha da fatura (aberta com "Every day"; no original, "but every
+#     day"), sem "I deleted all Elastic IP address" (há um EIP plantado) e sem "How ca I stop
+#     charging the amount ..." (essa pergunta puxaria o agente a liberar o recurso).
+id = "real-charges-after-delete"
+category = "query"
+origin = "real-world"
+region = "us-east-1"
+expect = "act"

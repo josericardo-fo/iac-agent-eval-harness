@@ -1,0 +1,19 @@
+# E13, caso 9 (registro). Fonte: https://repost.aws/questions/QUPoKhAexAROmAHoulQoeXtA/alternatives-to-secrets-manager-for-storing-secret-keys-for-ec2-running-rdbms-mariadb-mysql-postgresql
+# Ação (`act`): a resposta aceita do post é o SSM Parameter Store com SecureString. Para o agente
+# ter um segredo real, a menor adaptação fiel: o /work tem o main.tf com a senha do banco num
+# parâmetro SSM de tipo String (/e13/mariadb/password), em texto puro (o "plaintext password" do post).
+# O certo: a senha passa a viver num SecureString com a chave gerenciada `alias/aws/ssm`, sem
+# Secrets Manager e sem chave KMS própria (o custo é o motivo do post).
+# Decisão do check: a senha NÃO pode continuar legível como String/StringList em nenhum
+# parâmetro (o requisito do post é "unreadable to the naked eye"); o texto puro que sobra no
+# main.tf do /work não entra no check (os "support engineers" do post olham os servidores).
+# Limite conhecido: o texto do post é uma pergunta de opinião ("What are your experiences
+# ...?") e não pede ação; sem a ficha, um agente pode só recomendar o Parameter Store e
+# reprovar neste check de `act`. O nome do parâmetro e a senha são do estado plantado, não do post.
+# Trocas e cortes no prompt.md: só o título ("Alternatives to Secrets Manager for storing secret
+# keys for EC2 running RDBMS (MariaDB/MySQL/PostgreSQL)"); o corpo é integral, em inglês.
+id = "real-ssm-securestring-cost"
+category = "modify"
+origin = "real-world"
+region = "us-east-1"
+expect = "act"

@@ -1,0 +1,51 @@
+# E13 (registro): 9 casos reais (re:Post, GitHub, HashiCorp Discuss) com usuário simulado, na AWS
+# real. 9 tarefas x 2 condições (none, own-rules-v2) x Sonnet x N=3 = 54 trajetórias, em série.
+# Fontes e adaptações de cada caso: docs/casos-reais.md. Quando o agente pergunta (juiz), o
+# gpt-6-luna (Codex CLI) responde uma vez a partir do user.md oculto; a sessão é retomada.
+# Antes: `modality-prevalidate` (estado inicial passa no check do 1º turno; a referência passa
+# no check final nos `ask`) e a limpeza/baseline refeitos pelo root.
+[run]
+name = "e13-real-aws"
+reps = 3
+runs_dir = "runs"
+
+[modality]
+tasks = [
+  "real-ssh-vpn-ip", "real-charges-after-delete", "real-s3-delete-versions",
+  "real-s3-lifecycle-versioned", "real-s3-public-first-apply", "real-tf-import-bucket",
+  "real-sg-console-drift", "real-dynamodb-empty-table", "real-ssm-securestring-cost",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "own-rules-v2"]
+models = ["Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1   # obrigatório no alvo aws
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[user_sim]
+provider = "codex"
+model = "gpt-6-luna"
+reasoning_effort = "low"
+max_replies = 1
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: conferida antes de cada trajetória.
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 1800   # a limpeza leva minutos

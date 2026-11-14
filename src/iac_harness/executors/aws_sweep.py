@@ -4,12 +4,13 @@ Uso: `python3 aws_sweep.py inventory` imprime o inventário em JSON;
 `python3 aws_sweep.py sweep baseline.json` apaga o que não está no baseline e imprime
 `{"deleted": ..., "failed": ..., "remaining": ...}`.
 
-Escopo: a região do `AWS_DEFAULT_REGION` (us-east-1) + IAM. Fica de fora, sempre: recursos
-default (VPC, subnets, SG, route table principal e IGW da VPC default), chaves KMS gerenciadas
-pela AWS, usuários/grupos IAM fora dos prefixos `del-`/`mod-`, roles IAM fora do prefixo
-`iac-harness-`, dispositivos MFA virtuais atribuídos a um usuário (inclui o MFA do root), o
-usuário `default` do ElastiCache e os grupos `default*` do DAX. Os defaults
-saem já no inventário: categoria ausente do baseline (tratada como vazia) nunca apaga um default.
+Escopo: a região do `AWS_DEFAULT_REGION` (us-east-1) + IAM + EC2 (EIP, volumes e snapshots) em
+us-west-2, onde o estudo de casos reais planta recursos (a política IAM só dá ec2:* ali). Fica de
+fora, sempre: recursos default (VPC, subnets, SG, route table principal e IGW da VPC default),
+chaves KMS gerenciadas pela AWS, usuários/grupos IAM fora dos prefixos `del-`/`mod-`, roles IAM
+fora do prefixo `iac-harness-`, dispositivos MFA virtuais atribuídos a um usuário (inclui o MFA do
+root), o usuário `default` do ElastiCache e os grupos `default*` do DAX. Os defaults saem já no
+inventário: categoria ausente do baseline (tratada como vazia) nunca apaga um default.
 Só o que não estava no baseline é apagado. O módulo não importa boto3 no topo: a lógica de
 diferença é testável no host.
 Lacuna conhecida e aceita: subnets e route tables criadas pelo agente DENTRO da VPC default não
@@ -33,12 +34,15 @@ ORDER = (
     "elasticache_user_groups", "elasticache_users",
     "dax_subnet_groups", "dax_parameter_groups",
     "sagemaker_human_task_uis", "glacier_vaults", "kinesis_video_streams",
-    "ec2_nat_gateways", "ec2_elastic_ips",
+    "ec2_nat_gateways", "ec2_elastic_ips", "ec2_snapshots", "ec2_volumes",
+    "usw2_elastic_ips", "usw2_snapshots", "usw2_volumes",
     "ec2_network_interfaces", "ec2_security_groups", "ec2_subnets",
     "ec2_internet_gateways", "ec2_route_tables", "ec2_vpcs", "rds_subnet_groups",
-    "s3_buckets", "dynamodb_tables", "sqs_queues", "sns_topics", "secrets", "kms_keys",
+    "s3_buckets", "dynamodb_tables", "sqs_queues", "sns_topics", "secrets", "ssm_parameters",
+    "kms_keys",
     "iam_virtual_mfa_devices", "iam_users", "iam_groups", "iam_roles",
 )  # fmt: skip
+SECOND_REGION = "us-west-2"
 IAM_PREFIXES = ("del-", "mod-")
 ROLE_PREFIX = "iac-harness-"
 KMS_PENDING_DAYS = 7
@@ -110,6 +114,14 @@ def _nat_gateways(ec2: Any) -> list[str]:
     ]
 
 
+def _ec2_storage(ec2: Any) -> tuple[list[str], list[str]]:
+    """(snapshots próprios, volumes) da região do client; os snapshots públicos de outros donos
+    ficam de fora."""
+    snapshots = _pages(ec2, "describe_snapshots", "Snapshots", OwnerIds=["self"])
+    volumes = _pages(ec2, "describe_volumes", "Volumes")
+    return [s["SnapshotId"] for s in snapshots], [v["VolumeId"] for v in volumes]
+
+
 def _lambda_functions(session: Any) -> list[str]:
     """Funções Lambda; `AccessDeniedException` vira lista vazia (opção B, registro E5).
 
@@ -175,6 +187,9 @@ def inventory(session: Any) -> dict[str, list[str]]:
     cloudwatch = session.client("cloudwatch")
     elasticache = session.client("elasticache")
     dax = session.client("dax")
+    ec2_west = session.client("ec2", region_name=SECOND_REGION)
+    snapshots, volumes = _ec2_storage(ec2)
+    snapshots_west, volumes_west = _ec2_storage(ec2_west)
     keys = []
     for k in _pages(kms, "list_keys", "Keys"):
         meta = kms.describe_key(KeyId=k["KeyId"])["KeyMetadata"]
@@ -186,6 +201,13 @@ def inventory(session: Any) -> dict[str, list[str]]:
         "ec2_elastic_ips": [
             a["AllocationId"] for a in ec2.describe_addresses().get("Addresses", [])
         ],
+        "ec2_snapshots": snapshots,
+        "ec2_volumes": volumes,
+        "usw2_elastic_ips": [
+            a["AllocationId"] for a in ec2_west.describe_addresses().get("Addresses", [])
+        ],
+        "usw2_snapshots": snapshots_west,
+        "usw2_volumes": volumes_west,
         "ec2_network_interfaces": enis,
         "ec2_security_groups": sgs,
         "ec2_subnets": subnets,
@@ -269,6 +291,9 @@ def inventory(session: Any) -> dict[str, list[str]]:
         ],
         "secrets": [
             s["ARN"] for s in _pages(session.client("secretsmanager"), "list_secrets", "SecretList")
+        ],
+        "ssm_parameters": [
+            p["Name"] for p in _pages(session.client("ssm"), "describe_parameters", "Parameters")
         ],
         "kms_keys": keys,
         # Só os não atribuídos: o MFA do root e os de usuários nunca entram no inventário.
@@ -386,6 +411,7 @@ def _delete_cloudfront_distribution(cloudfront: Any, dist_id: str) -> None:
 def _deleters(session: Any) -> dict[str, Any]:
     """Categoria → função que apaga um item (pode esperar; erros sobem para `sweep`)."""
     ec2 = session.client("ec2")
+    ec2_west = session.client("ec2", region_name=SECOND_REGION)
     rds = session.client("rds")
     lightsail = session.client("lightsail")
     kafka = session.client("kafka")
@@ -471,11 +497,26 @@ def _deleters(session: Any) -> dict[str, Any]:
         ec2.delete_nat_gateway(NatGatewayId=i)
         _poll_gone(lambda: _nat_gateways(ec2), i)
 
-    def elastic_ip(allocation_id: str) -> None:
-        addr = ec2.describe_addresses(AllocationIds=[allocation_id])["Addresses"][0]
+    def elastic_ip(allocation_id: str, client: Any = ec2) -> None:
+        addr = client.describe_addresses(AllocationIds=[allocation_id])["Addresses"][0]
         if addr.get("AssociationId"):
-            ec2.disassociate_address(AssociationId=addr["AssociationId"])
-        ec2.release_address(AllocationId=allocation_id)
+            client.disassociate_address(AssociationId=addr["AssociationId"])
+        client.release_address(AllocationId=allocation_id)
+
+    def delete_volume(volume_id: str, client: Any = ec2) -> None:
+        # Volume de instância terminada some sozinho; o resto sai já ("in-use" falha e é retentado).
+        try:
+            client.delete_volume(VolumeId=volume_id)
+        except Exception as exc:
+            if _error_code(exc) != "InvalidVolume.NotFound":
+                raise
+
+    def delete_snapshot(snapshot_id: str, client: Any = ec2) -> None:
+        try:
+            client.delete_snapshot(SnapshotId=snapshot_id)
+        except Exception as exc:
+            if _error_code(exc) != "InvalidSnapshot.NotFound":
+                raise
 
     def network_interface(i: str) -> None:
         try:
@@ -542,6 +583,11 @@ def _deleters(session: Any) -> dict[str, Any]:
         "kinesis_video_streams": kinesis_video_stream,
         "ec2_nat_gateways": nat_gateway,
         "ec2_elastic_ips": elastic_ip,
+        "ec2_snapshots": delete_snapshot,
+        "ec2_volumes": delete_volume,
+        "usw2_elastic_ips": lambda i: elastic_ip(i, ec2_west),
+        "usw2_snapshots": lambda i: delete_snapshot(i, ec2_west),
+        "usw2_volumes": lambda i: delete_volume(i, ec2_west),
         "ec2_network_interfaces": network_interface,
         "ec2_security_groups": lambda i: ec2.delete_security_group(GroupId=i),
         "ec2_subnets": lambda i: ec2.delete_subnet(SubnetId=i),
@@ -556,6 +602,7 @@ def _deleters(session: Any) -> dict[str, Any]:
         "secrets": lambda a: session.client("secretsmanager").delete_secret(
             SecretId=a, ForceDeleteWithoutRecovery=True
         ),
+        "ssm_parameters": lambda n: session.client("ssm").delete_parameter(Name=n),
         "kms_keys": kms_key,
         "iam_virtual_mfa_devices": lambda s: iam.delete_virtual_mfa_device(SerialNumber=s),
         "iam_users": iam_user,

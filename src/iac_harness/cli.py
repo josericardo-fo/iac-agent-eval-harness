@@ -16,18 +16,19 @@ import tomllib
 from collections.abc import Callable, Container
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from iac_harness.agentic.agents import DEFAULT_AGENT_IMAGE, ClaudeCodeAgent
 from iac_harness.agentic.conditions import REGISTRY as AGENT_CONDITIONS
 from iac_harness.agentic.conditions import resolve_condition
-from iac_harness.agentic.judge import DEFAULT_JUDGE_MODEL, JUDGE_FILENAME, LlmJudge
+from iac_harness.agentic.judge import JUDGE_FILENAME, Judge, LlmJudge
 from iac_harness.agentic.metrics import (
     JUDGE_SAMPLE_FIELDS,
     by_condition_model,
     compare_runs,
     compute_agent_metrics,
     judge_agreement,
+    judge_pair_agreement,
     judge_sample,
     merge_judgments,
 )
@@ -42,6 +43,7 @@ from iac_harness.agentic.runner import (
 from iac_harness.agentic.runner import unit_dir as agent_unit_dir
 from iac_harness.agentic.strata import DEFAULT_STRATA_FILE, load_strata
 from iac_harness.agentic.targets import FLOCI_WORKERS, AwsTarget, FlociTarget, Target
+from iac_harness.agentic.user_sim import DEFAULT_MAX_REPLIES, UserSimulator
 from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend, parse_files
 from iac_harness.agents.prompts import PROMPT_VERSION
 from iac_harness.conditions import A, B, C, Condition
@@ -53,6 +55,7 @@ from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
 from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
+from iac_harness.llm import build_text_model
 from iac_harness.metrics import compute_metrics, load_events
 from iac_harness.modalities import prompts as mod_prompts
 from iac_harness.modalities.execute import (
@@ -597,6 +600,12 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _load_cfg_tasks(cfg: dict[str, Any]) -> list[Any]:
+    """Tarefas do catálogo, ou de `[modality] tasks_dir` (ex.: tarefas de usuário simulado)."""
+    tasks_dir = cfg.get("modality", {}).get("tasks_dir")
+    return load_tasks(Path(tasks_dir)) if tasks_dir else load_tasks()
+
+
 def _select_modality_run(
     cfg: dict[str, Any], tasks_arg: list[str] | None, modalities_arg: list[str] | None = None
 ) -> tuple[list[Any], list[str]]:
@@ -605,7 +614,7 @@ def _select_modality_run(
     `free` (E4) é a forma livre: roda sozinha e sem `allow_question` (uma variável por vez).
     """
     mod_cfg = cfg.get("modality", {})
-    tasks = load_tasks()
+    tasks = _load_cfg_tasks(cfg)
     wanted = tasks_arg or mod_cfg.get("tasks")
     if wanted:
         missing = set(wanted) - {t.task_id for t in tasks}
@@ -1343,6 +1352,47 @@ def _build_agent(cfg: dict[str, Any]) -> ClaudeCodeAgent:
     )
 
 
+def _build_judge(
+    section: dict[str, Any],
+    model: str | None = None,
+    provider: str | None = None,
+    reasoning_effort: str | None = None,
+) -> Judge:
+    """Juiz da seção `[judge]` (`provider`, `model`); sem `provider` é o Anthropic de sempre.
+
+    `provider` sobrescreve o da config; se difere dele, o `model` da config não é herdado
+    (vale o padrão do provedor, a menos que `model` seja dado).
+    """
+    if provider and provider != section.get("provider", "anthropic"):
+        section = {k: v for k, v in section.items() if k != "model"}
+    section = {
+        **section,
+        **({"provider": provider} if provider else {}),
+        **({"model": model} if model else {}),
+        **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
+    }
+    return LlmJudge(llm=build_text_model(section, "anthropic"))
+
+
+class UserSimSetup(NamedTuple):
+    """Usuário simulado e o juiz inline que classifica a mensagem do agente."""
+
+    simulator: UserSimulator
+    judge: Judge
+
+
+def _build_user_sim(cfg: dict[str, Any]) -> UserSimSetup | None:
+    """Usuário simulado e o juiz inline que decide se o agente perguntou; None sem `[user_sim]`."""
+    section = cfg.get("user_sim")
+    if section is None:
+        return None
+    if section.get("max_replies", DEFAULT_MAX_REPLIES) < 1:
+        raise SystemExit("erro: [user_sim] max_replies deve ser >= 1")
+    llm = build_text_model(section, "codex")
+    sim = UserSimulator(llm, section.get("max_replies", DEFAULT_MAX_REPLIES))
+    return UserSimSetup(sim, _build_judge(cfg.get("judge", {})))
+
+
 def _agent_plan(cfg: dict[str, Any], tasks: list[Any], reps: int) -> list[tuple]:
     """Unidades (tarefa, condição, modelo, rep); rep externo, como no modality-run."""
     ag = cfg["agentic"]
@@ -1357,7 +1407,7 @@ def _agent_plan(cfg: dict[str, Any], tasks: list[Any], reps: int) -> list[tuple]
 
 def _agent_loop(
     cfg: dict[str, Any], plan: list[tuple], runs_dir: Path, run_id: str, agent: ClaudeCodeAgent,
-    targets: list[Target],
+    targets: list[Target], user_sim: UserSimSetup | None = None,
 ) -> None:  # fmt: skip
     """Distribui as unidades entre os workers (um alvo cada); o recorder é compartilhado."""
     ag = cfg["agentic"]
@@ -1369,6 +1419,8 @@ def _agent_loop(
         run_id=run_id, runs_dir=runs_dir, agent=agent,
         plugin_root=AGENT_PLUGIN_ROOT, strata=strata,
         max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
+        user_sim=user_sim.simulator if user_sim else None,
+        sim_judge=user_sim.judge if user_sim else None,
     )  # fmt: skip
     pending: queue.SimpleQueue[tuple] = queue.SimpleQueue()
     for unit in plan:
@@ -1424,10 +1476,16 @@ def _agent_summary(events: list[dict[str, Any]]) -> str:
 
 def _agent_run_config(
     cfg: dict[str, Any], tasks: list[Any], reps: int, run_dir: Path, agent: ClaudeCodeAgent,
-    targets: list[Target],
+    targets: list[Target], user_sim: UserSimSetup | None = None,
 ) -> dict[str, Any]:  # fmt: skip
     toolchain, executor = targets[0].toolchain, targets[0].executor
+    sim_provenance = (
+        {"user_sim": user_sim.simulator.params, "user_sim_judge": user_sim.judge.params}
+        if user_sim
+        else {}
+    )
     return {
+        **sim_provenance,
         "config": cfg,
         "reps": reps,
         "tasks": [t.task_id for t in tasks],
@@ -1454,11 +1512,11 @@ def cmd_agent_run(args: argparse.Namespace) -> int:
     runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
     run_id = new_run_id(cfg["run"]["name"])
     run_dir = runs_dir / run_id
-    agent, targets = _build_agent(cfg), _build_targets(cfg)
+    agent, targets, user_sim = _build_agent(cfg), _build_targets(cfg), _build_user_sim(cfg)
     run_dir.mkdir(parents=True, exist_ok=False)
-    run_config = _agent_run_config(cfg, tasks, reps, run_dir, agent, targets)
+    run_config = _agent_run_config(cfg, tasks, reps, run_dir, agent, targets, user_sim)
     (run_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, ensure_ascii=False))
-    _agent_loop(cfg, _agent_plan(cfg, tasks, reps), runs_dir, run_id, agent, targets)
+    _agent_loop(cfg, _agent_plan(cfg, tasks, reps), runs_dir, run_id, agent, targets, user_sim)
     print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0
@@ -1506,7 +1564,9 @@ def cmd_agent_resume(args: argparse.Namespace) -> int:
         config_path, saved, run_id, len(plan) - len(pending), len(discarded) + orphans,
         len(pending), "units",
     )  # fmt: skip
-    _agent_loop(cfg, pending, runs_dir, run_id, _build_agent(cfg), _build_targets(cfg))
+    _agent_loop(
+        cfg, pending, runs_dir, run_id, _build_agent(cfg), _build_targets(cfg), _build_user_sim(cfg)
+    )
     print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0
@@ -1548,11 +1608,24 @@ def _agent_judge_agreement(path: Path) -> int:
     return 0
 
 
+def _agent_judge_compare(run_dir: Path, other_name: str) -> int:
+    """Concordância entre judge.jsonl e outro arquivo de vereditos do mesmo run (sem LLM)."""
+    a_path, b_path = run_dir / JUDGE_FILENAME, run_dir / other_name
+    for path in (a_path, b_path):
+        if not path.exists():
+            raise SystemExit(f"erro: {path} não existe")
+    events = [e for e in load_events(run_dir / "events.jsonl") if e.get("event") == "final"]
+    result = judge_pair_agreement(events, load_events(a_path), load_events(b_path))
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 def cmd_agent_judge(args: argparse.Namespace) -> int:
     """Classifica a mensagem final de cada trajetória ainda sem veredito (judge.jsonl).
 
     `--sample N` amostra trajetórias já julgadas para a leitura à mão; `--agreement CSV` compara
-    o juiz com a leitura à mão. Nenhum dos dois chama o juiz.
+    o juiz com a leitura à mão; `--compare-with ARQ` compara judge.jsonl com outro juiz. Nenhum
+    dos três chama o juiz. `--out` grava os vereditos em outro arquivo (segundo juiz).
     """
     if args.agreement is not None:
         return _agent_judge_agreement(args.agreement)
@@ -1561,13 +1634,15 @@ def cmd_agent_judge(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     if args.sample is not None:
         return _agent_judge_sample(run_dir, args.sample, args.seed)
+    if args.compare_with is not None:
+        return _agent_judge_compare(run_dir, args.compare_with)
     cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
-    judge = LlmJudge(model=args.model or cfg.get("judge", {}).get("model", DEFAULT_JUDGE_MODEL))
-    judge_path = run_dir / JUDGE_FILENAME
+    judge = _build_judge(cfg.get("judge", {}), args.model, args.provider, args.reasoning_effort)
+    judge_path = run_dir / args.out
     done = set()
     if judge_path.exists() and not args.redo:
         done = {j["trajectory_id"] for j in load_events(judge_path)}
-    prompts = {t.task_id: agent_prompt(t) for t in load_tasks()}
+    prompts = {t.task_id: agent_prompt(t) for t in _load_cfg_tasks(cfg)}
     finals = [e for e in load_events(run_dir / "events.jsonl") if e.get("event") == "final"]
     todo = [e for e in finals if e["trajectory_id"] not in done
             and e.get("termination") not in HARNESS_FAILURES]  # fmt: skip
@@ -1594,7 +1669,7 @@ def cmd_agent_judge(args: argparse.Namespace) -> int:
 def cmd_agent_metrics(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     events = load_events(run_dir / "events.jsonl")
-    judge_path = run_dir / JUDGE_FILENAME
+    judge_path = run_dir / args.judge_file
     judgments = load_events(judge_path) if judge_path.exists() else []
     metrics = compute_agent_metrics(merge_judgments(events, judgments))
     if args.compare is not None:
@@ -1637,6 +1712,13 @@ def _agent_metrics_table(metrics: dict[str, Any]) -> str:
             f"{frac(b['verified_state']):<8} {b['tokens']['mean_total'] or 0:>9.0f} "
             f"{b['cost_usd']:>10.4f}"
         )
+        if "user_sim" in b:
+            u = b["user_sim"]
+            lines.append(
+                f"  usuário simulado: respondeu {frac(u['replied'])}, "
+                f"estado final {frac(u['state_pass_final'])}, "
+                f"sucesso final {frac(u['success_final'])}, erros {u['errors']}"
+            )
     for model, cmps in metrics["vs_none"].items():
         lines += ["", f"{model}: condição × none (sucesso; McNemar pela maioria das reps)"]
         for c in cmps["success"]:
@@ -2094,6 +2176,20 @@ def main(argv: list[str] | None = None) -> int:
     p_ajud.add_argument(
         "--agreement", type=Path, help="judge_sample.csv preenchido: concordância juiz × humano"
     )
+    p_ajud.add_argument(
+        "--provider", choices=("anthropic", "codex"), help="provedor do juiz (padrão: [judge])"
+    )
+    p_ajud.add_argument("--reasoning-effort", help="esforço de raciocínio do juiz (codex)")
+    p_ajud.add_argument(
+        "--out",
+        default=JUDGE_FILENAME,
+        help="arquivo de vereditos no run_dir (padrão: judge.jsonl)",
+    )
+    p_ajud.add_argument(
+        "--compare-with",
+        metavar="ARQUIVO",
+        help="outro arquivo de vereditos no run_dir: concordância com judge.jsonl (sem LLM)",
+    )
     p_ajud.set_defaults(func=cmd_agent_judge)
 
     p_amet = sub.add_parser(
@@ -2101,6 +2197,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_amet.add_argument("run_dir", type=Path)
     p_amet.add_argument("--format", choices=("json", "table"), default="json")
+    p_amet.add_argument(
+        "--judge-file", default=JUDGE_FILENAME, help="arquivo de vereditos (padrão: judge.jsonl)"
+    )
     p_amet.add_argument(
         "--compare", type=Path, help="outro agent-run (ex.: AWS real): concordância do sucesso"
     )

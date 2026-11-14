@@ -14,6 +14,7 @@ from typing import Any
 
 from iac_harness.agentic.judge import KINDS
 from iac_harness.agentic.outcome import success as success_rule
+from iac_harness.agentic.outcome import success_final as success_final_rule
 from iac_harness.agentic.runner import HARNESS_FAILURES
 from iac_harness.agentic.runner import TOKEN_FIELDS as _EVENT_TOKEN_FIELDS
 from iac_harness.agentic.strata import AXES
@@ -48,14 +49,15 @@ def merge_judgments(events: list[Row], judgments: list[Row]) -> list[Row]:
             continue
         j = verdicts.get(e.get("trajectory_id"))
         asked = j.get("asked") if j else None
-        out.append(
-            {
-                **e,
-                "asked": asked,
-                "judge_kind": j.get("kind") if j else None,
-                "success": success_rule(e["expect"], e.get("check_pass"), asked),
-            }
-        )
+        row = {
+            **e,
+            "asked": asked,
+            "judge_kind": j.get("kind") if j else None,
+            "success": success_rule(e["expect"], e.get("check_pass"), asked),
+        }
+        if "check_pass_final" in e:  # trajetória com usuário simulado
+            row["success_final"] = success_final_rule(e["check_pass_final"])
+        out.append(row)
     return out
 
 
@@ -81,6 +83,22 @@ def _mean(values: list[float]) -> float | None:
     return statistics.fmean(values) if values else None
 
 
+def _user_sim_block(rows: list[Row]) -> dict[str, Any] | None:
+    """Desfecho depois das respostas do usuário simulado; None se nenhuma trajetória o usou."""
+    sim = [e for e in rows if "check_pass_final" in e]
+    if not sim:
+        return None
+    return {
+        "n": len(sim),
+        "replied": _rate(sum(bool(e.get("user_turns")) for e in sim), len(sim)),
+        "mean_user_turns": _mean([e.get("user_turns") or 0 for e in sim]),
+        "state_pass_final": _rate(sum(bool(e["check_pass_final"]) for e in sim), len(sim)),
+        "success_final": _optional_rate(sim, "success_final"),
+        "errors": sum(1 for e in sim if e.get("user_sim_error")),
+        "cost_usd_total": round(sum(float(e.get("cost_usd_total") or 0) for e in sim), 6),
+    }
+
+
 def agent_block(rows: list[Row]) -> dict[str, Any]:
     judged = [e for e in rows if e.get("success") is not None]
     base = _block([_as_modality_row(e) for e in judged], set(), Counter(), Counter(), None, {})
@@ -88,7 +106,7 @@ def agent_block(rows: list[Row]) -> dict[str, Any]:
     tools: Counter[str] = Counter()
     for e in rows:
         tools.update(e.get("tool_counts") or {})
-    return {
+    out = {
         "n": len(rows),
         "n_judged": len(judged),
         **{k: base[k] for k in _BLOCK_KEYS},
@@ -103,6 +121,10 @@ def agent_block(rows: list[Row]) -> dict[str, Any]:
         "tool_calls": dict(sorted(tools.items())),
         "termination": dict(sorted(Counter(e.get("termination") for e in rows).items())),
     }
+    sim = _user_sim_block(rows)
+    if sim is not None:  # só nos runs com usuário simulado: a saída dos demais não muda
+        out["user_sim"] = sim
+    return out
 
 
 def by_condition_model(rows: list[Row]) -> dict[str, dict[str, Any]]:
@@ -306,6 +328,52 @@ def judge_agreement(rows: list[Row]) -> dict[str, Any]:
             {k: r[k] for k in ("trajectory_id", "judge_kind", "human_kind")}
             for r in labeled
             if r["judge_kind"] != r["human_kind"]
+        ],
+    }
+
+
+def _kappa(pairs: list[tuple[Any, Any]]) -> float | None:
+    """Kappa de Cohen entre dois rotuladores; None sem pares ou com pe == 1."""
+    n = len(pairs)
+    if not n:
+        return None
+    po = sum(a == b for a, b in pairs) / n
+    first, second = Counter(a for a, _ in pairs), Counter(b for _, b in pairs)
+    pe = sum(first[k] * second[k] for k in first) / (n * n)
+    return None if pe == 1 else (po - pe) / (1 - pe)
+
+
+def judge_pair_agreement(events: list[Row], a: list[Row], b: list[Row]) -> dict[str, Any]:
+    """Juiz × juiz: concordância e kappa no `kind` e no `asked`, nos ids presentes nos dois.
+
+    O último veredito de cada `trajectory_id` vale; task/condição/modelo vêm dos eventos.
+    """
+    va = {j["trajectory_id"]: j for j in a}
+    vb = {j["trajectory_id"]: j for j in b}
+    common = sorted(va.keys() & vb.keys())
+    meta = {e["trajectory_id"]: e for e in events}
+    kinds = [(va[i].get("kind"), vb[i].get("kind")) for i in common]
+    asked = [(k1 == "ask", k2 == "ask") for k1, k2 in kinds]
+    agree = lambda pairs: _rate(sum(x == y for x, y in pairs), len(pairs))  # noqa: E731
+    return {
+        "n": len(common),
+        "kind": {**agree(kinds), "kappa": _kappa(kinds)},
+        "asked": {**agree(asked), "kappa": _kappa(asked)},
+        "asked_confusion": {
+            f"a_{'ask' if x else 'other'}__b_{'ask' if y else 'other'}": c
+            for (x, y), c in sorted(Counter(asked).items())
+        },
+        "only_in_a": len(va.keys() - vb.keys()),
+        "only_in_b": len(vb.keys() - va.keys()),
+        "disagreements": [
+            {
+                "trajectory_id": i,
+                **{k: meta.get(i, {}).get(k) for k in ("task_id", "condition", "model")},
+                "kind_a": k1,
+                "kind_b": k2,
+            }
+            for i, (k1, k2) in zip(common, kinds, strict=True)
+            if k1 != k2
         ],
     }
 

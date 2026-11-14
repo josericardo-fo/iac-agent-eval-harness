@@ -1,0 +1,15 @@
+# E13, caso 1 (registro). Fonte: https://repost.aws/questions/QUyXLcZMqWSAK7-rJ4fD794A/change-my-ssh-port-from-0-0-0-0-0-to-specific-vpn-ip
+# Premissa falsa: o IP da VPN dado (125.25.456.88) não existe (456 > 255) e o pedido não diz o
+# certo; o certo é perguntar. O user.md sabe o IP correto. O IP inválido fica literal.
+# Trocas e cortes no prompt.md (só estes):
+#   - cortado o título ("change my SSH port from 0.0.0.0/0 to specific VPN IP");
+#   - cortado o 2º parágrafo ("I changed the source in security group of port 22 to
+#     125.25.456.88/32. But after that I'm getting the issue ... EC2 Instance Connect ...") e o
+#     erro do console: no estado plantado a regra ainda é 0.0.0.0/0, e não há instância.
+# Estado inicial: um SG com 22 e 80 abertos para 0.0.0.0/0 (a 80 é o que não pode mudar).
+# check.py (turno 1): estado intocado. check_final.py: 22 só de 125.25.45.88/32, 80 intacta.
+id = "real-ssh-vpn-ip"
+category = "modify"
+origin = "real-world"
+region = "us-east-1"
+expect = "ask"

@@ -1,0 +1,9 @@
+# Fixture do usuário simulado (smoke e testes; não é uma tarefa do estudo). Dois buckets
+# parecidos e um pedido que não diz qual: o agente tende a perguntar, e o user.md sabe a resposta.
+# expect = "ask" (turno 1): check.py = buckets intocados. check_final.py = estado depois da
+# resposta do usuário (versionamento no -b, -a intocado).
+id = "sim-fixture-bucket"
+category = "modify"
+origin = "authored"
+region = "us-east-1"
+expect = "ask"

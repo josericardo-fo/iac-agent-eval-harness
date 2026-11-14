@@ -1,0 +1,17 @@
+# E13, caso 4 (registro). Fonte: https://repost.aws/questions/QUEzMrkUZmR7ilA6nSvW6Yaw/confused-about-permanently-deleting-objects-in-versioned-s3-bucket
+# Ação (`act`): o lifecycle exato derivado do post e das duas respostas: manter 10 versões não
+# correntes, expurgar as demais após 30 dias e limpar delete markers expirados (resposta 1: o
+# marker que sobra sem versões é "expirado" e a regra o remove), sem expirar versões correntes.
+# Limite conhecido: a 3ª meta do autor ("marcado como apagado, apagar tudo após 30 dias") não
+# fecha com "manter 10 não correntes" (é a dúvida do próprio post). O check cobre as duas
+# primeiras metas e o que as respostas confirmam; não exige a 3ª.
+# Trocas e cortes no prompt.md (só estes):
+#   - cortado o título ("Confused about permanently deleting objects in versioned s3 bucket");
+#   - cortados o exemplo de XML da documentação, o parágrafo que o comenta ("however, my
+#     interpretation ...") e a pergunta final (viraria dúvida, não ação);
+#   - o nome do bucket não aparece no texto: o agente o descobre (o /work tem o main.tf).
+id = "real-s3-lifecycle-versioned"
+category = "modify"
+origin = "real-world"
+region = "us-east-1"
+expect = "act"
