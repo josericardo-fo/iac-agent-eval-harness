@@ -16,12 +16,15 @@ Docker, procedência registrada em cada run):
    real. Nenhuma forma domina; a forma muda o custo em tokens, não o acerto.
 3. **Toolkit (Semanas 8–9):** experimentos E1–E4 e E11/E12, incluindo o Claude Code de verdade
    com 5 condições de toolkit. O toolkit troca chute por pergunta nos pedidos ambíguos e não perde
-   nas claras; a v2 (`toolkit/src-v2/`) substitui a v1.
+   nas claras; a v2 (`toolkit/src-v2/`) substitui a v1. E10 (pedido leigo) e E14 (segundo juiz, de
+   outro fornecedor) em 14/11; E13 (casos reais com usuário simulado) a rodar.
 
 Onde ler:
 
 - Decisões de método e resultados: [docs/registro-metodologico.md](docs/registro-metodologico.md).
   A seção "Experimentos" mapeia experimento → config → run.
+- Guia de decisão (que forma usar e quando usar o toolkit, só com o que tem medida):
+  [docs/guia-decisao.md](docs/guia-decisao.md).
 - Configs por fase: [configs/README.md](configs/README.md).
 - Os runs ficam em `runs/` (fora do git).
 
@@ -123,9 +126,10 @@ nome, nunca na linha de comando), sem `AWS_ENDPOINT_URL` e na rede `bridge`. Ant
 `aws sts get-caller-identity` precisa devolver `[sandbox] expected_arn`; senão o comando aborta.
 
 O reset tira um inventário (baseline) na primeira chamada e, a cada tentativa, apaga tudo o que
-não está nele (`executors/aws_sweep.py`, rodado na toolchain): EC2, RDS sem snapshot final,
-Lightsail, MSK, S3 (com versões), DynamoDB, SQS, SNS, Secrets Manager sem recuperação, chaves KMS
-do cliente (exclusão agendada em 7 dias) e usuários/grupos IAM `del-*`/`mod-*`. Recursos da VPC
+não está nele (`executors/aws_sweep.py`, rodado na toolchain): EC2 (com volumes e snapshots),
+RDS sem snapshot final, Lightsail, MSK, S3 (com versões), DynamoDB, SQS, SNS, parâmetros SSM,
+Secrets Manager sem recuperação, chaves KMS do cliente (exclusão agendada em 7 dias), usuários/grupos
+IAM `del-*`/`mod-*` e, em `us-west-2`, EIPs, volumes e snapshots (E13). Recursos da VPC
 default ficam intactos. Se sobrar algo fora do baseline, o comando aborta.
 Ao fim de `modality-prevalidate`/`modality-run` (inclusive com erro), uma limpeza final apaga o
 que o último par criou.
@@ -136,8 +140,8 @@ sejam apagadas. Apagar o arquivo faz o próximo run tirar um inventário novo da
 com a conta limpa, ou as sobras viram baseline e nunca são apagadas.
 
 Premissas:
-- não crie nada em `us-east-1` (nem usuários/grupos IAM `del-*`/`mod-*`) durante um run real: o
-  que aparecer fora do baseline é apagado;
+- não crie nada em `us-east-1` nem EC2 em `us-west-2` (nem usuários/grupos IAM `del-*`/`mod-*`)
+  durante um run real: o que aparecer fora do baseline é apagado;
 - custa dinheiro: RDS, EC2 e sobretudo MSK cobram por hora; confira o Cost Explorer depois de
   cada run (orçamento da conta: US$ 20 com alertas);
 - a task-201 (MSK) roda à parte, e as tarefas 108, 110, 115 e 118 falham por desenho
@@ -190,6 +194,8 @@ uv run iac-harness agent-resume runs/<id>                           # pula o que
 uv run iac-harness agent-judge runs/<id>                            # juiz: a mensagem final pergunta algo?
 uv run iac-harness agent-judge runs/<id> --sample 30 --seed 20261106   # judge_sample.csv para leitura à mão
 uv run iac-harness agent-judge runs/<id> --agreement runs/<id>/judge_sample.csv   # juiz × humano
+uv run iac-harness agent-judge runs/<id> --provider codex --out judge-luna.jsonl   # 2º juiz (gpt-6-luna, E14)
+uv run iac-harness agent-judge runs/<id> --compare-with judge-luna.jsonl   # juiz × juiz (kappa)
 uv run iac-harness agent-metrics runs/<id> --format table           # condição × modelo, estratos, alvo
 uv run iac-harness agent-metrics runs/<floci> --compare runs/<aws>  # concordância Floci × AWS real
 uv run iac-harness demo-timeline runs/<id>/<task>/<rep>/<cond>/<modelo> -o cena.json   # timeline da demo animada
@@ -197,4 +203,10 @@ uv run iac-harness demo-timeline runs/<id>/<task>/<rep>/<cond>/<modelo> -o cena.
 
 - O agente roda como usuário não-root, com egresso só pelo proxy squid (perfil `agent`).
 - Os estratos (intenção, categoria, origem, dificuldade, alvo) ficam em `configs/strata.toml`.
+- Usuário simulado (E13, opcional): com `[user_sim]` na config, quando o juiz classifica o 1º turno
+  como `ask`, um modelo (`provider = "codex"`, `model = "gpt-6-luna"`, Codex CLI logado) responde a
+  partir do `user.md` oculto da tarefa e a sessão é retomada (`max_replies`, padrão 1). O
+  `check_final.py` opcional confere o estado depois da resposta (`success_final`). `[judge] provider`
+  escolhe o fornecedor do juiz (padrão `anthropic`); `[modality] tasks_dir` troca o catálogo de
+  tarefas. Smoke: `configs/e13-usersim-floci.toml`.
 - Os testes de integração fazem `docker compose down`: não rode com um run em andamento.

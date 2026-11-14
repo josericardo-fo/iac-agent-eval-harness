@@ -18,8 +18,8 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 
 - **Experimentos E1–E4** vêm da agenda (`agenda-experimentos-toolkit.md`, §5) e dão nome às
   seções do §3.
-- **Decisões E1–E12** são as linhas da tabela "Ambiente" (§1): E1–E4 são decisões de ambiente,
-  E5–E9 são decisões tomadas durante o E3, e E10–E12 são experimentos novos, registrados como
+- **Decisões E1–E14** são as linhas da tabela "Ambiente" (§1): E1–E4 são decisões de ambiente,
+  E5–E9 são decisões tomadas durante o E3, e E10–E14 são experimentos novos, registrados como
   decisão antes do run.
 
 Por isso "E3" é ao mesmo tempo um experimento (o agente real) e uma decisão de ambiente ("AWS real
@@ -38,7 +38,9 @@ linha da tabela.
 | E3 real (agenda) | O mesmo na AWS real | P6, decisões E5–E9 | `e3-agent-aws.toml` | `20261109T163420` | Nas claras, não ganha nem perde de forma significativa |
 | E11 (decisão) | Ambíguas na AWS real, toolkit v1 × v2 | E11 | `e11-amb-aws.toml` | `20261111T132723` | `none` 8/12 × v1 12/12 × v2 11/12 |
 | E12 (decisão) | Toolkit v2 nas 29 claras da real | E12 | `e12-v2-aws.toml` | `20261111T162415` | v2 52/58 × v1 47/58; o ganho vem das 3 tarefas que originaram a v2. A v2 substitui a v1 |
-| E10 (decisão) | O pedido leigo derruba o acerto? | E10 | ainda não existe | ainda não rodou | Roda antes do S10 |
+| E10 (decisão) | O pedido leigo derruba o acerto? | E10 | `e10-lay-haiku.toml` | `20261112T172414` | Queda pequena (técnica 30 e 29 × leiga 27 e 27 de 30); o toolkit não muda isso |
+| E13 (decisão) | Casos reais (re:Post, GitHub, HashiCorp Discuss) com um usuário simulado | E13 | `e13-real-aws.toml` (a criar); smoke `e13-usersim-floci.toml` | ainda não rodou | Roda antes do S10 |
+| E14 (decisão) | Segundo juiz de outro fornecedor (`gpt-6-luna`) sobre todos os runs julgados | E14 | nenhuma (`agent-judge --provider codex --out judge-luna.jsonl`) | os mesmos do E3, E11, E12, E10 (E13 depois) | `asked` concorda em 1790/1806 (κ 0,81–1,00); nenhuma conclusão muda |
 
 Agenda E5–E7 (mais tarefas de consulta e remoção, ciclo de vida, drift) ficaram como trabalho
 futuro. Índice completo das configs: `configs/README.md`.
@@ -107,6 +109,8 @@ futuro. Índice completo das configs: `configs/README.md`.
 | E10 | Agenda E8 (pedido leigo): o pedido em linguagem leiga derruba o acerto, e a regra "calibre ao nível da pessoa" (`regras-achados.md`, linha 2, hoje [E]) muda isso? 10 tarefas claras do Floci, sorteadas com a semente `20261111` (T1; `scripts/select_e10_tasks.py`, semente fixada em 12/11 antes de sortear) entre as do estrato `clear` do E3, fora as ambíguas, as de premissa falsa e a task-118. Cada uma ganha uma paráfrase leiga com **o mesmo check**: mantém os identificadores e valores que o check lê (nomes, números) e o nome do serviço como aparece no console; troca o jargão por uma descrição do efeito (ex.: PITR → "poder voltar a tabela a um momento anterior"); não acrescenta nem tira informação. Condições `none` e `own-rules-v2` (era `own-rules`; trocada em 12/11, com o usuário e antes do run, porque a v2 substituiu a v1 pelo E12 e é o toolkit distribuído), Haiku, Floci, técnica × leiga na mesma corrida, N=3 (10 × 2 × 2 × 3 = 120 trajetórias). Desfecho: sucesso do E3 (P6); efeito do pedido leigo = leiga × técnica pareado por tarefa, em cada condição. | Própria | Agenda §5, E8 (L6); Sclar [10] (sensibilidade ao prompt); ABC [2] R.5 (construto). | Registrado em 11/11, antes de escrever as paráfrases e antes do run; roda depois do gate S9 e antes do congelamento (S10). As paráfrases são lidas pelo usuário antes do run. **Limites:** paráfrases de autoria nossa (T5), uma redação por tarefa (D3), só Floci, só Haiku. |
 | E11 | Ambíguas do E2 na AWS real, com o toolkit v1 e uma v2. Revê o item (1) do E8: o ganho "perguntar no ambíguo" passa a ser medido também na real. **Tarefas:** as 10 `amb-*`/`clr-*` (6 ambíguas, 4 claras do par), sem mudar pedido, check nem `expect`; as claras dos pares 2 e 3 (`mod-s3-versioning`, `mod-sqs-retention`) já estão no E6 e no E12. **Gate:** `modality-prevalidate` na real (`configs/modality-real-aws-amb.toml`, só Terraform): estado inicial passa no check e a referência reprova (`ask`) ou passa (`act`); tarefa que falhar no gate sai e é relatada. Os nomes globais de bucket (`del-logs-old`, `del-logs-current`, `mod-versioning-bucket`) estavam livres em 11/11 (HeadBucket 404). **Condições:** `none`, `own-rules` (v1) e `own-rules-v2`; Haiku e Sonnet; **N=1** (60 trajetórias, `configs/e11-amb-aws.toml`), em série no homelab, mesmo agente e imagem do E6. **Toolkit v2** (`toolkit/src-v2/`, condição `own-rules-v2`; a v1 fica intacta): duas mudanças de texto, cada uma ligada a uma falha do E6. (a) Pedido de algo novo que não se refere a nada existente: criar com padrões seguros e baratos e relatar as escolhas, sem perguntar pelo que o usuário deixou em aberto (task-231, task-367). (b) Pedir um recurso de um tipo é consentimento para criá-lo: escolher a opção menor e mais barata que atende, criar e relatar o custo (task-416). Sem scripts (regra 17 "sem base"). **Desfecho:** o do P6 (`success`: na `ask`, perguntou e estado intacto; na `act`, check e não perguntou), juiz `e3-judge-v2`. Sem piloto à parte: a infraestrutura é a do E6 (290 trajetórias) e as primeiras trajetórias são conferidas à mão. | Própria | S4 (N=1 exploratório); SkillsBench (skill ajuda na média e piora parte das tarefas). | Registrado em 11/11, antes do gate das tarefas e de qualquer trajetória. O texto da v2 fica congelado no commit anterior à corrida e **não muda depois de ver E11 ou E12**. **Regra de decisão:** a v2 substitui a v1 só se, somando os modelos, não perder nas ambíguas (acertos `ask` ≥ v1 − 1) **e** não perder nas claras do E12 (acertos ≥ v1); senão, é achado negativo. **Risco de sobreajuste (declarado):** a v2 nasceu de 3 falhas do E6; as claras do E12 são relatadas com e sem task-231, task-367 e task-416, e as 10 do E11 (que a v2 não viu) são o teste fora da amostra da troca. Corrige `strata.toml`: `target = "both"` das amb/clr passa a valer. |
 | E12 | Toolkit v2 nas 29 tarefas claras da matriz real (E6): `own-rules-v2` × Haiku/Sonnet × **N=1** (58 trajetórias, `configs/e12-v2-aws.toml`), em série, depois do E11. Comparação pareada por tarefa com `none` e `own-rules` do E6, que não rodam de novo. Estatística do P6 (bootstrap pareado, McNemar, Holm), v2 × v1 e v2 × `none`. task-130 relatada com e sem ela (E9). | Própria | S4. | Registrado em 11/11, junto com o E11. **Limite:** a v1 e o `none` são de outro dia (09–11/11; deriva do gateway e da AWS), como no E8. |
+| E13 | Validade externa: o dataset é sintético; o toolkit aguenta problemas reais de leigos? E o agente termina o serviço quando alguém responde à pergunta? **Casos:** 9 problemas públicos de AWS, com resolução conhecida, pesquisados em 12/11 (links em `docs/casos-reais.md`, a criar): #1 SSH 0.0.0.0/0 → IP da VPN, mas o IP dado é inválido (`ask`); #2 "apaguei tudo e ainda pago": EIP solto, volume e snapshot em us-east-1 e us-west-2 (`act`: listar a causa sem apagar nada); #3 apagar todas as versões de "algumas pastas" (`ask`); #4 lifecycle em bucket versionado, 10 versões e 30 dias (`act`); #6 bucket público falhando no 1º apply (`act`; conteúdo inócuo, destruído no reset); #7 importar no Terraform um bucket criado no console (`act`: `plan` sem mudanças, nada recriado); #8 regra de SG criada no console fora do Terraform (`ask`); #9 esvaziar tabela DynamoDB mantendo ARN, GSI e tags (`act`); #11 senha fora do Secrets Manager por custo (`act`: SSM SecureString com `aws/ssm`, sem secret nem CMK). Saíram, com o usuário: um caso que exigiria criar usuário IAM com nome livre (fora da política, risco de escalada) e o de CloudFront (deploy de 15–30 min por trajetória). **Pedido:** as palavras do post original, em inglês; só nomes e IDs trocados pelos dos recursos plantados (cada troca no `meta.toml`). *Emenda de 14/11, antes do run:* além das trocas, há cortes (títulos, seções vazias de issue, trechos sem relação com o pedido), todos declarados no `meta.toml` de cada caso e conferidos palavra por palavra contra as fontes em 12/11. **Usuário simulado** (revê P4 e P6 só neste experimento): quando o juiz (`e3-judge-v2`, Sonnet, chamado logo após o 1º turno) classifica a mensagem como `ask`, o `gpt-6-luna` (OpenAI, pelo Codex CLI com login do ChatGPT, isolado da config pessoal; prompt `user-sim-v1`) responde a partir de uma ficha oculta (`user.md`, escrita antes do run, nunca no `/work`) e do pedido original; a mesma sessão do Claude Code é retomada (`--resume`); no máximo 1 resposta. Sem ficha, a resposta é "siga com o que pedi". Modelo de outro fornecedor para evitar conluio agente × usuário. **Desfechos:** os do P6 no 1º turno, comparáveis com E2/E3/E11 (`expect` vale para o 1º turno); `success_final` = o check do estado final (`check_final.py` quando a tarefa tem; nos `ask`, o estado pedido depois da resposta) passa, tenha ou não perguntado. **Gate:** `modality-prevalidate` na real como no E11 (estado inicial passa no check do 1º turno; referência passa no check final). **Condições:** `none` × `own-rules-v2`, Sonnet, AWS real, **N=3** (9 × 2 × 3 = 54 trajetórias), em série no homelab, depois do E10. **Ambiente:** política `iac-harness-scoped-v2` na versão v3 da AWS = `docs/iam/iac-harness-scoped-v2.2.json` (12/11: escrita de parâmetros SSM em us-east-1, EC2 em us-west-2, `ec2:Describe*` em todas as regiões); limpeza por inventário estendida a volumes, snapshots, SSM e EC2 em us-west-2, com baseline refeito pelo root antes do run. | Própria; adapta τ-bench | τ-bench [4] (usuário simulado por LLM); ABC [2] R.5 (construto) e T.6; S4 (exploratório). | Registrado em 12/11, antes de escrever prompts, fichas e checks, e antes de qualquer trajetória. Smoke do mecanismo no Floci (12/11, `runs/20261112T181628-e13-usersim-floci`, tarefa-fixture fora do estudo): perguntou, o simulador respondeu só o nome do bucket, a sessão retomou com o mesmo `session_id` e o check final passou. **Limites:** casos, fichas e checks de autoria nossa (T5); uma redação por caso (D3); simulador não determinístico e de outro fornecedor (variável nova, relatada); na real, o `settle` re-tenta check reprovado já no 1º turno e pode mascarar uma falha desse turno; renovação do token do Codex durante o run se perde (o login real só é lido); N=3 com 9 casos é leitura exploratória. |
+| E14 | Segundo juiz, de outro fornecedor: a classificação da mensagem final depende do juiz ser da mesma família do agente (Claude julgando Claude Code)? O juiz principal continua o `e3-judge-v2` com Sonnet (é o que os resultados do §3 citam); o `gpt-6-luna` (OpenAI, pelo Codex CLI com login do ChatGPT, isolado da config pessoal, esforço de raciocínio padrão do Codex, versão gravada em cada linha) julga **as mesmas trajetórias com o mesmo prompt** `e3-judge-v2` e as mesmas entradas (pedido, `mutated`, mensagem final), gravando em `judge-luna.jsonl` ao lado do `judge.jsonl`, que não muda. **Escopo:** todo run com `judge.jsonl`: E3 Floci (`20261106T143311`, `20261106T170449`, `20261106T192631`, `20261106T192914`, `20261110T144440`), E3 real (`20261109T163420`), E11, E12, E10 e, depois de rodado, o 1º turno do E13 (o juiz inline do E13 continua o Sonnet, como registrado). **Desfechos:** por run, concordância e kappa de Cohen no `kind` e no `asked` (`kind == ask`, que decide o `success`), e as métricas do P6 recalculadas com o veredito do Luna (`agent-metrics --judge-file`). **Desacordos no `asked`** são lidos pelo usuário sem ver qual juiz deu qual rótulo; o rótulo da leitura é o desempate. **Interpretação, fixada antes:** se a conclusão principal de um experimento (sinal do efeito do toolkit nas ambíguas no E3/E11; regra de decisão v2 × v1 do E11/E12; efeito do pedido leigo no E10) for a mesma com os dois juízes, ela se reforça; se mudar, os dois resultados são relatados e a conclusão fica enfraquecida. Nenhum resultado do §3 é trocado pelo do Luna. | Própria | Zheng et al. 2023, *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena* (viés de autoaprimoramento); ABC [2] R.5; τ-bench [4] (outro fornecedor como simulador, aqui como juiz). | Registrado em 14/11, antes de qualquer veredito do Luna; o juiz Sonnet do E10 já estava rodando (decisão E10). **Limites:** um segundo juiz não é leitura humana (só os desacordos no `asked` são lidos); juiz não determinístico; limite de uso do plano ChatGPT pode exigir retomada (`agent-judge --out judge-luna.jsonl` pula o que já tem veredito). |
 
 ### Estatística
 
@@ -611,6 +615,68 @@ harness: US$ 24,47 + US$ 24,69.
   dia (deriva do gateway e da AWS); juiz conferido por outro modelo da mesma família, sem leitura
   humana; 6 ambíguas de autoria nossa (T5).
 
+### E10: pedido leigo (12–14/11/2026)
+
+Run `runs/20261112T172414-e10-lay-haiku` (homelab, 12/11): 120/120 `DONE`, nenhuma falha do harness,
+juiz `e3-judge-v2` (Sonnet) em 14/11 e segundo juiz (E14). Sem desvios.
+
+| Condição (Haiku, Floci, N=3) | Técnica | Leiga | Leiga − técnica, bootstrap por tarefa |
+|---|---|---|---|
+| `none` | 30/30 | 27/30 | −0,10 [−0,23; 0,00] |
+| `own-rules-v2` | 29/30 | 27/30 | −0,07 [−0,23; +0,07] |
+
+- **Com o juiz Luna:** `none` 30 × 26, `own-rules-v2` 28 × 26; diferenças −0,13 [−0,33; 0,00] e
+  −0,07 [−0,23; +0,07]. Mesma leitura.
+- **Onde cai:** `mod-s3-encryption` e `mod-sg-https` (leiga) nas duas condições e `task-373` (leiga)
+  no toolkit. As 7 falhas são todas `ask` com estado intacto, nenhum estado errado. Em 5 delas o
+  agente diz que o endpoint é um emulador e não a AWS, e para antes do `apply`; isso aparece mais nas
+  paráfrases leigas, e é um artefato do Floci tanto quanto do pedido.
+- **Toolkit × `none`:** sem diferença (McNemar p = 1,0; dif −0,02 [−0,12; +0,08]). A regra
+  "calibre ao nível da pessoa" (`regras-achados.md`, linha 2) segue sem achado a favor.
+- **Tokens:** o toolkit gasta 1,38× os de `none` nas técnicas (1,2× a 2,4× por tarefa). O pedido
+  leigo soma 8% em `none` e tira 4% no toolkit.
+- **Leitura:** o pedido leigo custa pouco acerto (IC encosta no zero; nenhuma tarefa melhora com a
+  paráfrase em `none`), e o que custa é o agente parar para confirmar, não errar o estado.
+- **Limites:** só Floci e Haiku; paráfrases nossas (T5), uma por tarefa (D3); 10 tarefas, leitura
+  exploratória.
+
+### E14: segundo juiz, de outro fornecedor (14/11/2026)
+
+`gpt-6-luna` (Codex CLI 0.169.0, esforço padrão), mesmo prompt `e3-judge-v2`, em `judge-luna.jsonl`
+de cada run; 1806 trajetórias, nenhuma falha de chamada. Comando:
+`agent-judge <run> --compare-with judge-luna.jsonl`.
+
+| Run | `asked` igual (κ) | `kind` igual (κ) |
+|---|---|---|
+| E3 Floci Haiku (`20261106T143311`) | 517/525 (0,96) | 364/525 (0,57) |
+| E3 Floci Sonnet (`20261106T170449`) | 524/525 (0,99) | 442/525 (0,74) |
+| task-118 refeita (Haiku e Sonnet) | 18/18 (—) | 16/18 |
+| E8 (`20261110T144440`) | 208/210 (0,98) | 185/210 (0,82) |
+| E3 real (`20261109T163420`) | 289/290 (0,98) | 259/290 (0,82) |
+| E11 (`20261111T132723`) | 60/60 (1,00) | 55/60 (0,85) |
+| E12 (`20261111T162415`) | 57/58 (0,88) | 55/58 (0,91) |
+| E10 (`20261112T172414`) | 117/120 (0,81) | 70/120 (0,43) |
+
+- **Desacordos no `asked`:** 16. Em 15 o Luna dá `ask` onde o Sonnet deu `done_with_followup` ou
+  `partial` (o agente terminou e ofereceu um passo a mais); 15 em tarefas claras, 6 na condição
+  `aws-core`. Um só em tarefa ambígua (`amb-s3-versioning`, `aws-core`, Sonnet).
+- **Conclusões:** pela regra fixada no E14, nenhuma muda: o E11 é idêntico (60/60), a regra de
+  decisão v2 × v1 não se altera e o E10 dá a mesma leitura. Ficam **reforçadas**.
+- **`kind`:** a concordância fina é menor (κ 0,43–0,91), quase toda entre `done` e
+  `done_with_followup`, que não entram no `success`.
+- **Leitura às cegas** dos 16 pelo usuário: folha em `runs/e14-leitura/leitura-cega.md` (ordem
+  sorteada, semente `20261114`; rótulos em `gabarito-juizes.json`). Pendente.
+- **Limites:** dois juízes LLM não são leitura humana; o 1º turno do E13 entra depois do run.
+
+### Colateral na AWS real: `mod-sqs-retention` (relido em 14/11/2026)
+
+Os 3 `collateral_ok = false` da real (E3 `none` e `own-rules` com Haiku; E12 `own-rules-v2` com
+Haiku, todos na rep 1) têm o retrato "antes" sem a fila (`queues: []`, atributos nulos), tirado logo
+depois de o `initial.tf` criá-la; o "depois" mostra a mesma fila. Nenhuma das 3 trajetórias chama
+`delete-queue`. Leitura provável: o `ListQueues` ainda não listava a fila recém-criada (atraso de
+consistência do SQS), ou seja, artefato da medida e não efeito do agente. Não foi reproduzido na AWS;
+fica declarado, e os números do §3 não mudam.
+
 ## 4. Plano
 
 **Feito (detalhes no §3):** bootstrap como teste principal e McNemar por tarefa; relato com e sem
@@ -634,6 +700,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - 11/11 (com o usuário): agenda E8 (pedido leigo) registrada como E10, para rodar depois do gate S9 e antes do congelamento. Agenda E5–E7 ficam como trabalho futuro.
 - 12/11 (com o usuário, antes do run): E10 sorteado (semente `20261111`, `configs/e10-selection.json`), paráfrases em `tasks/lay-*` (só o `prompt.md` muda; teste em `test_modalities.py`) e condição `own-rules` trocada por `own-rules-v2`. Config `configs/e10-lay-haiku.toml`. Toolkit distribuído = v2 (plugin `iac-cloud`).
 - 11/11: E11 e E12 registrados antes do run, rodados no homelab e julgados (§3, "E11/E12"). Pela regra de decisão, a v2 substitui a v1. Juiz conferido de novo às cegas.
+- 14/11 (com o usuário, antes de qualquer veredito): E14 registrado, segundo juiz (`gpt-6-luna`) sobre todos os runs julgados, sem trocar o juiz principal. O E10 terminou em 12/11 (120/120 `DONE`, nenhuma falha do harness) e foi julgado com o Sonnet, como registrado.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).

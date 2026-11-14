@@ -55,6 +55,8 @@ Desenho em `docs/desenho-modalidades.md`. Tarefas e gates em `docs/selecao-taref
 | E11 | `modality-real-aws-amb.toml` | Gate das ambíguas na real | `20261111T125751-modality-prevalidate` | histórica |
 | E11 | `e11-amb-aws.toml` | Ambíguas na real, v1 × v2 | `20261111T132723-e11-amb-aws` | histórica |
 | E12 | `e12-v2-aws.toml` | Toolkit v2 nas 29 claras da real | `20261111T162415-e12-v2-aws` | histórica |
-| E10 | `e10-lay-haiku.toml` | Pedido leigo × técnico no Floci (20 × `none`/v2 × Haiku × N=3); sorteio em `e10-selection.json` | ainda não rodou | ativa |
+| E10 | `e10-lay-haiku.toml` | Pedido leigo × técnico no Floci (20 × `none`/v2 × Haiku × N=3); sorteio em `e10-selection.json` | `20261112T172414-e10-lay-haiku` | histórica |
+| E13 | `e13-usersim-floci.toml` | Smoke do usuário simulado (uma resposta, GPT via Codex CLI) no Floci, com a tarefa-fixture `sim-fixture-bucket` | `20261112T181628-e13-usersim-floci` | ativa |
+| E13 | `e13-real-aws.toml` | 9 casos reais com usuário simulado na real (9 × `none`/v2 × Sonnet × N=3 = 54); fontes em `docs/casos-reais.md` | ainda não rodou | ativa |
 | todos | `strata.toml` | Estratos das tarefas, lidos pelo `agent-metrics` | n/a | ativa |
 
