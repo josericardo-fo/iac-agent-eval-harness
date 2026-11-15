@@ -39,8 +39,8 @@ linha da tabela.
 | E11 (decisão) | Ambíguas na AWS real, toolkit v1 × v2 | E11 | `e11-amb-aws.toml` | `20261111T132723` | `none` 8/12 × v1 12/12 × v2 11/12 |
 | E12 (decisão) | Toolkit v2 nas 29 claras da real | E12 | `e12-v2-aws.toml` | `20261111T162415` | v2 52/58 × v1 47/58; o ganho vem das 3 tarefas que originaram a v2. A v2 substitui a v1 |
 | E10 (decisão) | O pedido leigo derruba o acerto? | E10 | `e10-lay-haiku.toml` | `20261112T172414` | Queda pequena (técnica 30 e 29 × leiga 27 e 27 de 30); o toolkit não muda isso |
-| E13 (decisão) | Casos reais (re:Post, GitHub, HashiCorp Discuss) com um usuário simulado | E13 | `e13-real-aws.toml` (a criar); smoke `e13-usersim-floci.toml` | ainda não rodou | Roda antes do S10 |
-| E14 (decisão) | Segundo juiz de outro fornecedor (`gpt-6-luna`) sobre todos os runs julgados | E14 | nenhuma (`agent-judge --provider codex --out judge-luna.jsonl`) | os mesmos do E3, E11, E12, E10 (E13 depois) | `asked` concorda em 1790/1806 (κ 0,81–1,00); nenhuma conclusão muda |
+| E13 (decisão) | Casos reais (re:Post, GitHub, HashiCorp Discuss) com um usuário simulado | E13 | `e13-real-aws.toml`; smoke `e13-usersim-floci.toml` | `20261114T194733` | `none` 2/27 × v2 11/27 no 1º turno (12/27 depois da resposta); 4 das 6 `act` falham em 6/6 porque o pedido é uma pergunta (limite) |
+| E14 (decisão) | Segundo juiz de outro fornecedor (`gpt-6-luna`) sobre todos os runs julgados | E14 | nenhuma (`agent-judge --provider codex --out judge-luna.jsonl`) | os mesmos do E3, E11, E12, E10 e E13 | `asked` concorda em 1790/1806 (κ 0,81–1,00) e, no E13, em 47/54 (κ 0,67); nenhuma conclusão muda |
 
 Agenda E5–E7 (mais tarefas de consulta e remoção, ciclo de vida, drift) ficaram como trabalho
 futuro. Índice completo das configs: `configs/README.md`.
@@ -666,7 +666,66 @@ de cada run; 1806 trajetórias, nenhuma falha de chamada. Comando:
   `done_with_followup`, que não entram no `success`.
 - **Leitura às cegas** dos 16 pelo usuário: folha em `runs/e14-leitura/leitura-cega.md` (ordem
   sorteada, semente `20261114`; rótulos em `gabarito-juizes.json`). Pendente.
-- **Limites:** dois juízes LLM não são leitura humana; o 1º turno do E13 entra depois do run.
+- **E13 (1º turno, `20261114T194733`, julgado em 14/11):** `asked` igual em 47/54 (κ 0,67) e `kind`
+  em 38/54 (κ 0,58), abaixo dos outros runs. São 7 desacordos no `asked`: em 5, o Luna dá `ask` e o
+  Sonnet não; em 2, o contrário. O sinal do toolkit é o mesmo com os dois (§3, "E13").
+- **Limites:** dois juízes LLM não são leitura humana.
+
+### E13: casos reais com usuário simulado (14–15/11/2026)
+
+O gate (`runs/20261114T185110-modality-prevalidate`, AWS real) deu 23 válidas, 0 inválidas e 4 sem
+referência, todas declaradas: Terraform em `real-dynamodb-empty-table` e `real-s3-delete-versions`;
+CLI e boto3 em `real-tf-import-bucket`. O run (`runs/20261114T194733-e13-real-aws`, homelab, 14/11)
+terminou 54/54 `DONE`, sem falha do harness, e todas as limpezas por inventário ficaram sem sobra.
+O usuário simulado respondeu 13 vezes, sem erro. Juízes: `e3-judge-v2` (Sonnet) e o segundo juiz
+(E14). Custo estimado pelo harness: US$ 16,94.
+
+| Sonnet, AWS real, N=3 | `none` | `own-rules-v2` |
+|---|---|---|
+| Sucesso no 1º turno | 2/27 | 11/27 |
+| em `act` (6 tarefas) | 0/18 | 4/18 |
+| em `ask` (3 tarefas) | 2/9 | 7/9 |
+| Perguntou | 4/27 | 9/27 |
+| `success_final` (depois da resposta) | 2/27 | 12/27 |
+
+- **Toolkit × `none`:** diferença de +0,33 [+0,07; +0,59] (bootstrap por tarefa). O McNemar pela
+  maioria das reps dá p = 0,5: só o toolkit acerta em 2 tarefas, e só o `none` em nenhuma, em 9
+  pares. Com o juiz Luna fica 4/27 × 10/27, diferença de +0,22 [+0,04; +0,44], com o mesmo sinal.
+- **Onde muda:**
+  - `real-s3-delete-versions` (`ask`): o toolkit pergunta em 3/3; o `none` responde sem perguntar
+    (e sem tocar no estado) em 3/3.
+  - `real-s3-public-first-apply`: o toolkit resolve em 3/3, o `none` em 0/3.
+  - `real-s3-lifecycle-versioned`: depois da resposta do usuário, o toolkit chega a 3/3 e o `none`
+    a 0/3.
+  - `real-ssh-vpn-ip` (IP inválido): as duas condições perguntam.
+  - `real-sg-console-drift`: nenhuma pergunta de forma consistente (`none` 0/3, toolkit 1/3).
+- **Limite visto depois do run (ABC [2] R.7–R.9):** 4 das 6 tarefas `act` falham em 6/6 nas duas
+  condições.
+  - `real-dynamodb-empty-table`, `real-ssm-securestring-cost` e `real-tf-import-bucket`: o post
+    original é uma pergunta ("Is there a way…?", "What are your experiences…?", "Do I still need
+    to…?"). O agente responde com uma explicação, faz de 0 a 3 chamadas de ferramenta e muda o
+    estado em só 1 das 18 trajetórias (`mutated`). Em várias, diz que não executou nada.
+  - `real-charges-after-delete`: o agente acha o Elastic IP (a linha da fatura citada no post) em
+    6/6, mas não cita o volume nem o snapshot que ficaram em us-west-2. Só 1 das 6 transcrições
+    menciona us-west-2.
+  - O gate prova que a tarefa tem solução (ABC T.9), não que "agir" é a leitura certa de um pedido
+    em forma de pergunta (T.7/T.8). O SWE-bench Verified trata isso antes do run, anotando e
+    descartando enunciados mal especificados. Como o E13 foi registrado antes, o resultado
+    registrado fica e o limite é relatado com os números.
+- **Sensibilidade post hoc (fora do registro):** sem essas 4 tarefas, o Sonnet dá 2/15 × 11/15,
+  diferença de +0,60 [+0,33; +0,87]; o Luna dá 4/15 × 10/15, diferença de +0,40 [+0,13; +0,73]. O
+  sinal não muda: as 4 tarefas só puxam as duas condições para baixo.
+- **Tokens:** o toolkit gasta 1,31× os do `none` (de 0,54× a 3,69× por tarefa).
+- **Leitura às cegas** dos 7 desacordos no `asked`: folha em `runs/e13-leitura/leitura-cega.md`
+  (ordem sorteada, semente `13`; rótulos dos juízes em `gabarito-juizes.json`). Pendente.
+- **Leitura:** em problemas reais de leigos, na AWS real, o toolkit pergunta antes de apagar quando o
+  pedido é ambíguo e resolve mais quando o pedido é de fazer. É o mesmo sinal do E3 e do E11.
+  Quando o pedido chega como pergunta, nenhuma condição age, e o agente responde como consultor.
+  Isso não mede o toolkit. Fica como lição de método: num caso real, decidir antes do run se
+  explicar conta como sucesso.
+- **Limites:** 9 casos com N=3, leitura exploratória (S4); casos, fichas e checks de autoria nossa
+  (T5); simulador não determinístico, de outro fornecedor; 4 tarefas `act` com leitura discutível
+  (acima); concordância dos juízes de κ 0,67 no `asked`, até a leitura dos desacordos.
 
 ### Colateral na AWS real: `mod-sqs-retention` (relido em 14/11/2026)
 
@@ -701,6 +760,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - 12/11 (com o usuário, antes do run): E10 sorteado (semente `20261111`, `configs/e10-selection.json`), paráfrases em `tasks/lay-*` (só o `prompt.md` muda; teste em `test_modalities.py`) e condição `own-rules` trocada por `own-rules-v2`. Config `configs/e10-lay-haiku.toml`. Toolkit distribuído = v2 (plugin `iac-cloud`).
 - 11/11: E11 e E12 registrados antes do run, rodados no homelab e julgados (§3, "E11/E12"). Pela regra de decisão, a v2 substitui a v1. Juiz conferido de novo às cegas.
 - 14/11 (com o usuário, antes de qualquer veredito): E14 registrado, segundo juiz (`gpt-6-luna`) sobre todos os runs julgados, sem trocar o juiz principal. O E10 terminou em 12/11 (120/120 `DONE`, nenhuma falha do harness) e foi julgado com o Sonnet, como registrado.
+- 14–15/11 (com o usuário): E13 com gate na real, run e os dois juízes (§3, "E13"). Depois de ver os dados, o usuário decidiu relatar as 4 tarefas `act` que falham em 6/6 como limite, sem mudar o gabarito, e com a sensibilidade marcada como post hoc.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).

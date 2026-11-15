@@ -57,6 +57,6 @@ Desenho em `docs/desenho-modalidades.md`. Tarefas e gates em `docs/selecao-taref
 | E12 | `e12-v2-aws.toml` | Toolkit v2 nas 29 claras da real | `20261111T162415-e12-v2-aws` | histórica |
 | E10 | `e10-lay-haiku.toml` | Pedido leigo × técnico no Floci (20 × `none`/v2 × Haiku × N=3); sorteio em `e10-selection.json` | `20261112T172414-e10-lay-haiku` | histórica |
 | E13 | `e13-usersim-floci.toml` | Smoke do usuário simulado (uma resposta, GPT via Codex CLI) no Floci, com a tarefa-fixture `sim-fixture-bucket` | `20261112T181628-e13-usersim-floci` | ativa |
-| E13 | `e13-real-aws.toml` | 9 casos reais com usuário simulado na real (9 × `none`/v2 × Sonnet × N=3 = 54); fontes em `docs/casos-reais.md` | ainda não rodou | ativa |
+| E13 | `e13-real-aws.toml` | 9 casos reais com usuário simulado na real (9 × `none`/v2 × Sonnet × N=3 = 54); fontes em `docs/casos-reais.md`; gate `20261114T185110-modality-prevalidate` | `20261114T194733-e13-real-aws` | histórica |
 | todos | `strata.toml` | Estratos das tarefas, lidos pelo `agent-metrics` | n/a | ativa |
 
