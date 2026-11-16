@@ -80,6 +80,17 @@ def parse_verdict(text: str) -> dict[str, Any]:
     return {"asked": data["kind"] == "ask", "kind": data["kind"]}
 
 
+def judge_params(p: dict[str, Any], prompt_version: str) -> dict[str, Any]:
+    """Proveniência do juiz: parâmetros do `TextModel` com prefixo `judge_` + versão do prompt."""
+    return {
+        "judge_provider": p["provider"],
+        "judge_model": p["model"],
+        "judge_max_tokens": p.get("max_tokens"),
+        "judge_prompt_version": prompt_version,
+        **{f"judge_{k}": v for k, v in p.items() if k not in ("provider", "model", "max_tokens")},
+    }
+
+
 class LlmJudge:
     """Juiz sobre um `TextModel`. Sem `llm`, usa o Anthropic (gateway) com `model`/`max_tokens`."""
 
@@ -91,18 +102,7 @@ class LlmJudge:
 
     @property
     def params(self) -> dict[str, Any]:
-        p = self.llm.params
-        return {
-            "judge_provider": p["provider"],
-            "judge_model": p["model"],
-            "judge_max_tokens": p.get("max_tokens"),
-            "judge_prompt_version": JUDGE_PROMPT_VERSION,
-            **{
-                f"judge_{k}": v
-                for k, v in p.items()
-                if k not in ("provider", "model", "max_tokens")
-            },
-        }
+        return judge_params(self.llm.params, JUDGE_PROMPT_VERSION)
 
     def classify(
         self, final_text: str | None, task_prompt: str, mutated: bool | None

@@ -32,6 +32,20 @@ from iac_harness.agentic.metrics import (
     judge_sample,
     merge_judgments,
 )
+from iac_harness.agentic.question_judge import (
+    QUESTION_MAX_TOKENS,
+    QUESTIONS_FILENAME,
+    QuestionJudge,
+    meta_header,
+    select_asked,
+)
+from iac_harness.agentic.question_metrics import (
+    DISAGREEMENT_FIELDS,
+    DISAGREEMENTS_FILENAME,
+    merge_questions,
+    question_agreement,
+    questions_report,
+)
 from iac_harness.agentic.runner import (
     AGENT_PROMPT_VERSION,
     AGENT_UNIT,
@@ -65,6 +79,7 @@ from iac_harness.modalities.execute import (
     run_check,
     truncate,
 )
+from iac_harness.modalities.loader import TASKS_DIR as MODALITY_TASKS_DIR
 from iac_harness.modalities.loader import load_tasks
 from iac_harness.modalities.metrics import (
     compare_free_to_baseline,
@@ -1363,15 +1378,25 @@ def _build_judge(
     `provider` sobrescreve o da config; se difere dele, o `model` da config não é herdado
     (vale o padrão do provedor, a menos que `model` seja dado).
     """
+    section = _judge_section(section, model, provider, reasoning_effort)
+    return LlmJudge(llm=build_text_model(section, "anthropic"))
+
+
+def _judge_section(
+    section: dict[str, Any],
+    model: str | None = None,
+    provider: str | None = None,
+    reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    """Seção `[judge]` com as opções da CLI por cima (regras em `_build_judge`)."""
     if provider and provider != section.get("provider", "anthropic"):
         section = {k: v for k, v in section.items() if k != "model"}
-    section = {
+    return {
         **section,
         **({"provider": provider} if provider else {}),
         **({"model": model} if model else {}),
         **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
     }
-    return LlmJudge(llm=build_text_model(section, "anthropic"))
 
 
 class UserSimSetup(NamedTuple):
@@ -1663,6 +1688,83 @@ def cmd_agent_judge(args: argparse.Namespace) -> int:
         recorder.close()
     print(f"{len(todo)} classificadas, {len(done)} já tinham veredito", file=sys.stderr)
     print(judge_path)
+    return 0
+
+
+def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
+    """E15: nota a qualidade de cada pergunta (trajetória com `asked = true` no judge.jsonl).
+
+    Retomável: pula as trajetórias que já têm linha no arquivo de saída.
+    """
+    run_dir = Path(args.run_dir)
+    cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
+    section = _judge_section(cfg.get("judge", {}), args.model, args.provider)
+    judge = QuestionJudge(build_text_model({**section, "max_tokens": QUESTION_MAX_TOKENS},
+                                           "anthropic"))  # fmt: skip
+    out_path = run_dir / args.out
+    # linhas com erro são refeitas ao retomar (o relatório usa a última linha de cada id)
+    done = ({j["trajectory_id"] for j in load_events(out_path) if not j.get("error")}
+            if out_path.exists() else set())  # fmt: skip
+    finals = [e for e in load_events(run_dir / "events.jsonl") if e.get("event") == "final"]
+    todo = [e for e in select_asked(finals, load_events(run_dir / JUDGE_FILENAME))
+            if e["trajectory_id"] not in done]  # fmt: skip
+    if args.limit is not None:
+        todo = todo[: args.limit]
+    tasks_dir = Path(cfg.get("modality", {}).get("tasks_dir") or MODALITY_TASKS_DIR)
+    tasks = {t.task_id: t for t in _load_cfg_tasks(cfg)}
+    recorder = JsonlRecorder(out_path)
+    try:
+        for e in todo:
+            task = tasks[e["task_id"]]
+            verdict = judge.grade(
+                request=agent_prompt(task),
+                expect=task.expect,
+                meta_note=meta_header((tasks_dir / task.task_id / "meta.toml").read_text()),
+                user_card=task.user_card,
+                question=e["final_text"],
+            )
+            recorder.record(
+                {
+                    "trajectory_id": e["trajectory_id"],
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    **judge.params,
+                    **verdict,
+                }
+            )
+            print(f"{e['trajectory_id']}: {verdict['total']} {verdict['error'] or ''}",
+                  file=sys.stderr)  # fmt: skip
+    finally:
+        recorder.close()
+    print(f"{len(todo)} notadas, {len(done)} já tinham nota", file=sys.stderr)
+    print(out_path)
+    return 0
+
+
+def cmd_agent_questions_report(args: argparse.Namespace) -> int:
+    """E15: relatório das notas das perguntas (Markdown no stdout), sem LLM.
+
+    Com `--compare A B`, grava os desacordos de 2 pontos em questions-disagreements.csv no run.
+    """
+
+    def grades(run_dir: Path, events: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+        path = run_dir / name
+        return merge_questions(events, load_events(path) if path.exists() else [], run_dir.name)
+
+    runs = []
+    for run_dir in args.run_dirs:
+        events = load_events(run_dir / "events.jsonl")
+        pair = None
+        if args.compare:
+            pair = (
+                grades(run_dir, events, args.compare[0]),
+                grades(run_dir, events, args.compare[1]),
+            )
+            with (run_dir / DISAGREEMENTS_FILENAME).open("w", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, DISAGREEMENT_FIELDS)
+                writer.writeheader()
+                writer.writerows(question_agreement(*pair)["disagreements"])
+        runs.append((run_dir.name, grades(run_dir, events, args.judge_file), pair))
+    print(questions_report(runs, args.judge_file))
     return 0
 
 
@@ -2191,6 +2293,37 @@ def main(argv: list[str] | None = None) -> int:
         help="outro arquivo de vereditos no run_dir: concordância com judge.jsonl (sem LLM)",
     )
     p_ajud.set_defaults(func=cmd_agent_judge)
+
+    p_ajq = sub.add_parser(
+        "agent-judge-questions",
+        help="E15: juiz LLM da qualidade das perguntas (asked=true) -> judge-questions.jsonl",
+    )
+    p_ajq.add_argument("run_dir", type=Path)
+    p_ajq.add_argument(
+        "--provider", choices=("anthropic", "codex"), help="provedor do juiz (padrão: [judge])"
+    )
+    p_ajq.add_argument("--model", help="modelo do juiz (padrão: o do provedor / [judge])")
+    p_ajq.add_argument(
+        "--out",
+        default=QUESTIONS_FILENAME,
+        help=f"arquivo no run_dir (padrão: {QUESTIONS_FILENAME})",
+    )
+    p_ajq.add_argument("--limit", type=int, help="nota no máximo N trajetórias (smoke)")
+    p_ajq.set_defaults(func=cmd_agent_judge_questions)
+
+    p_aqr = sub.add_parser(
+        "agent-questions-report",
+        help="E15: notas das perguntas por condição, toolkit × none, kappa entre juízes",
+    )
+    p_aqr.add_argument("run_dirs", type=Path, nargs="+")
+    p_aqr.add_argument(
+        "--judge-file", default=QUESTIONS_FILENAME, help=f"notas (padrão: {QUESTIONS_FILENAME})"
+    )
+    p_aqr.add_argument(
+        "--compare", nargs=2, metavar=("A", "B"),
+        help="dois arquivos de notas no run_dir: kappa ponderado e desacordos de 2 pontos",
+    )  # fmt: skip
+    p_aqr.set_defaults(func=cmd_agent_questions_report)
 
     p_amet = sub.add_parser(
         "agent-metrics", help="métricas de um agent-run (condição × modelo, estratos, alvo)"
