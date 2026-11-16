@@ -42,7 +42,7 @@ linha da tabela.
 | E13 (decisão) | Casos reais (re:Post, GitHub, HashiCorp Discuss) com um usuário simulado | E13 | `e13-real-aws.toml`; smoke `e13-usersim-floci.toml` | `20261114T194733` | `none` 2/27 × v2 11/27 no 1º turno (12/27 depois da resposta); 4 das 6 `act` falham em 6/6 porque o pedido é uma pergunta (limite) |
 | E14 (decisão) | Segundo juiz de outro fornecedor (`gpt-6-luna`) sobre todos os runs julgados | E14 | nenhuma (`agent-judge --provider codex --out judge-luna.jsonl`) | os mesmos do E3, E11, E12, E10 e E13 | `asked` concorda em 1790/1806 (κ 0,81–1,00) e, no E13, em 47/54 (κ 0,67); nenhuma conclusão muda |
 | E15 (decisão) | O toolkit pergunta **melhor**, e não só mais? Qualidade das perguntas já feitas | E15 | nenhuma (`agent-judge-questions`) | os mesmos do E14 | Um pouco melhor com o toolkit próprio (total +0,6 a +0,9 de 10, nos dois juízes); custo, exposição e desempenho quase nunca aparecem nas opções (C4 < 0,9 em todas as condições) |
-| E16 (decisão) | Num dataset de terceiros com pedidos ambíguos (Ambig-IaC) e um usuário leigo simulado, o toolkit v3 (como perguntar) entrega mais o que a pessoa queria? | E16 | `e16-ambig-iac.toml` | pendente | pendente |
+| E16 (decisão) | Num dataset de terceiros com pedidos ambíguos (Ambig-IaC) e um usuário leigo simulado, o toolkit v3 (como perguntar) entrega mais o que a pessoa queria? | E16 | `e16-ambig-iac.toml`; teto `e16-ceiling.toml` | `20261116T125901`; teto `20261116T150128` | Teto 35/50 × pedido ambíguo `none` 9, v2 8, v3 9 de 50: a ambiguidade custa ~26 tarefas e nenhum toolkit recupera. Perguntaram só 4/50 (v2 e v3), todas sobre um recurso "existente" que não existe. A v2 continua a distribuída |
 
 Agenda E5–E7 (mais tarefas de consulta e remoção, ciclo de vida, drift) ficaram como trabalho
 futuro. Índice completo das configs: `configs/README.md`.
@@ -754,6 +754,28 @@ Sem run novo. 361 perguntas (`asked = true` no `judge.jsonl`) dos runs do E14, n
 - **Limites:** o C1 dá 0 a qualquer pergunta em tarefa `act`, mesmo quando ela leva ao sucesso (lifecycle acima); a média por condição mistura tarefas (o `none` pergunta menos); juízes LLM sem leitura humana; o rodapé do bloco de diretrizes do gateway aparece em algumas mensagens finais (já declarado; o 3º leitor o ignorou).
 - **Leitura:** o achado sustenta a decisão da v3 (regra de pergunta com opções e consequências para leigo): hoje, nem o agente sozinho nem o toolkit apresentam custo, exposição e desempenho ao perguntar.
 
+### E16: Ambig-IaC com usuário leigo simulado (16/11/2026)
+
+Desenho da emenda de 16/11 (depois do piloto, antes do run). Rodado no homelab: `runs/20261116T125901-e16-ambig-iac` (50 tarefas × `none`, `own-rules-v2`, `own-rules-v3`, Sonnet, N=1) e `runs/20261116T150128-e16-ceiling` (teto: `none` com o `prompt_original`). 200/200 `DONE`, nenhuma falha do harness, nenhum erro do simulador. Juiz `asked` (Sonnet) e E15 (Sonnet e Luna) rodados depois, em série. Trazidos ao Mac sem `claude-home` (1078 arquivos, sha256 ok; logs em `homelab-logs/`). Relatório das perguntas: `runs/e16-questions-report.md`.
+
+| | Teto (pedido completo) | `none` | `own-rules-v2` | `own-rules-v3` |
+|---|---|---|---|---|
+| `success_final` | 35/50 | 9/50 | 8/50 | 9/50 |
+| `rego_frac` (principal) | 0,70 | 0,19 | 0,17 | 0,19 |
+| F1 de tipos | 0,69 | 0,29 | 0,34 | 0,34 |
+| Perguntou (juiz) / usuário respondeu | 0 / 0 | 0 / 0 | 4 / 4 | 4 / 4 |
+| Tokens | 115 mil | 169 mil | 203 mil | 215 mil |
+
+- **Diferenças (bootstrap pareado por tarefa):** `rego_frac` v3 − v2 +0,02 [0,00; +0,06]; v3 − `none` 0,00 [−0,08; +0,08]. Sucesso: McNemar p = 1,0 nos dois pares (v2: 2 só `none`, 1 só v2; v3: 2 e 2). F1 de tipos v3 − `none` +0,05 [+0,01; +0,10] (o toolkit põe recursos mais parecidos com os da referência, mas não os detalhes que o Rego cobra).
+- **Recuperação da perda por ambiguidade** (descritivo): `(condição − none) / (teto − none)` = −0,04 na v2 e 0,00 na v3. A ambiguidade custa 26 de 50 tarefas, e nenhum toolkit recupera parte disso.
+- **Por que reprova:** quase tudo é `rego_fail` (37 a 40 de 50 por condição), ou seja, configuração válida com detalhes diferentes dos da ficha; `plan` falho em 1 a 4 por condição (1 por variável sem valor mesmo com os valores de exemplo). Não é efeito do oráculo.
+- **As 8 perguntas** (4 na v2, 4 na v3, nas mesmas tarefas ambig-008, 009, 034, 071) vêm todas da regra de recurso existente: o pedido diz "nosso domínio" ou "nossa plataforma de contêineres", o agente procura, não acha e pergunta. Nenhuma pergunta é sobre os detalhes escondidos (os atributos que o Rego cobra). Em 7 das 8 o usuário leigo respondeu "não entendi, use seu julgamento"; nenhuma levou ao sucesso.
+- **Qualidade das perguntas (E15, n = 4 por condição, só descritivo):** C4 (consequências) v3 1,75 × v2 0,75 (Sonnet) e 1,00 × 0,25 (Luna); C1 (pertinência) baixo nas duas (0,25–0,50 no Sonnet, 0 no Luna), porque são tarefas `act`. Concordância entre juízes sem sentido com n = 8 (kappa 0 a 0,41).
+- **Hipóteses fixadas antes:** v3 ≥ v2 em `rego_frac`, confirmada (+0,02); v3 > v2 em C4, na direção prevista nos dois juízes, com n = 4.
+- **Regra de decisão:** a regra diz que a v3 *só* substitui a v2 se as duas condições forem cumpridas; elas foram, mas a regra não obriga a troca. **Decisão do usuário, depois de ver os dados: a v2 continua a distribuída**, porque o ganho em C4 vem de 4 perguntas, todas de outro tipo (recurso existente), 7 delas não compreendidas pelo leigo, e porque a v3 não foi testada nos pedidos claros (limite declarado no registro). A v3 fica como achado.
+- **Leitura:** nos pedidos do Ambig-IaC, o tipo de recurso está claro e os detalhes estão escondidos. Os agentes não percebem que falta algo: nenhuma condição pergunta sobre detalhes, e o toolkit (v2 ou v3) não muda isso. A regra da v3 ("detalhes: use o padrão seguro; pergunte quando não estiver claro o tipo de recurso") faz exatamente isso, por desenho. Junto com E3, E11 e E13: o toolkit ajuda quando falta o *recurso* ou o *alvo* (pedido ambíguo no que fazer, casos reais de leigos) e não ajuda quando faltam *atributos*. Uma regra que perguntasse por atributos ("o pedido descreve uma qualidade, não um detalhe": gerar candidatos e perguntar onde divergem, como Yang et al. 2026) fica como trabalho futuro, a testar em tarefas do Ambig-IaC ainda não usadas e nos pedidos claros (custo de perguntar demais).
+- **Limites:** N=1; um único modelo; simulador e juiz de LLM; o `rego_frac` fica perto do passa/reprova (45 de 50 tarefas com uma regra discriminante); para um leigo real, o padrão seguro pode ser melhor do que o detalhe que o gabarito cobra (ex.: tenancy dedicada), e o oráculo do dataset não mede isso; emenda decidida depois do piloto (declarada).
+
 ### Colateral na AWS real: `mod-sqs-retention` (relido em 14/11/2026)
 
 Os 3 `collateral_ok = false` da real (E3 `none` e `own-rules` com Haiku; E12 `own-rules-v2` com
@@ -791,6 +813,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - 15–16/11 (com o usuário, antes de qualquer nota): E15 registrado (qualidade das perguntas já feitas, dois juízes, sem run novo) e emenda do E14 (desacordos lidos por um 3º leitor LLM, não pelo usuário). Toolkit v3 (regra de pergunta com opções e consequências para leigo): decidido criar, com base na literatura do E15 e **depois** do resultado do E15; por isso a v3 é declarada como escrita olhando esses dados (mesmo risco de sobreajuste da v2). Um run novo com usuário simulado leigo (candidato: Ambig-IaC, Yang et al. 2026, se o dataset for público) fica para decidir em 16/11.
 - 16/11 (com o usuário): E15 rodado e no §3; commits `cf330a1` e `5448535`. Decidido fazer a v3 **antes** do run novo, para testá-la fora da amostra no Ambig-IaC (público, MIT). E16 registrado antes de baixar o dataset e sortear as tarefas.
 - 16/11 (com o usuário, depois do piloto de 12 trajetórias e antes do run): emenda do E16. Desfecho principal parcial (`rego_frac`), braço de teto com o pedido completo, até 3 respostas do usuário, troca das 3 tarefas com nome de recurso impossível de saber e valores de exemplo para variáveis obrigatórias no oráculo. Motivo: o passa/reprova ficou no chão por razões fora do construto (comparado ao artigo do dataset e a Edwards e Schuster 2026).
+- 16/11 (com o usuário): E16 rodado (200/200) e julgado (§3, "E16"). A regra de decisão foi cumprida pela letra, mas o usuário decidiu manter a v2 como distribuída (n = 4 perguntas, de outro tipo, e v3 sem teste nas claras). Regra para atributos fica como trabalho futuro.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
