@@ -3,6 +3,7 @@
 - `own-rules`: só a skill (fluxo + regras);
 - `own-tools`: a mesma skill com a seção de ferramentas e os scripts;
 - `own-rules-v2`: como `own-rules`, a partir de `toolkit/src-v2/` (texto revisado, registro E11).
+- `own-rules-v3`: como `own-rules`, a partir de `toolkit/src-v3/` (como perguntar, registro E16).
 - `iac-cloud`: a versão distribuída (a v2, que substituiu a v1 pelo E12), instalável pelo
   marketplace na raiz do repo. Fora do harness não há `--append-system-prompt-file`; um hook
   `SessionStart` põe o `RULES.md` no contexto da sessão.
@@ -24,6 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 SRC = HERE / "src"
 SRC_V2 = HERE / "src-v2"
+SRC_V3 = HERE / "src-v3"
 OUT = HERE / "plugins"
 SKILL_NAME = "iac-cloud"
 VERSION = "0.2.0"
@@ -33,6 +35,8 @@ PLUGINS = {
     "own-tools": "Flow and rules for AWS infrastructure work, plus inventory, verify, "
     "diff-baseline and whoami scripts.",
     "own-rules-v2": "Flow and rules for creating, changing, deleting and querying AWS "
+    "infrastructure.",
+    "own-rules-v3": "Flow and rules for creating, changing, deleting and querying AWS "
     "infrastructure.",
     "iac-cloud": "Helps an agent look after an AWS account safely: inventory before acting, ask "
     "when the request is ambiguous, verify the final state.",
@@ -77,6 +81,8 @@ def build(out: Path = OUT) -> None:
         skill_dir.mkdir(parents=True)
         with_tools = name == "own-tools"
         src = SRC_V2 if name in ("own-rules-v2", DIST) else SRC
+        if name == "own-rules-v3":
+            src = SRC_V3
         (skill_dir / "SKILL.md").write_text(skill_text(with_tools, src))
         shutil.copyfile(src / "RULES.md", root / "RULES.md")
         if name == DIST:

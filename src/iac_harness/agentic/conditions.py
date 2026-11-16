@@ -24,6 +24,8 @@ REGISTRY: dict[str, tuple[str | None, str | None]] = {
     "own-tools": ("toolkit/plugins/own-tools", "toolkit/plugins/own-tools/RULES.md"),
     # own-rules-v2: texto revisado (registro E11); a v1 fica intacta
     "own-rules-v2": ("toolkit/plugins/own-rules-v2", "toolkit/plugins/own-rules-v2/RULES.md"),
+    # own-rules-v3: como perguntar (registro E16); a v2 continua a distribuída
+    "own-rules-v3": ("toolkit/plugins/own-rules-v3", "toolkit/plugins/own-rules-v3/RULES.md"),
 }
 
 
