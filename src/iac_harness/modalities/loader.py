@@ -42,6 +42,9 @@ class ModalityTask:
     user_card: str | None = None  # user.md: o que o usuário simulado sabe (só com [user_sim])
     check_final: str | None = None  # check_final.py: estado final desejado (só com [user_sim])
     setup: str | None = None  # setup.py: completa o estado depois do apply inicial (fora do /work)
+    # Tarefa de dataset com oráculo plan + OPA (E16, Ambig-IaC): substitui o check.py (vazio).
+    rego_policy: str | None = None
+    adaptation: str = ""  # adaptação declarada do enunciado original (tarefas de dataset)
 
     @property
     def wants_answer(self) -> bool:

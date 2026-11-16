@@ -1,0 +1,55 @@
+# Smoke do E16: 2 tarefas selecionadas × 3 condições × Sonnet = 6 trajetórias, 1 worker (Mac).
+# Mesma config de configs/e16-ambig-iac.toml, salvo `name`, `tasks` e `workers`.
+# Pedido = `prompt` do dataset + linha fixa (datasets/ambig_iac.PROMPT_SUFFIX); cartão do usuário
+# = `intent`; check = oráculo do dataset (plan + OPA com `checks_rego`, verifiers/plan_rego.py).
+# Antes: o JSONL em data/ (scripts/fetch_ambig_iac.py), as imagens e o compose (ver e3-agent-sonnet).
+# Rodar: `uv run iac-harness agent-run --config configs/e16-smoke.toml`, depois agent-judge
+# (asked) e agent-judge-questions (E15).
+[run]
+name = "e16-smoke"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+dataset = "ambig-iac"
+# as 2 primeiras selecionadas na ordem do sorteio
+tasks = [
+  "ambig-216",
+  "ambig-277",
+]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "own-rules-v2", "own-rules-v3"]
+models = ["Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1
+strata_file = "configs/strata.toml"
+
+[judge]
+# Também classifica, inline, a mensagem final do turno 1 (decide se o usuário responde).
+model = "Sonnet 5.5"
+
+[user_sim]
+provider = "codex"
+model = "gpt-6-luna"
+prompt_version = "user-sim-lay-v1"
+max_replies = 1
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# Worker 1; os workers 2..W usam floci<N>, 127.0.0.1:456<5+N>, iac-harness-floci<N>-1.
+endpoint = "http://floci:4566"
+host_endpoint = "http://127.0.0.1:4566"
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+# Timeout por comando do harness (init/plan/opa do oráculo).
+timeout_s = 180

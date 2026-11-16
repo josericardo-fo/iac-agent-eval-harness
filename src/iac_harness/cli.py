@@ -57,10 +57,15 @@ from iac_harness.agentic.runner import (
 from iac_harness.agentic.runner import unit_dir as agent_unit_dir
 from iac_harness.agentic.strata import DEFAULT_STRATA_FILE, load_strata
 from iac_harness.agentic.targets import FLOCI_WORKERS, AwsTarget, FlociTarget, Target
-from iac_harness.agentic.user_sim import DEFAULT_MAX_REPLIES, UserSimulator
+from iac_harness.agentic.user_sim import (
+    DEFAULT_MAX_REPLIES,
+    USER_SIM_PROMPT_VERSION,
+    UserSimulator,
+)
 from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend, parse_files
 from iac_harness.agents.prompts import PROMPT_VERSION
 from iac_harness.conditions import A, B, C, Condition
+from iac_harness.datasets import ambig_iac
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
 from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
 from iac_harness.demo.timeline import build_timeline, dump_timeline
@@ -616,7 +621,13 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
 
 
 def _load_cfg_tasks(cfg: dict[str, Any]) -> list[Any]:
-    """Tarefas do catálogo, ou de `[modality] tasks_dir` (ex.: tarefas de usuário simulado)."""
+    """Tarefas do catálogo, de `[modality] tasks_dir` (ex.: tarefas de usuário simulado) ou de
+    `[modality] dataset` (E16: `"ambig-iac"`, linhas do JSONL em data/)."""
+    dataset = cfg.get("modality", {}).get("dataset")
+    if dataset is not None:
+        if dataset != ambig_iac.DATASET:
+            raise SystemExit(f"erro: dataset desconhecido {dataset!r} (use {ambig_iac.DATASET!r})")
+        return ambig_iac.load_tasks(DATA_DIR)
     tasks_dir = cfg.get("modality", {}).get("tasks_dir")
     return load_tasks(Path(tasks_dir)) if tasks_dir else load_tasks()
 
@@ -698,6 +709,59 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
         f"inválidas: {sum(1 for r in rows if r['valid'] is False)}, sem referência: {no_ref}",
         file=sys.stderr,
     )
+    print(run_dir / "prevalidation.jsonl")
+    return 0
+
+
+# ---------- ambig-prevalidate (E16) ----------
+
+
+def cmd_ambig_prevalidate(args: argparse.Namespace) -> int:
+    """Gate do Ambig-IaC na ordem do sorteio até `--target-pass` aprovadas (ou `--tasks`)."""
+    cfg = load_config(args.config)
+    if cfg.get("modality", {}).get("dataset") != ambig_iac.DATASET:
+        raise SystemExit(f"erro: a config precisa de [modality] dataset = {ambig_iac.DATASET!r}")
+    toolchain = build_toolchain(cfg)
+    executor = build_executor(cfg, toolchain)
+    tasks = {t.task_id: t for t in _load_cfg_tasks(cfg)}
+    if args.tasks:
+        order = args.tasks
+    elif args.order:
+        order = json.loads(args.order.read_text())["order"]
+    else:
+        raise SystemExit("erro: informe --order <selection.json> ou --tasks")
+    missing = set(order) - set(tasks)
+    if missing:
+        raise SystemExit(f"tarefas não encontradas: {sorted(missing)}")
+    runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
+    run_dir = runs_dir / new_run_id("ambig-prevalidate")
+    run_dir.mkdir(parents=True, exist_ok=False)
+    (run_dir / "prevalidation_config.json").write_text(
+        json.dumps(
+            {
+                "config": cfg, "order": order, "target_pass": args.target_pass,
+                "dataset": ambig_iac.provenance(), **_git_provenance(),
+                "versions": {**toolchain.versions(run_dir), "toolchain_image": toolchain.image,
+                             **_sandbox_provenance(executor)},
+            },
+            indent=2, ensure_ascii=False,
+        )
+    )  # fmt: skip
+    recorder = JsonlRecorder(run_dir / "prevalidation.jsonl")
+    passed = 0
+    try:
+        executor.reset()  # o plan só lê o Floci (data sources): uma conta limpa basta
+        for task_id in order:
+            if args.target_pass and passed >= args.target_pass:
+                break
+            row = ambig_iac.gate_task(toolchain, tasks[task_id], run_dir / task_id)
+            recorder.record(row)
+            passed += row["gate_pass"]
+            print(f"{task_id}: {'ok' if row['gate_pass'] else row['reason']}", file=sys.stderr)
+    finally:
+        recorder.close()
+        final_cleanup(executor)
+    print(f"aprovadas: {passed}", file=sys.stderr)
     print(run_dir / "prevalidation.jsonl")
     return 0
 
@@ -1414,7 +1478,11 @@ def _build_user_sim(cfg: dict[str, Any]) -> UserSimSetup | None:
     if section.get("max_replies", DEFAULT_MAX_REPLIES) < 1:
         raise SystemExit("erro: [user_sim] max_replies deve ser >= 1")
     llm = build_text_model(section, "codex")
-    sim = UserSimulator(llm, section.get("max_replies", DEFAULT_MAX_REPLIES))
+    sim = UserSimulator(
+        llm,
+        section.get("max_replies", DEFAULT_MAX_REPLIES),
+        section.get("prompt_version", USER_SIM_PROMPT_VERSION),
+    )
     return UserSimSetup(sim, _build_judge(cfg.get("judge", {})))
 
 
@@ -1509,8 +1577,10 @@ def _agent_run_config(
         if user_sim
         else {}
     )
+    dataset = {"dataset": ambig_iac.provenance()} if cfg.get("modality", {}).get("dataset") else {}
     return {
         **sim_provenance,
+        **dataset,
         "config": cfg,
         "reps": reps,
         "tasks": [t.task_id for t in tasks],
@@ -1719,7 +1789,10 @@ def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
             verdict = judge.grade(
                 request=agent_prompt(task),
                 expect=task.expect,
-                meta_note=meta_header((tasks_dir / task.task_id / "meta.toml").read_text()),
+                # tarefas de dataset (E16) não têm meta.toml
+                meta_note=""
+                if task.rego_policy is not None
+                else meta_header((tasks_dir / task.task_id / "meta.toml").read_text()),
                 user_card=task.user_card,
                 question=e["final_text"],
             )
@@ -2194,6 +2267,16 @@ def main(argv: list[str] | None = None) -> int:
     p_mpre.add_argument("--config", type=Path, required=True)
     p_mpre.add_argument("--tasks", nargs="+")
     p_mpre.set_defaults(func=cmd_modality_prevalidate)
+
+    p_apre = sub.add_parser(
+        "ambig-prevalidate",
+        help="E16: gate do Ambig-IaC (referência passa no oráculo, main.tf vazio reprova)",
+    )
+    p_apre.add_argument("--config", type=Path, required=True)
+    p_apre.add_argument("--order", type=Path, help="selection.json com a ordem do sorteio")
+    p_apre.add_argument("--tasks", nargs="+", help="tarefas avulsas (no lugar de --order)")
+    p_apre.add_argument("--target-pass", type=int, help="para ao juntar N aprovadas")
+    p_apre.set_defaults(func=cmd_ambig_prevalidate)
 
     p_mrun = sub.add_parser(
         "modality-run", help="roda o agente nas modalidades (Terraform/CLI/boto3)"

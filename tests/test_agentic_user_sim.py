@@ -385,3 +385,43 @@ def test_run_check_final_picks_check_final_code(monkeypatch):
     execute.run_check(None, both, final=True)
     execute.run_check(None, only_old, final=True)
     assert used == ["OLD", "NEW", "OLD"]
+
+
+# ---------- prompt leigo (E16) ----------
+
+
+def test_user_sim_v1_texts_are_byte_identical():
+    import hashlib
+
+    from iac_harness.agentic import user_sim
+
+    text = user_sim.USER_SIM_SYSTEM + user_sim.USER_SIM_USER + user_sim.DEFAULT_USER_CARD
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    assert digest == "2824e1143f1fcf21b77876fabaaa857efb76ddefa643131d12e47495012525ec"
+
+
+def test_default_prompt_version_is_v1_and_uses_v1_system():
+    from iac_harness.agentic.user_sim import USER_SIM_SYSTEM
+
+    sim, llm = _sim()
+    sim.reply("card", "Do X.", "Which?")
+    assert llm.calls[0][0] == USER_SIM_SYSTEM
+    assert sim.params["user_sim_prompt_version"] == "user-sim-v1"
+
+
+def test_lay_prompt_is_selectable_and_recorded():
+    from iac_harness.agentic.user_sim import USER_SIM_SYSTEM
+
+    llm = FakeText("the cheaper one")
+    sim = UserSimulator(llm, prompt_version="user-sim-lay-v1")
+    out = sim.reply('Has one "aws_s3_bucket" resource', "Keep my files.", "A or B?")
+    system, user = llm.calls[0]
+    assert out == "the cheaper one"
+    assert system != USER_SIM_SYSTEM and "best judgment" in system
+    assert 'Has one "aws_s3_bucket" resource' in user and "A or B?" in user
+    assert sim.params["user_sim_prompt_version"] == "user-sim-lay-v1"
+
+
+def test_unknown_prompt_version_is_refused():
+    with pytest.raises(ValueError, match="user-sim-v9"):
+        UserSimulator(FakeText("x"), prompt_version="user-sim-v9")

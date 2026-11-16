@@ -18,6 +18,7 @@ from iac_harness.modalities.loader import SETUP_FILENAME, UPSTREAM_DIRNAME, Moda
 from iac_harness.modalities.spec import MODALITIES, Modality
 from iac_harness.toolchain import Toolchain, remove_terraform_dir
 from iac_harness.types import Artifact, CheckStatus
+from iac_harness.verifiers.plan_rego import grade_config
 from iac_harness.workspace import create_workspace
 
 # Arquivos do apply inicial herdados pelo workspace Terraform em modify/delete.
@@ -314,6 +315,8 @@ def _run_task_script(
 def _run_check_once(
     toolchain: Toolchain, task: ModalityTask, workspace: Path | None, final: bool = False
 ) -> tuple[bool, dict[str, Any]]:
+    if task.rego_policy is not None:  # tarefa de dataset (E16): oráculo plan + OPA, sem check.py
+        return grade_config(toolchain, task.rego_policy, workspace)
     code = task.check_final if final and task.check_final is not None else task.check
     proc = _run_task_script(toolchain, task, CHECK_FILENAME, code, workspace)
     if isinstance(proc, str):
