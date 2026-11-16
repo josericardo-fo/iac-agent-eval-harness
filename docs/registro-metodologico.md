@@ -821,6 +821,20 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - 16/11 (com o usuário, depois do resultado): teste exploratório do E16 com o usuário `user-sim-lay-v2` (8 trajetórias, 0/8); o oráculo cobra a forma do código. O E16 para aqui; nada de toolkit novo antes do gate.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
+### E18: Análise qualitativa de falhas em E16 (17/11/2026, exploratório)
+
+Sem run novo. Análise das 4 tarefas onde v2 e v3 perguntaram (ambig-008, 009, 034, 071) e 11 onde nenhuma perguntou. Questão: por que o toolkit pergunta em umas mas não em outras, e por que falha mesmo quando o teto passa? Achado: duas categorias de ambiguidade:
+
+1. **Atributo escondido** (ambig-008, 009): tipo de recurso é claro ("Route53 Record"), mas atributo (type=A vs. AAAA) não. v2/v3 não perguntam porque regra é "pergunte quando tipo é ambíguo". Não há regra para "quando atributo é ambíguo". Limitação: o oráculo do Ambig-IaC também falha no teto (rego_frac=0 mesmo com intent completo), sugerindo que o dataset é em parte sintático (quer forma exata do código, não valor literal em variável).
+
+2. **Tipo escondido** (ambig-034, 071): tipo de serviço é ambíguo ("automated assistant" = Lex? Lambda? Connect?). v2/v3 às vezes perguntam (ambig-071), às vezes não (ambig-034). Quando perguntam, o leigo responde mas o agente não consegue inferir a forma exata do código. Quando o teto passa, quer dizer que com o intent completo o agente consegue. v3 pergunta com mais contexto (opções, consequências) do que v2, mas em 4 perguntas isso não recupera as tarefas.
+
+Conclusão: o toolkit ajuda quando o *tipo* é ambíguo (E3, E11, E13: leigos em AWS real) mas não quando é o *atributo* (Ambig-IaC): "pergunte por atributo" é regra futura, com cuidado para não sobreajustar. Relatório completo em `runs/e18-qualitative.md`. Nada commitado.
+
+### E19: Replicação E13 com v3 na AWS real (17–18/11/2026, antes do gate)
+
+Mesma estrutura de E13 (`configs/e13-real-aws.toml`), incluindo a condição `own-rules-v3`. Objetivo: validar o ganho de toolkit fora do Ambig-IaC. Hipótese: a v3 é a mesma regra (pergunte por recurso/alvo), só com opções e consequências melhoradas; em E13 (pedidos ambíguos de leigos em AWS real), o padrão deve ser o mesmo: v3 ≥ v2. Desenho: 27 tarefas × 3 condições (none, own-rules-v2, own-rules-v3) × Sonnet × N=1 = 81 trajetórias (contra 54 de E13; `own-rules` foi trocada por v2 em E10). Configs e gate: `configs/e19-real-aws.toml`, `configs/e19-selection.json` (mesmas 27 tarefas de E13, sorteio feito depois de E16); semente para o selector: 20261117; gate: os 27 no `prevalidate` devem passar e viagens devem ser congruentes com o E13. Homelab: como E13, mas com 3 condições. Depois: dois juízes (Sonnet `e3-judge-v2`, Luna), agent-metrics, §3 com a tabela e a comparação com E13. Comprimento: teto previsto ~4 h de run (em paralelo com análise de E18). Registrado antes de qualquer coleta; depois de E18, decisão do usuário se roda.
+
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
 
 ## Referências (conferidas em 28/10/2026)
