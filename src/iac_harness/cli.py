@@ -14,6 +14,7 @@ import sys
 import threading
 import tomllib
 from collections.abc import Callable, Container
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -620,6 +621,11 @@ def _modality_table(rows: list[dict[str, Any]], modalities: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _prompt_field(cfg: dict[str, Any]) -> str:
+    """Campo do enunciado do Ambig-IaC (`[modality] prompt_field`; teto = `prompt_original`)."""
+    return cfg.get("modality", {}).get("prompt_field", "prompt")
+
+
 def _load_cfg_tasks(cfg: dict[str, Any]) -> list[Any]:
     """Tarefas do catálogo, de `[modality] tasks_dir` (ex.: tarefas de usuário simulado) ou de
     `[modality] dataset` (E16: `"ambig-iac"`, linhas do JSONL em data/)."""
@@ -627,7 +633,15 @@ def _load_cfg_tasks(cfg: dict[str, Any]) -> list[Any]:
     if dataset is not None:
         if dataset != ambig_iac.DATASET:
             raise SystemExit(f"erro: dataset desconhecido {dataset!r} (use {ambig_iac.DATASET!r})")
-        return ambig_iac.load_tasks(DATA_DIR)
+        tasks = ambig_iac.load_tasks(DATA_DIR, _prompt_field(cfg))
+        rules_file = cfg["modality"].get("rules_file")
+        if rules_file is None:
+            return tasks
+        rules = json.loads(Path(rules_file).read_text())["amendment"]["discriminating_rules"]
+        return [
+            replace(t, rego_rules=tuple(rules[t.task_id])) if t.task_id in rules else t
+            for t in tasks
+        ]
     tasks_dir = cfg.get("modality", {}).get("tasks_dir")
     return load_tasks(Path(tasks_dir)) if tasks_dir else load_tasks()
 
@@ -740,7 +754,7 @@ def cmd_ambig_prevalidate(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "config": cfg, "order": order, "target_pass": args.target_pass,
-                "dataset": ambig_iac.provenance(), **_git_provenance(),
+                "dataset": ambig_iac.provenance(_prompt_field(cfg)), **_git_provenance(),
                 "versions": {**toolchain.versions(run_dir), "toolchain_image": toolchain.image,
                              **_sandbox_provenance(executor)},
             },
@@ -1577,7 +1591,11 @@ def _agent_run_config(
         if user_sim
         else {}
     )
-    dataset = {"dataset": ambig_iac.provenance()} if cfg.get("modality", {}).get("dataset") else {}
+    dataset = (
+        {"dataset": ambig_iac.provenance(_prompt_field(cfg))}
+        if cfg.get("modality", {}).get("dataset")
+        else {}
+    )
     return {
         **sim_provenance,
         **dataset,
@@ -1916,6 +1934,18 @@ def _agent_metrics_table(metrics: dict[str, Any]) -> str:
                     f"    {r['task_id']:<28} none {_mark(r['none_success'])} "
                     f"cond {_mark(r['cond_success'])} tokens ×{ratio}"
                 )
+    for model, scores in metrics.get("partial_scores", {}).items():
+        lines += ["", f"{model}: notas parciais do oráculo (média por tarefa)"]
+        lines += [
+            f"  {cond:<14} rego_frac {_fmt_score(s['rego_frac'])} "
+            f"type_f1 {_fmt_score(s['type_f1'])}"
+            for cond, s in scores["mean"].items()
+        ]
+        lines += [
+            f"  {c['metric']:<10} {c['pair']:<32} n={c['n_pairs']:<3} "
+            f"dif {c['diff_mean']:+.3f} [{c['diff_ci95'][0]:+.3f}, {c['diff_ci95'][1]:+.3f}]"
+            for c in scores["paired"]
+        ]
     cmp = metrics.get("compare")
     if cmp:
         lines += [
@@ -1930,6 +1960,10 @@ def _agent_metrics_table(metrics: dict[str, Any]) -> str:
             for d in cmp["discordant"]
         ]
     return "\n".join(lines)
+
+
+def _fmt_score(value: float | None) -> str:
+    return "n/d" if value is None else f"{value:.3f}"
 
 
 def _mark(ok: bool) -> str:

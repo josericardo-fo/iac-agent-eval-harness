@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 from iac_harness.agentic.metrics import compute_agent_metrics, merge_judgments
 
 
@@ -177,3 +181,25 @@ def test_judge_agreement_rejects_unknown_human_kind():
 
     with pytest.raises(ValueError, match="human_kind"):
         judge_agreement([{"trajectory_id": "a", "judge_kind": "ask", "human_kind": "maybe"}])
+
+
+def test_partial_scores_report_means_and_paired_differences_for_v3():
+    events = []
+    for task, vals in {"t1": (0.0, 0.5, 1.0), "t2": (0.2, 0.4, 0.8)}.items():
+        for cond, frac in zip(("none", "own-rules-v2", "own-rules-v3"), vals, strict=True):
+            details = {"rego_frac": frac, "type_f1": frac / 2}
+            if task == "t2":  # um evento antigo grava os detalhes como texto JSON
+                details = json.dumps(details)
+            events.append(_final(task, cond, 1, False, check_details_final=details))
+    m = compute_agent_metrics(_judge(events), n_boot=100)
+    scores = m["partial_scores"]["Haiku 5.5"]
+    assert scores["mean"]["own-rules-v3"] == {"rego_frac": 0.9, "type_f1": 0.45}
+    by_pair = {(c["metric"], c["pair"]): c for c in scores["paired"]}
+    v3_v2 = by_pair[("rego_frac", "own-rules-v3-vs-own-rules-v2")]
+    assert v3_v2["n_pairs"] == 2 and v3_v2["diff_mean"] == pytest.approx(0.45)
+    assert by_pair[("type_f1", "own-rules-v3-vs-none")]["diff_mean"] == pytest.approx(0.4)
+
+
+def test_partial_scores_are_absent_without_rego_frac():
+    m = compute_agent_metrics(_judge([_final("t1", "none", 1, True, check_details={"x": 1})]))
+    assert "partial_scores" not in m

@@ -316,7 +316,9 @@ def _run_check_once(
     toolchain: Toolchain, task: ModalityTask, workspace: Path | None, final: bool = False
 ) -> tuple[bool, dict[str, Any]]:
     if task.rego_policy is not None:  # tarefa de dataset (E16): oráculo plan + OPA, sem check.py
-        return grade_config(toolchain, task.rego_policy, workspace)
+        return grade_config(
+            toolchain, task.rego_policy, workspace, task.reference_resource_types, task.rego_rules
+        )
     code = task.check_final if final and task.check_final is not None else task.check
     proc = _run_task_script(toolchain, task, CHECK_FILENAME, code, workspace)
     if isinstance(proc, str):

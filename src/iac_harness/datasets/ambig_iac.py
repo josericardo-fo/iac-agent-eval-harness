@@ -15,7 +15,7 @@ from typing import Any
 
 from iac_harness.modalities.loader import ModalityTask
 from iac_harness.toolchain import Toolchain
-from iac_harness.verifiers.plan_rego import grade_config
+from iac_harness.verifiers.plan_rego import grade_config, plan_resource_types
 
 DATASET = "ambig-iac"
 REVISION = "96429693e7164b024333e6d02f8c6b2d017e4ecb"
@@ -24,14 +24,19 @@ JSONL_SHA256 = "d1f5525230979df99e0cbe5aaabae5744cda76d320663f4fd9069fe2b2b853a0
 REGION = "us-east-1"
 # Linha fixa, igual em todas as condições (o dataset é de síntese de Terraform).
 PROMPT_SUFFIX = "Write the Terraform configuration for this in main.tf in the working directory."
-ADAPTATION = (
-    f"Enunciado = campo `prompt` do Ambig-IaC (revisão {REVISION[:12]}) mais a linha fixa "
-    f"{PROMPT_SUFFIX!r}; instância não alterada."
-)
+# Campo do enunciado: `prompt` (ambíguo) ou `prompt_original` (braço de teto do E16).
+PROMPT_FIELDS = ("prompt", "prompt_original")
 FETCH_HINT = (
     "rode: cd /tmp && uv run --no-project --with pyarrow python -I "
     "<repo>/scripts/fetch_ambig_iac.py <repo>/data"
 )
+
+
+def adaptation(prompt_field: str = "prompt") -> str:
+    return (
+        f"Enunciado = campo `{prompt_field}` do Ambig-IaC (revisão {REVISION[:12]}) mais a linha "
+        f"fixa {PROMPT_SUFFIX!r}; instância não alterada."
+    )
 
 
 def task_id(row_id: int) -> str:
@@ -42,20 +47,23 @@ def jsonl_path(data_dir: Path) -> Path:
     return Path(data_dir) / f"ambig_iac_{REVISION}.jsonl"
 
 
-def row_to_task(row: dict[str, Any]) -> ModalityTask:
+def row_to_task(row: dict[str, Any], prompt_field: str = "prompt") -> ModalityTask:
+    if prompt_field not in PROMPT_FIELDS:
+        raise SystemExit(f"erro: prompt_field {prompt_field!r} inválido (use {PROMPT_FIELDS})")
     return ModalityTask(
         task_id=task_id(row["id"]),
         category="create",
         origin=f"{DATASET}:{row['id']}",
         region=REGION,
-        prompt=f"{row['prompt'].strip()}\n\n{PROMPT_SUFFIX}\n",
+        prompt=f"{row[prompt_field].strip()}\n\n{PROMPT_SUFFIX}\n",
         check="",
         references={"terraform": row["main_tf"]},
         missing_references=("cli", "boto3"),
         missing_reason="o Ambig-IaC só traz referência Terraform",
         user_card=row["intent"],
         rego_policy=row["checks_rego"],
-        adaptation=ADAPTATION,
+        adaptation=adaptation(prompt_field),
+        reference_resource_types=tuple(plan_resource_types(json.loads(row["plan_json"]))),
     )
 
 
@@ -71,8 +79,8 @@ def load_rows(data_dir: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
 
 
-def load_tasks(data_dir: Path) -> list[ModalityTask]:
-    return [row_to_task(r) for r in load_rows(data_dir)]
+def load_tasks(data_dir: Path, prompt_field: str = "prompt") -> list[ModalityTask]:
+    return [row_to_task(r, prompt_field) for r in load_rows(data_dir)]
 
 
 def gate_task(toolchain: Toolchain, task: ModalityTask, out_dir: Path) -> dict[str, Any]:
@@ -83,7 +91,9 @@ def gate_task(toolchain: Toolchain, task: ModalityTask, out_dir: Path) -> dict[s
         work = Path(out_dir) / name
         work.mkdir(parents=True)
         (work / "main.tf").write_text(text)
-        passed, row[name] = grade_config(toolchain, task.rego_policy, work)
+        passed, row[name] = grade_config(
+            toolchain, task.rego_policy, work, task.reference_resource_types
+        )
         if name == "reference" and not passed:
             row["reason"] = f"reference: {row[name]['reason']}"
             return row
@@ -94,9 +104,10 @@ def gate_task(toolchain: Toolchain, task: ModalityTask, out_dir: Path) -> dict[s
     return row
 
 
-def provenance() -> dict[str, Any]:
+def provenance(prompt_field: str = "prompt") -> dict[str, Any]:
     """Procedência gravada no run_config de runs com o Ambig-IaC."""
     return {
         "name": DATASET, "revision": REVISION, "parquet_sha256": PARQUET_SHA256,
-        "jsonl_sha256": JSONL_SHA256, "prompt_suffix": PROMPT_SUFFIX, "adaptation": ADAPTATION,
+        "jsonl_sha256": JSONL_SHA256, "prompt_suffix": PROMPT_SUFFIX,
+        "adaptation": adaptation(prompt_field), "prompt_field": prompt_field,
     }  # fmt: skip

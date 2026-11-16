@@ -45,6 +45,11 @@ class ModalityTask:
     # Tarefa de dataset com oráculo plan + OPA (E16, Ambig-IaC): substitui o check.py (vazio).
     rego_policy: str | None = None
     adaptation: str = ""  # adaptação declarada do enunciado original (tarefas de dataset)
+    # Tipos de recurso do plan da referência (tarefas de dataset): base do `type_f1` do oráculo.
+    reference_resource_types: tuple[str, ...] | None = None
+    # Regras discriminantes (caminhos dos folhas que reprovam num main.tf vazio): base do
+    # `rego_frac`; None = fração de todas as folhas. Vem de `[modality] rules_file`.
+    rego_rules: tuple[str, ...] | None = None
 
     @property
     def wants_answer(self) -> bool:

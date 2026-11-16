@@ -7,6 +7,7 @@ mudar o código nem a saída dos runs antigos.
 
 from __future__ import annotations
 
+import json
 import random
 import statistics
 from collections import Counter
@@ -378,6 +379,54 @@ def judge_pair_agreement(events: list[Row], a: list[Row], b: list[Row]) -> dict[
     }
 
 
+PARTIAL_SCORES = ("rego_frac", "type_f1")
+# (base, outra): diferença = outra - base (como as demais comparações do módulo).
+PARTIAL_PAIRS = (("own-rules-v2", "own-rules-v3"), (BASELINE_CONDITION, "own-rules-v3"))
+
+
+def _final_check_details(e: Row) -> Row:
+    """Detalhes do check do estado final (após o usuário simulado); pode vir como JSON em texto."""
+    details = e.get("check_details_final") or e.get("check_details") or {}
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except ValueError:
+            return {}
+    return details if isinstance(details, dict) else {}
+
+
+def partial_scores(rows: list[Row], n_boot: int, seed: int) -> dict[str, Any] | None:
+    """Notas parciais do oráculo (E16) por condição e v3 × v2 / v3 × none (bootstrap pareado).
+
+    None se nenhuma trajetória trouxe `rego_frac` nos detalhes do check final.
+    """
+    scored = [{**e, "_scores": _final_check_details(e)} for e in rows]
+    if not any(e["_scores"].get("rego_frac") is not None for e in scored):
+        return None
+    conditions = sorted({e["condition"] for e in scored})
+
+    def per_task(cond: str, name: str) -> dict[str, float]:
+        have = [e for e in scored if e["condition"] == cond and e["_scores"].get(name) is not None]
+        return _per_task(have, lambda e: float(e["_scores"][name]))
+
+    out: dict[str, Any] = {"mean": {}, "paired": []}
+    for cond in conditions:
+        out["mean"][cond] = {
+            name: _mean(list(per_task(cond, name).values())) for name in PARTIAL_SCORES
+        }
+    for base, other in PARTIAL_PAIRS:
+        if base not in conditions or other not in conditions:
+            continue
+        for name in PARTIAL_SCORES:
+            a, b = per_task(base, name), per_task(other, name)
+            diff, lo, hi = paired_bootstrap(a, b, n_boot, seed)
+            out["paired"].append(
+                {"metric": name, "pair": f"{other}-vs-{base}", "n_pairs": len(set(a) & set(b)),
+                 "diff_mean": diff, "diff_ci95": [lo, hi]}
+            )  # fmt: skip
+    return out
+
+
 def compute_agent_metrics(
     finals: list[Row], n_boot: int = BOOTSTRAP_ITERATIONS, seed: int = BOOTSTRAP_SEED
 ) -> dict[str, Any]:
@@ -391,7 +440,10 @@ def compute_agent_metrics(
         by_strata[axis] = {
             v: by_condition_model([e for e in rows if v in _strata_values(e, axis)]) for v in values
         }
-    return {
+    partial = {
+        m: partial_scores([e for e in rows if e["model"] == m], n_boot, seed) for m in models
+    }
+    result = {
         "n_trajectories": len(rows),
         "n_tasks": len({e["task_id"] for e in rows}),
         "n_unjudged": sum(1 for e in rows if e.get("asked") is None),
@@ -408,3 +460,6 @@ def compute_agent_metrics(
         "per_task": {m: _per_task_vs_none([e for e in rows if e["model"] == m]) for m in models},
         "easy_harm": {m: _easy_harm([e for e in rows if e["model"] == m]) for m in models},
     }
+    if any(partial.values()):  # só nos runs com oráculo Ambig-IaC: a saída dos demais não muda
+        result["partial_scores"] = {m: p for m, p in partial.items() if p}
+    return result

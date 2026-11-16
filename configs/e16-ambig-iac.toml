@@ -12,9 +12,11 @@ runs_dir = "runs"
 
 [modality]
 dataset = "ambig-iac"
-# as 50 selecionadas de configs/e16-selection.json (gate em runs/20261116T114328-ambig-prevalidate)
+# regras discriminantes por tarefa (base do `rego_frac`), de scripts/select_e16_tasks.py
+rules_file = "configs/e16-selection.json"
+# as 50 de configs/e16-selection.json (bloco `amendment`: emenda de 16/11 às selecionadas do
+# gate em runs/20261116T114328-ambig-prevalidate)
 tasks = [
-  "ambig-006",
   "ambig-008",
   "ambig-009",
   "ambig-016",
@@ -25,7 +27,7 @@ tasks = [
   "ambig-044",
   "ambig-045",
   "ambig-050",
-  "ambig-068",
+  "ambig-065",
   "ambig-071",
   "ambig-081",
   "ambig-088",
@@ -50,8 +52,10 @@ tasks = [
   "ambig-202",
   "ambig-203",
   "ambig-204",
+  "ambig-214",
   "ambig-216",
   "ambig-221",
+  "ambig-231",
   "ambig-233",
   "ambig-239",
   "ambig-240",
@@ -60,7 +64,6 @@ tasks = [
   "ambig-245",
   "ambig-259",
   "ambig-266",
-  "ambig-277",
   "ambig-279",
   "ambig-283",
   "ambig-293",
@@ -85,7 +88,7 @@ model = "Sonnet 5.5"
 provider = "codex"
 model = "gpt-6-luna"
 prompt_version = "user-sim-lay-v1"
-max_replies = 1
+max_replies = 3
 
 [feedback]
 max_chars = 2000

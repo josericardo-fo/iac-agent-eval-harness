@@ -7,7 +7,8 @@
     "parquet_sha256": "3a8dcf6926c94987ed918246513abd7d1906c39f2c64d609709dff177d348fe7",
     "jsonl_sha256": "d1f5525230979df99e0cbe5aaabae5744cda76d320663f4fd9069fe2b2b853a0",
     "prompt_suffix": "Write the Terraform configuration for this in main.tf in the working directory.",
-    "adaptation": "Enunciado = campo `prompt` do Ambig-IaC (revisão 96429693e716) mais a linha fixa 'Write the Terraform configuration for this in main.tf in the working directory.'; instância não alterada."
+    "adaptation": "Enunciado = campo `prompt` do Ambig-IaC (revisão 96429693e716) mais a linha fixa 'Write the Terraform configuration for this in main.tf in the working directory.'; instância não alterada.",
+    "prompt_field": "prompt"
   },
   "order": [
     "ambig-277",
@@ -625,5 +626,232 @@
     "ambig-295",
     "ambig-297",
     "ambig-173"
-  ]
+  ],
+  "amendment": {
+    "rule": "sai a tarefa cujo `checks_rego` cita um recurso `aws_x.nome` com `nome` ausente do `intent` (nenhuma pergunta recupera o nome; `id`, `arn` e `name` não contam); entram os primeiros substitutos da fila que passam na mesma regra; finais gravadas ordenadas.",
+    "removed": [
+      "ambig-006",
+      "ambig-068",
+      "ambig-277"
+    ],
+    "added": [
+      "ambig-231",
+      "ambig-214",
+      "ambig-065"
+    ],
+    "selected_amended": [
+      "ambig-008",
+      "ambig-009",
+      "ambig-016",
+      "ambig-034",
+      "ambig-036",
+      "ambig-037",
+      "ambig-038",
+      "ambig-044",
+      "ambig-045",
+      "ambig-050",
+      "ambig-065",
+      "ambig-071",
+      "ambig-081",
+      "ambig-088",
+      "ambig-100",
+      "ambig-104",
+      "ambig-105",
+      "ambig-126",
+      "ambig-132",
+      "ambig-133",
+      "ambig-139",
+      "ambig-150",
+      "ambig-151",
+      "ambig-154",
+      "ambig-159",
+      "ambig-170",
+      "ambig-172",
+      "ambig-180",
+      "ambig-182",
+      "ambig-188",
+      "ambig-189",
+      "ambig-190",
+      "ambig-202",
+      "ambig-203",
+      "ambig-204",
+      "ambig-214",
+      "ambig-216",
+      "ambig-221",
+      "ambig-231",
+      "ambig-233",
+      "ambig-239",
+      "ambig-240",
+      "ambig-241",
+      "ambig-242",
+      "ambig-245",
+      "ambig-259",
+      "ambig-266",
+      "ambig-279",
+      "ambig-283",
+      "ambig-293"
+    ],
+    "amended_gate": "runs/20261116T123824-ambig-prevalidate/prevalidation.jsonl",
+    "discriminating_rules": {
+      "ambig-008": [
+        "terraform.validation.is_configuration_valid",
+        "terraform.validation.is_valid_r53_record",
+        "terraform.validation.is_valid_r53_zone"
+      ],
+      "ambig-009": [
+        "terraform.validation.is_configuration_valid",
+        "terraform.validation.is_valid_r53_record",
+        "terraform.validation.is_valid_r53_zone"
+      ],
+      "ambig-016": [
+        "terraform.validation.is_configuration_valid",
+        "terraform.validation.is_valid_eb_app",
+        "terraform.validation.is_valid_iam_role"
+      ],
+      "ambig-034": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-036": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-037": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-038": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-044": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-045": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-050": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-065": [
+        "terraform.validation.has_aws_eks_access_entry_example"
+      ],
+      "ambig-071": [
+        "terraform.validation.has_aws_eks_node_group_example"
+      ],
+      "ambig-081": [
+        "terraform.validation.has_aws_s3_bucket_object"
+      ],
+      "ambig-088": [
+        "main.allow"
+      ],
+      "ambig-100": [
+        "main.allow"
+      ],
+      "ambig-104": [
+        "main.allow"
+      ],
+      "ambig-105": [
+        "main.allow"
+      ],
+      "ambig-126": [
+        "main.allow"
+      ],
+      "ambig-132": [
+        "main.allow"
+      ],
+      "ambig-133": [
+        "main.allow"
+      ],
+      "ambig-139": [
+        "main.allow"
+      ],
+      "ambig-150": [
+        "vpc_ipv6.valid"
+      ],
+      "ambig-151": [
+        "vpc_netgate_basic.valid"
+      ],
+      "ambig-154": [
+        "vpc_net_acl.valid"
+      ],
+      "ambig-159": [
+        "aws_neptune_cluster.valid"
+      ],
+      "ambig-170": [
+        "aws_redshift_endpoint_access.valid"
+      ],
+      "ambig-172": [
+        "aws_redshift_cluster_event_subscription.valid"
+      ],
+      "ambig-180": [
+        "iam_user_basic.valid"
+      ],
+      "ambig-182": [
+        "aws_bucket.valid"
+      ],
+      "ambig-188": [
+        "s3_bucket_inventory.valid"
+      ],
+      "ambig-189": [
+        "aws_s3_bucket_inventory.valid"
+      ],
+      "ambig-190": [
+        "aws_s3_bucket_notification.valid"
+      ],
+      "ambig-202": [
+        "aws_s3_bucket_versioning.valid"
+      ],
+      "ambig-203": [
+        "s3_bucket_logging.valid"
+      ],
+      "ambig-204": [
+        "s3_bucket_logging.valid"
+      ],
+      "ambig-214": [
+        "netflix_high.valid"
+      ],
+      "ambig-216": [
+        "netflix_middle.valid"
+      ],
+      "ambig-221": [
+        "terraform.validation.is_valid_db_instance",
+        "terraform.validation.is_valid_random_string",
+        "terraform.validation.is_valid_security_group"
+      ],
+      "ambig-231": [
+        "terraform.validation.has_valid_lightsail_instance"
+      ],
+      "ambig-233": [
+        "terraform.validation.has_valid_lightsail_database"
+      ],
+      "ambig-239": [
+        "terraform.validation.has_valid_lightsail_disk"
+      ],
+      "ambig-240": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-241": [
+        "terraform.validation.has_valid_resources"
+      ],
+      "ambig-242": [
+        "terraform.validation.has_valid_lightsail_certificate"
+      ],
+      "ambig-245": [
+        "terraform.validation.is_valid_glacier_vault"
+      ],
+      "ambig-259": [
+        "terraform.validation.is_valid_db_instance"
+      ],
+      "ambig-266": [
+        "terraform.validation.is_valid_db_instance"
+      ],
+      "ambig-279": [
+        "terraform.validation.is_valid_internet_gateway",
+        "terraform.validation.is_valid_vpc"
+      ],
+      "ambig-283": [
+        "terraform.validation.is_valid_egress_only_internet_gateway"
+      ],
+      "ambig-293": [
+        "terraform.validation.is_valid_nat_gateway"
+      ]
+    }
+  }
 }
