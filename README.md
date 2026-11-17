@@ -14,10 +14,15 @@ Docker, procedência registrada em cada run):
    gera Terraform (IaC-Eval v2, condições A/B/C). Protocolo em [docs/protocolo.md](docs/protocolo.md).
 2. **Modalidades (Semanas 6–8):** a mesma tarefa em Terraform, CLI e boto3, no Floci e na AWS
    real. Nenhuma forma domina; a forma muda o custo em tokens, não o acerto.
-3. **Toolkit (Semanas 8–9):** experimentos E1–E4 e E11/E12, incluindo o Claude Code de verdade
+3. **Toolkit (Semanas 8–10):** experimentos E1–E4 e E10–E18, incluindo o Claude Code de verdade
    com 5 condições de toolkit. O toolkit troca chute por pergunta nos pedidos ambíguos e não perde
-   nas claras; a v2 (`toolkit/src-v2/`) substitui a v1. E10 (pedido leigo) e E14 (segundo juiz, de
-   outro fornecedor) em 14/11; E13 (casos reais com usuário simulado) a rodar.
+   nas claras; a v2 (`toolkit/src-v2/`) substitui a v1 e é a distribuída. Nos casos reais com
+   usuário simulado (E13), `none` acerta 2/27 e a v2 11/27 no 1º turno (12/27 depois da
+   resposta); com o toolkit, as perguntas saem um pouco melhores (E15). No Ambig-IaC (E16–E18),
+   nenhum toolkit recupera o que a ambiguidade custa: o toolkit ajuda quando falta o tipo de
+   recurso ou o alvo, não quando faltam atributos. A v3 (`toolkit/src-v3/`) fica como achado. O E19 não foi rodado.
+
+O desenvolvimento congela no gate da Semana 10 (19/11/2026).
 
 Onde ler:
 
@@ -79,6 +84,9 @@ usa `sandbox.host_endpoint` (127.0.0.1).
 O reset é um `docker restart` do container `sandbox.container`, seguido de espera pelo health e da
 criação da VPC default em todas as regiões. O `POST /_floci/state/reset` do Floci 2.1.0 não serve:
 apaga a VPC default e não a recria (protocolo §9.2). Se o reset falhar, o comando aborta.
+
+Existe também o [AWS Emulator](https://github.com/aws/aws-emulator), emulador oficial da AWS lançado
+em 11/11/2026. Ele não foi avaliado neste estudo e fica como alternativa ao Floci em trabalho futuro.
 
 Chaves de `[sandbox]`: `endpoint` (visão da toolchain), `host_endpoint` (visão do host, padrão
 `http://127.0.0.1:4566`), `container` (padrão `iac-harness-floci-1`) e `region`.

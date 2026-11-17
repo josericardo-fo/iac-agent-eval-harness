@@ -58,5 +58,9 @@ Desenho em `docs/desenho-modalidades.md`. Tarefas e gates em `docs/selecao-taref
 | E10 | `e10-lay-haiku.toml` | Pedido leigo × técnico no Floci (20 × `none`/v2 × Haiku × N=3); sorteio em `e10-selection.json` | `20261112T172414-e10-lay-haiku` | histórica |
 | E13 | `e13-usersim-floci.toml` | Smoke do usuário simulado (uma resposta, GPT via Codex CLI) no Floci, com a tarefa-fixture `sim-fixture-bucket` | `20261112T181628-e13-usersim-floci` | ativa |
 | E13 | `e13-real-aws.toml` | 9 casos reais com usuário simulado na real (9 × `none`/v2 × Sonnet × N=3 = 54); fontes em `docs/casos-reais.md`; gate `20261114T185110-modality-prevalidate` | `20261114T194733-e13-real-aws` | histórica |
+| E16 | `e16-smoke.toml` | Piloto do Ambig-IaC (12 trajetórias, fora da análise) | `20261116T120145-e16-smoke`, `20261116T121412-e16-smoke-v3` | histórica |
+| E16 | `e16-ambig-iac.toml` | Ambig-IaC, 50 × `none`/v2/v3 × Sonnet × N=1; sorteio em `e16-selection.json`. O E17 usou a mesma base com `user-sim-lay-v2` (config não versionada; procedência no `run_config.json`) | `20261116T125901-e16-ambig-iac`; E17 `20261116T163028-e16-userv2-check` | histórica |
+| E16 | `e16-ceiling.toml` | Teto: `none` com o pedido completo | `20261116T150128-e16-ceiling` | histórica |
+| E19 | `e19-real-aws.toml` | Casos reais do E13 com a v3 na real | nenhum | não rodado |
 | todos | `strata.toml` | Estratos das tarefas, lidos pelo `agent-metrics` | n/a | ativa |
 
