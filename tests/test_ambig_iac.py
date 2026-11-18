@@ -328,13 +328,13 @@ def test_prompt_field_builds_the_ceiling_prompt_and_is_recorded():
         ambig_iac.row_to_task(ROW, "intent")
 
 
-# ---------- sorteio (scripts/select_e16_tasks.py) ----------
+# ---------- sorteio (scripts/experiments/select_e16_tasks.py) ----------
 
 
 def _selector():
     import importlib.util
 
-    path = Path(__file__).parents[1] / "scripts" / "select_e16_tasks.py"
+    path = Path(__file__).parents[1] / "scripts" / "experiments" / "select_e16_tasks.py"
     spec = importlib.util.spec_from_file_location("select_e16_tasks", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

@@ -4,10 +4,10 @@
 # (judge-questions-luna.jsonl); 3) relatório com os dois juízes em runs/e15-report.md.
 # Retomável: rodar de novo pula as trajetórias que já têm nota. Falha num run não para os outros.
 #
-# Uso: scripts/e15_overnight.sh   (não rode junto com outro job do Codex)
+# Uso: scripts/experiments/e15_overnight.sh   (não rode junto com outro job do Codex)
 set -uo pipefail
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$REPO" || exit 1
 LOG="$REPO/runs/e15-overnight.log"
 REPORT="$REPO/runs/e15-report.md"

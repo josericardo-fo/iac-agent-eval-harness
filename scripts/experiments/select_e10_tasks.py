@@ -4,7 +4,7 @@ Critério escrito no registro antes do sorteio: tarefas do E3 no Floci (`configs
 com `intent = "clear"` em `configs/strata.toml`, fora a task-118. Determinístico: rodar de novo
 gera o mesmo `configs/e10-selection.json`.
 
-Uso: uv run python scripts/select_e10_tasks.py
+Uso: uv run python scripts/experiments/select_e10_tasks.py
 """
 
 import json
@@ -12,7 +12,7 @@ import random
 import tomllib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 E3_CONFIG = ROOT / "configs" / "e3-agent.toml"
 STRATA = ROOT / "configs" / "strata.toml"
 OUTPUT_PATH = ROOT / "configs" / "e10-selection.json"

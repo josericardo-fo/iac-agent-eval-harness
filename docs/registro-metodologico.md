@@ -12,6 +12,9 @@ conferidas na fonte (lista no fim); o que não foi possível conferir está dito
 - **Ação:** **Manter**; **Reanalisar** (os dados existentes bastam, custo zero); **Re-rodar**
   (precisa de run novo); **Declarar** (só escrever como limitação).
 
+**Scripts citados.** Depois da tag `v1.0.0`, os scripts de seleção e de uso único citados aqui
+(`scripts/select_*.py`, `scripts/e15_overnight.sh`) foram para `scripts/experiments/`.
+
 ## Experimentos
 
 **Atenção à numeração.** "E" nomeia duas coisas diferentes neste projeto:

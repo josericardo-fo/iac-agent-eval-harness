@@ -2,7 +2,7 @@
 
 Critério fixado antes de escrever qualquer tarefa nova. O resultado do sorteio fica em
 `src/iac_harness/modalities/selection.json`, gerado por
-`uv run python scripts/select_modality_tasks.py` (determinístico).
+`uv run python scripts/experiments/select_modality_tasks.py` (determinístico).
 
 ## Por que ampliar
 
@@ -84,7 +84,7 @@ As 7 sorteadas deram `011` no Floci nas 3 modalidades, então nenhuma precisou d
 Na AWS real, as 25 tarefas do emulador só repetem o que o Floci já mostrou. Por isso entram 7
 tarefas de criação do IaC-Eval v2 que **não rodam no Floci**, sorteadas com critério fixo. O
 resultado fica em `src/iac_harness/modalities/selection_real_aws.json`, gerado por
-`uv run python scripts/select_real_aws_tasks.py` (determinístico).
+`uv run python scripts/experiments/select_real_aws_tasks.py` (determinístico).
 
 ### Critério
 

@@ -8,11 +8,12 @@ permutação semeada dos 300 ids, e as selecionadas são as N primeiras aprovada
 (equivale a sortear N entre as aprovadas). As aprovadas seguintes são a fila de substitutos.
 
 Uso (determinístico: rodar de novo gera o mesmo arquivo):
-  1. uv run python scripts/select_e16_tasks.py
+  1. uv run python scripts/experiments/select_e16_tasks.py
      grava `configs/e16-selection.json` só com a ordem;
   2. uv run iac-harness ambig-prevalidate --config configs/e16-ambig-iac.toml \\
          --order configs/e16-selection.json --target-pass 60
-  3. uv run python scripts/select_e16_tasks.py --prevalidation runs/<run>/prevalidation.jsonl
+  3. uv run python scripts/experiments/select_e16_tasks.py \\
+         --prevalidation runs/<run>/prevalidation.jsonl
      completa selecionadas, substitutos e reprovadas no gate e grava o bloco `amendment`
      (emenda de 16/11: tarefas impossíveis saem, substitutos entram). Com `--amended-gate
      runs/<run>/prevalidation.jsonl` (gate das 50 emendadas), grava também as regras
@@ -27,7 +28,7 @@ from pathlib import Path
 
 from iac_harness.datasets import ambig_iac
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_PATH = ROOT / "configs" / "e16-selection.json"
 
 # Data do registro do E16 (16/11/2026), fixada antes de sortear.

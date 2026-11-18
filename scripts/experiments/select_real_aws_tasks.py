@@ -3,7 +3,7 @@
 Critério documentado em docs/selecao-tarefas-modalidades.md ("Tarefas só na AWS real").
 Determinístico: rodar de novo gera o mesmo src/iac_harness/modalities/selection_real_aws.json.
 
-Uso: uv run python scripts/select_real_aws_tasks.py
+Uso: uv run python scripts/experiments/select_real_aws_tasks.py
 """
 
 import csv
@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 CSV_PATH = ROOT / "data" / "iac_eval_v2_defefc108d437f5659f40be66fc863833e9c96fb.csv"
 PREVALIDATION_PATH = ROOT / "runs" / "prevalidation-merged" / "prevalidation.jsonl"
 OUTPUT_PATH = ROOT / "src" / "iac_harness" / "modalities" / "selection_real_aws.json"

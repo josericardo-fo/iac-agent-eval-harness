@@ -12,7 +12,7 @@ runs_dir = "runs"
 
 [modality]
 dataset = "ambig-iac"
-# regras discriminantes por tarefa (base do `rego_frac`), de scripts/select_e16_tasks.py
+# regras discriminantes por tarefa (base do `rego_frac`), de scripts/experiments/select_e16_tasks.py
 rules_file = "configs/e16-selection.json"
 # as 2 primeiras selecionadas na ordem do sorteio
 tasks = [

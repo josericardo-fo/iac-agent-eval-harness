@@ -203,8 +203,9 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
   enum).
 - [x] Comandos de uso único: `modality-reask` (migração do E2) e `prevalidate-miac` removidos;
   `ambig-prevalidate` (E16) fica, porque é o gate das tasks do Ambig-IaC (ver 8.5).
-- [ ] Scripts de seleção (`scripts/select_*.py`, `scripts/e15_overnight.sh`): mover para
-  `scripts/experiments/` com nota de qual experimento os usou.
+- [x] Scripts de seleção (`scripts/select_*.py`, `scripts/e15_overnight.sh`): movidos para
+  `scripts/experiments/`, com README dizendo qual experimento usou cada um. O
+  `scripts/fetch_ambig_iac.py` fica em `scripts/` (instala o dataset Ambig-IaC).
 - [x] `executors/localstack.py` e `configs/modality-spike-localstack.toml`: o LocalStack exige
   token desde 03/2026 e o spike acabou. Removidos (executor, config, serviço do compose, host da
   allowlist, testes); a tag `v1.0.0` preserva.
