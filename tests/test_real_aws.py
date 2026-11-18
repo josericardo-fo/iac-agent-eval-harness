@@ -615,7 +615,7 @@ def test_abc_commands_refuse_aws_kind(iac_env):
     cfg = {"sandbox": {"kind": "aws", "expected_arn": ARN}}
     tc = build_toolchain(cfg)
     with pytest.raises(SystemExit, match="modality"):
-        build_executor(cfg, tc)  # prevalidate, prevalidate-miac, run e resume
+        build_executor(cfg, tc)  # ambig-prevalidate e modality-replay
     assert isinstance(build_executor(cfg, tc, allow_real_aws=True), RealAwsExecutor)
 
 

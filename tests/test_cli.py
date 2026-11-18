@@ -1,14 +1,8 @@
 import pytest
 
-from iac_harness.cli import _load_prevalidation, build_executor
+from iac_harness.cli import build_executor
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.toolchain import Toolchain
-
-
-def test_run_without_prevalidation_fails_unless_explicit(tmp_path):
-    with pytest.raises(SystemExit):
-        _load_prevalidation(None, allow_missing=False)
-    assert _load_prevalidation(None, allow_missing=True) == {}
 
 
 def test_build_executor_picks_class_by_sandbox_kind():

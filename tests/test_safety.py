@@ -3,14 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from fakes import FakeBackend, FakeVerifier
-from iac_harness.conditions import A
 from iac_harness.executors.floci import FlociExecutor
-from iac_harness.recorder.jsonl import JsonlRecorder
-from iac_harness.runner import RunContext, run_task
 from iac_harness.toolchain import EndpointNotAllowedError, Toolchain
-from iac_harness.types import Stage, Task, TaskOracle
-from iac_harness.workspace import OVERRIDE_FILENAME
 
 
 @pytest.mark.parametrize(
@@ -30,24 +24,6 @@ def test_disallowed_host_endpoint_is_rejected():
 def test_allowed_hosts_are_accepted():
     for endpoint in ("http://floci:4566", "http://localhost:4566", "http://127.0.0.1:4566"):
         FlociExecutor(Toolchain(mode="local"), endpoint=endpoint)
-
-
-def test_override_is_injected_into_every_workspace(tmp_path):
-    executor = FlociExecutor(Toolchain(mode="local"))
-    ctx = RunContext(
-        run_id="r",
-        runs_dir=tmp_path,
-        dataset_version="v",
-        override=lambda artifact: executor.override_for(artifact.files),
-    )
-    gates = {s: FakeVerifier(s) for s in Stage}
-    run_task(
-        Task("t", "p", 1), TaskOracle({}, ""), 1, [A], FakeBackend(), gates,
-        JsonlRecorder(tmp_path / "e.jsonl"), ctx,
-    )  # fmt: skip
-    overrides = list(tmp_path.glob(f"r/**/{OVERRIDE_FILENAME}"))
-    assert overrides, "override não foi injetado"
-    assert all('s3 = "http://floci:4566"' in p.read_text() for p in overrides)
 
 
 _HOST_SECRETS = {

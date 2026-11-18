@@ -1,5 +1,4 @@
 import subprocess
-from pathlib import Path
 
 import httpx2
 import pytest
@@ -7,7 +6,6 @@ import pytest
 from iac_harness.executors.floci import DEFAULT_VPC_REGIONS, FlociExecutor
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import CheckStatus
-from iac_harness.workspace import Workspace
 
 
 class FakeToolchain(Toolchain):
@@ -86,29 +84,6 @@ def test_classify_unsupported_vs_fail():
     assert cls("dial tcp: lookup foo: no such host") is CheckStatus.FAIL  # infra, não emulador
     assert cls("StatusCode: 501, RequestID: x") is CheckStatus.UNSUPPORTED
     assert cls("Error: InvalidParameterValue: bad name") is CheckStatus.FAIL
-
-
-def test_apply_classifies_and_keeps_raw(tmp_path: Path):
-    tc = FakeToolchain(1, "Error: creating X: NotImplemented: nope")
-    res = _executor(tc).apply(Workspace(tmp_path, "h"))
-    assert res.status is CheckStatus.UNSUPPORTED
-    assert "NotImplemented" in res.raw
-    assert tc.calls[0][:2] == ["terraform", "apply"]
-
-
-def test_apply_uses_tfplan_when_present(tmp_path: Path):
-    (tmp_path / "tfplan").write_text("x")
-    tc = FakeToolchain()
-    res = _executor(tc).apply(Workspace(tmp_path, "h"))
-    assert res.status is CheckStatus.PASS
-    assert tc.calls[0][-1] == "tfplan"
-
-
-def test_apply_generic_failure_is_fail(tmp_path: Path):
-    res = _executor(FakeToolchain(1, "Error: InvalidParameterValue")).apply(
-        Workspace(tmp_path, "h")
-    )
-    assert res.status is CheckStatus.FAIL
 
 
 class _Resp:

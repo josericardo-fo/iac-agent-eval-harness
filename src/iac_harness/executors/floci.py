@@ -1,4 +1,4 @@
-"""Executor Floci: apply no emulador AWS local, reset e override de provider."""
+"""Executor Floci: reset do emulador AWS local e override de provider."""
 
 from __future__ import annotations
 
@@ -16,9 +16,7 @@ from iac_harness.toolchain import (
     Toolchain,
     check_endpoint_allowed,
 )
-from iac_harness.types import CheckResult, CheckStatus, Stage
-from iac_harness.verifiers.terraform import PLAN_FILE, error_blocks
-from iac_harness.workspace import Workspace
+from iac_harness.types import CheckStatus
 
 __all__ = ["EndpointNotAllowedError", "FlociExecutor"]
 
@@ -174,31 +172,6 @@ class FlociExecutor:
     @staticmethod
     def classify_error(output: str) -> CheckStatus:
         return CheckStatus.UNSUPPORTED if _UNSUPPORTED.search(output) else CheckStatus.FAIL
-
-    def apply(self, workspace: Workspace) -> CheckResult:
-        start = time.monotonic()
-        path = workspace.path
-        # Aplica o plano já gerado pelo gate PLAN; sem tfplan, cai no apply direto.
-        args = ["terraform", "apply", "-auto-approve", "-input=false", "-no-color"]
-        if (path / PLAN_FILE).exists():
-            args.append(PLAN_FILE)
-        meta = {"unsupported_patterns_version": UNSUPPORTED_PATTERNS_VERSION}
-        try:
-            proc = self._tc.run(args, path)
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            return CheckResult(
-                Stage.SANDBOX, CheckStatus.ERROR, f"falha ao executar apply: {exc}", "", meta,
-                time.monotonic() - start,
-            )  # fmt: skip
-        raw = proc.stdout + proc.stderr
-        elapsed = time.monotonic() - start
-        if proc.returncode == 0:
-            return CheckResult(Stage.SANDBOX, CheckStatus.PASS, "", raw, meta, elapsed)
-        status = self.classify_error(raw)
-        meta["unsupported_match"] = status is CheckStatus.UNSUPPORTED
-        # O stderr bruto fica em `raw` (auditoria); a mensagem é só o trecho de erro.
-        message = error_blocks(proc.stderr) or proc.stdout.strip()
-        return CheckResult(Stage.SANDBOX, status, message, raw, meta, elapsed)
 
     def reset(self) -> None:
         """Devolve o sandbox ao estado de "conta AWS nova": restart do container + VPCs default.

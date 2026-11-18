@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import queue
-import re
 import shutil
 import subprocess
 import sys
@@ -63,25 +61,20 @@ from iac_harness.agentic.user_sim import (
     USER_SIM_PROMPT_VERSION,
     UserSimulator,
 )
-from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend, parse_files
-from iac_harness.agents.prompts import PROMPT_VERSION
-from iac_harness.conditions import A, B, C, Condition
+from iac_harness.agents.anthropic_backend import DEFAULT_MAX_TOKENS, AnthropicBackend
 from iac_harness.datasets import ambig_iac
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
-from iac_harness.datasets.multi_iac_eval import MultiIacEvalAdapter
 from iac_harness.demo.timeline import build_timeline, dump_timeline
 from iac_harness.executors import final_cleanup
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.llm import build_text_model
-from iac_harness.metrics import compute_metrics, load_events
+from iac_harness.metrics import load_events
 from iac_harness.modalities import prompts as mod_prompts
 from iac_harness.modalities.execute import (
-    apply_initial,
     prevalidate_pair,
     replay_pair,
-    run_check,
     truncate,
 )
 from iac_harness.modalities.loader import TASKS_DIR as MODALITY_TASKS_DIR
@@ -94,37 +87,25 @@ from iac_harness.modalities.metrics import (
 from iac_harness.modalities.runner import (
     DEFAULT_MAX_ATTEMPTS,
     ModRunContext,
-    ModTermination,
-    parse_question,
     run_pair,
-    uses_local_exec,
 )
 from iac_harness.modalities.spec import FREE, MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
-from iac_harness.runner import COMMON_CHAIN, RunContext, SandboxGate, run_gates, run_task
 from iac_harness.toolchain import (
     DEFAULT_ENDPOINT,
     DEFAULT_REGION,
     DEFAULT_TIMEOUT_S,
     Toolchain,
-    remove_terraform_dir,
 )
-from iac_harness.types import Artifact, CheckStatus, Stage, Task, TaskOracle
-from iac_harness.verifiers.opa import OpaVerifier
-from iac_harness.verifiers.terraform import PLAN_FILE, PlanVerifier, ValidateVerifier, error_blocks
-from iac_harness.workspace import OVERRIDE_FILENAME, RESPONSE_FILENAME, create_workspace, pair_dir
+from iac_harness.workspace import pair_dir
 
-CONDITIONS: dict[str, Condition] = {"A": A, "B": B, "C": C}
 BACKENDS = {"anthropic": AnthropicBackend}
 EXECUTORS: dict[str, type[FlociExecutor]] = {
     cls.KIND: cls for cls in (FlociExecutor, RealAwsExecutor)
 }
 DATA_DIR = Path("data")
-MIRROR_DIR = "/opt/terraform-providers"  # filesystem mirror dentro da imagem da toolchain
-_RESOURCE = re.compile(r"\b(aws(?:cc)?_\w+)\b")
 # E3: raiz dos plugins das condições (toolkit/, third_party/).
 AGENT_PLUGIN_ROOT = Path(__file__).resolve().parents[2]
-_WITH_RESOURCE = re.compile(r"\bwith (aws(?:cc)?_\w+)\.")  # linha \"with aws_x.nome,\" do erro
 
 
 # ---------- montagem ----------
@@ -169,28 +150,6 @@ def build_executor(
     return EXECUTORS[kind](toolchain, **kwargs)
 
 
-def build_gates(cfg: dict[str, Any], toolchain: Toolchain, executor: FlociExecutor) -> dict:
-    visibility = cfg.get("feedback", {}).get("policy_visibility", "rule_names")
-    return {
-        Stage.VALIDATE: ValidateVerifier(toolchain),
-        Stage.PLAN: PlanVerifier(toolchain),
-        Stage.OPA: OpaVerifier(toolchain, visibility),
-        Stage.SANDBOX: SandboxGate(executor),
-    }
-
-
-def select_tasks(
-    pairs: list[tuple[Task, TaskOracle]], tasks: list[str] | None, limit: int | None
-) -> list[tuple[Task, TaskOracle]]:
-    if tasks:
-        wanted = set(tasks)
-        pairs = [p for p in pairs if p[0].task_id in wanted]
-        missing = wanted - {p[0].task_id for p in pairs}
-        if missing:
-            raise SystemExit(f"tarefas não encontradas: {sorted(missing)}")
-    return pairs[:limit] if limit else pairs
-
-
 def new_run_id(name: str) -> str:
     return f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}-{name}"
 
@@ -217,17 +176,6 @@ def _git_provenance() -> dict[str, Any]:
     status = _query(["git", "status", "--porcelain"])
     dirty = None if status is not None and status.startswith("erro:") else status is not None
     return {"git_commit": commit, "git_dirty": dirty}
-
-
-def _mirror_providers(toolchain: Toolchain, workdir: Path) -> list[str] | str:
-    """Nomes dos .zip de providers do mirror da toolchain."""
-    try:
-        proc = toolchain.run(["find", MIRROR_DIR, "-name", "*.zip"], workdir, timeout_s=120)
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return f"erro: {exc}"
-    if proc.returncode != 0:
-        return f"erro: {proc.stderr.strip()[:200]}"
-    return sorted(line.rsplit("/", 1)[-1] for line in proc.stdout.split() if line)
 
 
 def _emulator_image(container: str) -> tuple[str | None, str | None, str | None]:
@@ -262,331 +210,6 @@ def _sandbox_provenance(executor: FlociExecutor) -> dict[str, Any]:
         "sandbox_image_id": image_id,
         "sandbox_repo_digests": digests,
     }
-
-
-def collect_provenance(
-    toolchain: Toolchain,
-    executor: FlociExecutor,
-    adapter: IacEvalV2Adapter,
-    run_dir: Path,
-) -> dict[str, Any]:
-    """Bloco de procedência do `run_config.json`/`prevalidation_config.json`.
-
-    Cada consulta externa é tolerante a falha: grava `None` ou "erro: ..." sem quebrar o comando.
-    """
-    toolchain_id = None
-    if toolchain.mode == "docker":
-        toolchain_id = _query(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", toolchain.image]
-        )
-    # Chaves floci_* mantidas por compatibilidade com os runs A/B/C; `sandbox_kind` diz o emulador.
-    floci_image, floci_image_id, floci_digests = _emulator_image(executor.container)
-    return {
-        **_git_provenance(),
-        "versions": {
-            **toolchain.versions(run_dir),
-            "toolchain_image": toolchain.image,
-            "toolchain_image_id": toolchain_id,
-            "providers": _mirror_providers(toolchain, run_dir),
-            "sandbox_kind": executor.KIND,
-            "floci_image": floci_image,
-            "floci_image_id": floci_image_id,
-            "floci_repo_digests": floci_digests,
-            "dataset_revision": adapter.version,
-            "unsupported_patterns": UNSUPPORTED_PATTERNS_VERSION,
-        },
-        "prompt_version": PROMPT_VERSION,
-    }
-
-
-# ---------- prevalidate ----------
-
-
-def _incompatibility(raw: str) -> str | None:
-    """Recurso/serviço que causou a incompatibilidade (heurística sobre o erro bruto)."""
-    m = _WITH_RESOURCE.search(raw) or _RESOURCE.search(raw)
-    return m.group(1) if m else None
-
-
-def prevalidate_task(
-    task: Task,
-    oracle: TaskOracle,
-    gates: dict,
-    executor: FlociExecutor,
-    runs_dir: Path,
-    run_id: str,
-    toolchain: Toolchain | None = None,
-) -> dict[str, Any]:
-    artifact = Artifact(dict(oracle.reference_files))
-    ws = create_workspace(
-        runs_dir, run_id, task.task_id, 0, "reference", "final", artifact,
-        executor.override_for(artifact.files),
-    )  # fmt: skip
-    statuses, failing, _ = run_gates(COMMON_CHAIN, gates, ws, oracle, toolchain)
-    pre_ok = all(statuses[s.value] == CheckStatus.PASS for s in COMMON_CHAIN[:3])
-    return {
-        "task_id": task.task_id,
-        "difficulty": task.difficulty,
-        "statuses": statuses,
-        "harness_valid": pre_ok,
-        "sandbox_supported": pre_ok and statuses[Stage.SANDBOX] == CheckStatus.PASS,
-        "failed_stage": failing.stage.value if failing else None,
-        "error": (failing.message[:1000] if failing else ""),
-        "incompatibility": (
-            _incompatibility(failing.raw) if failing and failing.stage is Stage.SANDBOX else None
-        ),
-        "sandbox_unsupported_pattern": bool(failing and failing.status is CheckStatus.UNSUPPORTED),
-    }
-
-
-def cmd_prevalidate(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config)
-    toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
-    gates = build_gates(cfg, toolchain, executor)
-    adapter = IacEvalV2Adapter(DATA_DIR, cfg["dataset"]["revision"])
-    pairs = select_tasks(adapter.load(), args.tasks, args.limit)
-    runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
-    run_id = new_run_id("prevalidate")
-    (runs_dir / run_id).mkdir(parents=True, exist_ok=False)
-    (runs_dir / run_id / "prevalidation_config.json").write_text(
-        json.dumps(
-            {
-                "config": cfg,
-                "tasks": [t.task_id for t, _ in pairs],
-                **collect_provenance(toolchain, executor, adapter, runs_dir / run_id),
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    recorder = JsonlRecorder(runs_dir / run_id / "prevalidation.jsonl")
-    rows = []
-    try:
-        for task, oracle in pairs:
-            executor.reset()
-            row = prevalidate_task(task, oracle, gates, executor, runs_dir, run_id, toolchain)
-            recorder.record(row)
-            rows.append(row)
-            print(f"{task.task_id}: {row['statuses']}", file=sys.stderr)
-    finally:
-        recorder.close()
-    n = len(rows)
-    summary = {
-        "run_id": run_id,
-        "tasks": n,
-        "harness_valid": sum(r["harness_valid"] for r in rows),
-        "sandbox_supported": sum(r["sandbox_supported"] for r in rows),
-        "floci_coverage": (sum(r["sandbox_supported"] for r in rows) / n) if n else None,
-        "harness_invalid_tasks": [r["task_id"] for r in rows if not r["harness_valid"]],
-    }
-    (runs_dir / run_id / "prevalidation_summary.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False)
-    )
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
-    return 0
-
-
-# ---------- prevalidate-miac ----------
-
-# Multi-IaC-Eval não tem política OPA: a cadeia pula esse estágio.
-MIAC_CHAIN = (Stage.VALIDATE, Stage.PLAN, Stage.SANDBOX)
-_PLAN_SUMMARY = re.compile(r"Plan: (\d+) to add, (\d+) to change, (\d+) to destroy")
-_UPDATE_RESOURCE = re.compile(r"UpdateResource|UnsupportedOperation")
-
-
-def prevalidate_config(
-    triple_id: str,
-    variant: str,
-    text: str,
-    gates: dict,
-    executor: FlociExecutor,
-    runs_dir: Path,
-    run_id: str,
-    toolchain: Toolchain | None = None,
-) -> dict[str, Any]:
-    """Uma config (initial ou expected) pela cadeia validate → plan → apply no Floci."""
-    executor.reset()  # o plan também consulta o Floci: começa de uma conta limpa
-    artifact = Artifact({"main.tf": text})
-    ws = create_workspace(
-        runs_dir, run_id, triple_id, 0, variant, "final", artifact,
-        executor.override_for(artifact.files),
-    )  # fmt: skip
-    statuses, failing, _ = run_gates(MIAC_CHAIN, gates, ws, TaskOracle({}, ""), toolchain)
-    pre_ok = all(statuses[s.value] == CheckStatus.PASS for s in MIAC_CHAIN[:2])
-    return {
-        "statuses": statuses,
-        "harness_valid": pre_ok,
-        "sandbox_supported": pre_ok and statuses[Stage.SANDBOX] == CheckStatus.PASS,
-        "failed_stage": failing.stage.value if failing else None,
-        "error": (failing.message[:1000] if failing else ""),
-        "incompatibility": (
-            _incompatibility(failing.raw) if failing and failing.stage is Stage.SANDBOX else None
-        ),
-        "sandbox_unsupported_pattern": bool(failing and failing.status is CheckStatus.UNSUPPORTED),
-    }
-
-
-def _plan_counts(stdout: str) -> dict[str, int] | None:
-    """Contagens da linha "Plan: N to add, N to change, N to destroy" (None se não houver)."""
-    m = _PLAN_SUMMARY.search(stdout)
-    return dict(zip(("add", "change", "destroy"), map(int, m.groups()), strict=True)) if m else None
-
-
-def sequential_check(
-    triple: Any, toolchain: Toolchain, executor: FlociExecutor, runs_dir: Path, run_id: str
-) -> dict[str, Any]:
-    """initial e depois expected no MESMO estado (a pré-validação usa um Floci limpo para cada).
-
-    Exercita o caminho de update (no awscc, UpdateResource do Cloud Control) e mede o drift:
-    depois do apply da expected, um novo plan deveria sair sem mudanças.
-    """
-    executor.reset()
-    artifact = Artifact({"main.tf": triple.initial})
-    ws = create_workspace(
-        runs_dir, run_id, triple.triple_id, 0, "sequential", "final", artifact,
-        executor.override_for(artifact.files),
-    )  # fmt: skip
-    path = ws.path
-    out: dict[str, Any] = {"ok": False, "step": None, "error": "", "update_resource_error": False}
-
-    def tf(step: str, argv: list[str], ok: tuple[int, ...] = (0,)):
-        """Roda `terraform argv`; em falha registra passo e erro em `out` e devolve None."""
-        try:
-            proc = toolchain.run(["terraform", *argv], path)
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            out.update(step=step, error=f"falha ao executar terraform: {exc}")
-            return None
-        if proc.returncode in ok:
-            return proc
-        raw = proc.stdout + proc.stderr
-        out.update(
-            step=step,
-            error=(error_blocks(proc.stderr) or proc.stdout.strip())[:1000],
-            update_resource_error=bool(_UPDATE_RESOURCE.search(raw)),
-        )
-        return None
-
-    flags = ["-input=false", "-no-color"]
-    try:
-        if not tf("init", ["init", "-backend=false", *flags]):
-            return out
-        if not tf("apply_initial", ["apply", "-auto-approve", *flags]):
-            return out
-        (path / "main.tf").write_text(triple.expected)
-        (path / OVERRIDE_FILENAME).write_text(executor.override_for({"main.tf": triple.expected}))
-        plan = tf("plan_expected", ["plan", f"-out={PLAN_FILE}", *flags])
-        if not plan:
-            return out
-        out["plan"] = _plan_counts(plan.stdout)
-        show = tf("show", ["show", "-json", PLAN_FILE])
-        if not show:
-            return out
-        changes = json.loads(show.stdout).get("resource_changes", [])
-        actions = [rc["change"]["actions"] for rc in changes]
-        out["actions"] = {
-            "create": sum(a == ["create"] for a in actions),
-            "update": sum(a == ["update"] for a in actions),
-            "replace": sum(set(a) == {"create", "delete"} for a in actions),
-            "delete": sum(a == ["delete"] for a in actions),
-        }
-        if not tf("apply_expected", ["apply", "-auto-approve", *flags, PLAN_FILE]):
-            return out
-        out["ok"] = True
-        # -detailed-exitcode: 0 = sem mudanças, 2 = há mudanças (drift).
-        replan = tf("replan", ["plan", "-detailed-exitcode", *flags], ok=(0, 2))
-        if replan:
-            out["clean_after"] = replan.returncode == 0
-            out["replan"] = _plan_counts(replan.stdout)
-        return out
-    finally:
-        remove_terraform_dir(path, toolchain)
-
-
-def cmd_prevalidate_miac(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config)
-    toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
-    gates = build_gates(cfg, toolchain, executor)
-    adapter = MultiIacEvalAdapter(args.csv)
-    triples = adapter.load()
-    if args.tasks:
-        triples = [t for t in triples if t.triple_id in set(args.tasks)]
-    triples = triples[: args.limit] if args.limit else triples
-    runs_dir = Path(cfg["run"].get("runs_dir", "runs"))
-    run_id = new_run_id("miac-prevalidate")
-    (runs_dir / run_id).mkdir(parents=True, exist_ok=False)
-    (runs_dir / run_id / "prevalidation_config.json").write_text(
-        json.dumps(
-            {
-                "config": cfg,
-                "dataset": "AmazonScience/Multi-IaC-Eval",
-                "dataset_csv": str(args.csv),
-                "dataset_sha256": adapter.sha256(),
-                "tasks": [t.triple_id for t in triples],
-                **collect_provenance(toolchain, executor, adapter, runs_dir / run_id),
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    recorder = JsonlRecorder(runs_dir / run_id / "prevalidation.jsonl")
-    rows = []
-    try:
-        for triple in triples:
-            row: dict[str, Any] = {"task_id": triple.triple_id, "source_repo": triple.source_repo}
-            for variant in ("initial", "expected"):
-                row[variant] = prevalidate_config(
-                    triple.triple_id, variant, getattr(triple, variant), gates, executor,
-                    runs_dir, run_id, toolchain,
-                )  # fmt: skip
-            row["usable"] = (
-                row["initial"]["sandbox_supported"] and row["expected"]["sandbox_supported"]
-            )
-            if args.sequential and row["usable"]:
-                row["sequential"] = sequential_check(triple, toolchain, executor, runs_dir, run_id)
-            recorder.record(row)
-            rows.append(row)
-            print(
-                f"{triple.triple_id}: initial={row['initial']['statuses']} "
-                f"expected={row['expected']['statuses']}",
-                file=sys.stderr,
-            )
-    finally:
-        recorder.close()
-
-    def count(variant: str, key: str) -> int:
-        return sum(r[variant][key] for r in rows)
-
-    summary = {
-        "run_id": run_id,
-        "tasks": len(rows),
-        **{
-            variant: {
-                "harness_valid": count(variant, "harness_valid"),
-                "sandbox_supported": count(variant, "sandbox_supported"),
-            }
-            for variant in ("initial", "expected")
-        },
-        "both_harness_valid": sum(
-            r["initial"]["harness_valid"] and r["expected"]["harness_valid"] for r in rows
-        ),
-        "usable": sum(r["usable"] for r in rows),
-        "usable_tasks": [r["task_id"] for r in rows if r["usable"]],
-    }
-    if args.sequential:
-        seq = [r["sequential"] for r in rows if "sequential" in r]
-        summary["sequential"] = {
-            "checked": len(seq),
-            "ok": sum(s["ok"] for s in seq),
-            "update_resource_error": sum(s["update_resource_error"] for s in seq),
-            "clean_after": sum(s.get("clean_after", False) for s in seq),
-        }
-    (runs_dir / run_id / "summary.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False)
-    )
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
-    return 0
 
 
 # ---------- modality-prevalidate ----------
@@ -928,136 +551,6 @@ def cmd_modality_replay(args: argparse.Namespace) -> int:
         final_cleanup(executor)
     metrics = compute_replay_metrics(load_events(run_dir / "events.jsonl"))
     print(_replay_table(metrics), file=sys.stderr)
-    print(run_dir)
-    return 0
-
-
-# ---------- modality-reask ----------
-
-
-def _first_question(events: list[dict[str, Any]]) -> dict[tuple[Any, ...], tuple[int, str]]:
-    """(tarefa, modalidade, rep) -> (1ª tentativa com bloco question.md, texto), do response.txt."""
-    found: dict[tuple[Any, ...], tuple[int, str]] = {}
-    for e in events:
-        key = (e.get("task_id"), e.get("modality"), e.get("rep"))
-        if e.get("event") != "attempt" or key in found:
-            continue
-        response = Path(e["artifact_path"]) / RESPONSE_FILENAME
-        question = parse_question(response.read_text()) if response.is_file() else None
-        if question is not None:
-            found[key] = (e["attempt"], question)
-    return found
-
-
-def cmd_modality_reask(args: argparse.Namespace) -> int:
-    """Reclassifica (sem LLM) trajetórias E2 cuja pergunta o parser antigo não reconheceu.
-
-    A trajetória é cortada na 1ª tentativa com bloco question.md: final ASKED, tokens só até ali
-    e check real no estado inicial (reset + initial.tf no Floci). As demais são copiadas iguais.
-    """
-    src = Path(args.src_run_dir)
-    saved = json.loads((src / "run_config.json").read_text(encoding="utf-8"))
-    cfg = saved["config"]
-    if not _allow_question(cfg):
-        raise SystemExit("modality-reask só vale para runs com [modality] allow_question")
-    if cfg.get("sandbox", {}).get("kind", FlociExecutor.KIND) == RealAwsExecutor.KIND:
-        raise SystemExit("modality-reask só roda no Floci: o run de origem usou a AWS real")
-    events = load_events(src / "events.jsonl")
-    questions = _first_question(events)
-    finals = {(e["task_id"], e["modality"], e["rep"]): e for e in events if e["event"] == "final"}
-    # Só muda o que o harness corrigido teria encerrado antes (ou com outro desfecho).
-    fix = {
-        key: q for key, q in questions.items()
-        if key in finals and not (finals[key].get("asked") and finals[key]["attempts"] == q[0])
-    }  # fmt: skip
-    tasks = {t.task_id: t for t in load_tasks()}
-    max_chars = cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS)
-    runs_dir = src.parent
-    run_id = new_run_id(f"reask-{src.name}")
-    run_dir = runs_dir / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
-    toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
-    (run_dir / "run_config.json").write_text(
-        json.dumps(
-            {
-                "config": cfg,
-                "src_run": str(src),
-                "src_git_commit": saved.get("git_commit"),
-                "note": (
-                    "modality-reask: trajetórias cuja 1ª pergunta veio como ```question.md "
-                    "(sem title=) foram cortadas nessa tentativa e reclassificadas como ASKED, "
-                    "sem LLM; check rodado de novo no estado inicial. Demais eventos copiados."
-                ),
-                "reclassified": len(fix),
-                **_git_provenance(),
-                "versions": {
-                    "toolchain_image": toolchain.image,
-                    **_sandbox_provenance(executor),
-                },
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    both_files: dict[tuple[Any, ...], bool] = {}
-    recorder = JsonlRecorder(run_dir / "events.jsonl")
-    try:
-        for e in events:
-            key = (e.get("task_id"), e.get("modality"), e.get("rep"))
-            if key not in fix:
-                recorder.record(e)
-                continue
-            q_attempt, question = fix[key]
-            if e["event"] == "attempt" and e["attempt"] < q_attempt:
-                recorder.record(e)
-            elif e["event"] == "attempt" and e["attempt"] == q_attempt:
-                modality = MODALITIES[e["modality"]]
-                raw = (Path(e["artifact_path"]) / RESPONSE_FILENAME).read_text()
-                content = parse_files(raw).get(modality.filename)
-                both_files[key] = content is not None
-                e.update(
-                    format_ok=True, exec_ok=None, asked=True, question=question,
-                    both_files=both_files[key], unsupported=False,
-                    uses_local_exec=uses_local_exec(modality, content), output="",
-                    raw_output="", feedback_sent=None, termination=ModTermination.ASKED.value,
-                    artifact_hash=None, answer=None, reclassified=True,
-                )  # fmt: skip
-                recorder.record(e)
-            elif e["event"] == "final":
-                task, modality = tasks[e["task_id"]], MODALITIES[e["modality"]]
-                kept = [
-                    a for a in events
-                    if a["event"] == "attempt" and (a["task_id"], a["modality"], a["rep"]) == key
-                    and a["attempt"] <= q_attempt
-                ]  # fmt: skip
-                tokens_in = sum(a["input_tokens"] for a in kept)
-                tokens_out = sum(a["output_tokens"] for a in kept)
-                # Check real no estado inicial, como o harness corrigido faria.
-                executor.reset()
-                initial, path = apply_initial(
-                    toolchain, executor, task, modality, runs_dir, run_id, max_chars,
-                    rep=e["rep"], name="reask_initial",
-                )  # fmt: skip
-                if initial.ok:
-                    check_pass, details = run_check(toolchain, task, path, settle=True)
-                else:
-                    check_pass, details = False, {"error": "initial.tf não aplicou"}
-                e.update(
-                    attempts=q_attempt, termination=ModTermination.ASKED.value,
-                    exec_ok=False, check_pass=check_pass, check_details=details,
-                    success=task.expect == "ask", asked=True, question=question,
-                    both_files=both_files[key], input_tokens=tokens_in,
-                    output_tokens=tokens_out, total_tokens=tokens_in + tokens_out,
-                    reclassified=True,
-                )  # fmt: skip
-                recorder.record(e)
-                print(f"{key[0]} × {key[1]} rep {key[2]}: ASKED na tentativa {q_attempt} "
-                      f"(check={check_pass})", file=sys.stderr)  # fmt: skip
-    finally:
-        recorder.close()
-        final_cleanup(executor)
-    print(f"reclassificadas: {len(fix)}", file=sys.stderr)
     print(run_dir)
     return 0
 
@@ -1982,31 +1475,7 @@ def cmd_demo_timeline(args: argparse.Namespace) -> int:
     return 0
 
 
-# ---------- run ----------
-
-
-def _load_prevalidation(path: Path | None, allow_missing: bool) -> dict[str, dict[str, Any]]:
-    if path is None:
-        if not allow_missing:
-            raise SystemExit(
-                "erro: informe --prevalidation <prevalidation.jsonl> "
-                "(ou --no-prevalidation, só para smoke)"
-            )
-        print("aviso: --no-prevalidation; assumindo harness_valid=True e sandbox_supported=True",
-              file=sys.stderr)  # fmt: skip
-        return {}
-    with path.open(encoding="utf-8") as fh:
-        rows = [json.loads(line) for line in fh if line.strip()]
-    return {r["task_id"]: r for r in rows}
-
-
-def _build_run(cfg: dict[str, Any]) -> tuple[Toolchain, FlociExecutor, dict, IacEvalV2Adapter]:
-    """Montagem comum a run e resume: toolchain, executor, gates e adapter."""
-    toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain)
-    gates = build_gates(cfg, toolchain, executor)
-    adapter = IacEvalV2Adapter(DATA_DIR, cfg["dataset"]["revision"])
-    return toolchain, executor, gates, adapter
+# ---------- backend do agente (modality-run) ----------
 
 
 def _build_backend(cfg: dict[str, Any], **prompt_kwargs: Any) -> Any:
@@ -2023,93 +1492,7 @@ def _build_backend(cfg: dict[str, Any], **prompt_kwargs: Any) -> Any:
     )
 
 
-def _run_pairs(
-    cfg: dict[str, Any],
-    executor: FlociExecutor,
-    gates: dict,
-    adapter: IacEvalV2Adapter,
-    backend: Any,
-    conditions: list[Condition],
-    pairs: list[tuple[Task, TaskOracle]],
-    reps: int,
-    pre: dict[str, dict[str, Any]],
-    runs_dir: Path,
-    run_id: str,
-    skip: Container[tuple[str, int]] = frozenset(),
-) -> None:
-    """Loop principal: roda cada (task, rep) fora de `skip`, gravando em events.jsonl (append)."""
-    ctx = RunContext(
-        run_id=run_id,
-        runs_dir=runs_dir,
-        dataset_version=adapter.version,
-        model_provider=cfg["agent"]["provider"],
-        max_feedback_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
-        override=lambda artifact: executor.override_for(artifact.files),
-        toolchain=build_toolchain(cfg),
-    )
-    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
-    try:
-        for task, oracle in pairs:
-            p = pre.get(task.task_id, {})
-            for rep in range(1, reps + 1):
-                if (task.task_id, rep) in skip:
-                    continue
-                run_task(
-                    task, oracle, rep, conditions, backend, gates, recorder, ctx,
-                    harness_valid=p.get("harness_valid", True),
-                    sandbox_supported=p.get("sandbox_supported", True),
-                )  # fmt: skip
-                print(f"{task.task_id} rep {rep} ok", file=sys.stderr)
-    finally:
-        recorder.close()
-
-
-def cmd_run(args: argparse.Namespace) -> int:
-    if args.resume is not None:
-        return cmd_resume(args)
-    if args.config is None:
-        raise SystemExit("erro: informe --config (ou --resume RUN_DIR)")
-    cfg = load_config(args.config)
-    pre = _load_prevalidation(args.prevalidation, args.no_prevalidation)
-    run_cfg = cfg["run"]
-    toolchain, executor, gates, adapter = _build_run(cfg)
-    pairs = select_tasks(adapter.load(), args.tasks, args.limit)
-    conditions = [CONDITIONS[c] for c in run_cfg["conditions"]]
-    reps = args.reps or run_cfg.get("reps", 1)
-    backend = _build_backend(cfg)
-    runs_dir = Path(run_cfg.get("runs_dir", "runs"))
-    run_id = new_run_id(run_cfg["name"])
-    (runs_dir / run_id).mkdir(parents=True, exist_ok=False)
-    (runs_dir / run_id / "run_config.json").write_text(
-        json.dumps(
-            {
-                "config": cfg,
-                "reps": reps,
-                "tasks": [t.task_id for t, _ in pairs],
-                **collect_provenance(toolchain, executor, adapter, runs_dir / run_id),
-                "prevalidation": str(args.prevalidation) if args.prevalidation else None,
-                "prevalidation_sha256": (
-                    hashlib.sha256(args.prevalidation.read_bytes()).hexdigest()
-                    if args.prevalidation
-                    else None
-                ),
-                "no_prevalidation": args.no_prevalidation,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    _run_pairs(
-        cfg, executor, gates, adapter, backend, conditions, pairs, reps, pre, runs_dir, run_id
-    )
-    print(runs_dir / run_id)
-    return 0
-
-
-# ---------- resume ----------
-
-# Opções que definem o run; no resume vêm do run_config.json e não podem ser repassadas.
-_RUN_DEFINING_OPTIONS = ("config", "tasks", "limit", "reps", "prevalidation", "no_prevalidation")
+# ---------- resume (modality-run --resume e agent-resume) ----------
 
 
 def pair_completion(
@@ -2193,105 +1576,9 @@ def discard_incomplete(
     return complete, incomplete
 
 
-def cmd_resume(args: argparse.Namespace) -> int:
-    # Presença, não veracidade: --reps 0 / --limit 0 também conflitam (0 == False, daí o `is`).
-    given = [
-        f"--{o.replace('_', '-')}"
-        for o in _RUN_DEFINING_OPTIONS
-        if getattr(args, o) is not None and getattr(args, o) is not False
-    ]
-    if given:
-        raise SystemExit(
-            f"erro: --resume não aceita {', '.join(given)} (a configuração vem do run_config.json)"
-        )
-    run_dir = Path(args.resume)
-    config_path = run_dir / "run_config.json"
-    if not config_path.is_file():
-        raise SystemExit(f"erro: {config_path} não encontrado")
-    saved = json.loads(config_path.read_text(encoding="utf-8"))
-    cfg, reps = saved["config"], saved["reps"]
-    pre_path = Path(saved["prevalidation"]) if saved.get("prevalidation") else None
-    if pre_path is not None:
-        if not pre_path.is_file():
-            raise SystemExit(f"erro: pré-validação do run não encontrada: {pre_path}")
-        sha = hashlib.sha256(pre_path.read_bytes()).hexdigest()
-        if sha != saved["prevalidation_sha256"]:
-            raise SystemExit(
-                f"erro: {pre_path} mudou desde o início do run (sha256 {sha} != "
-                f"{saved['prevalidation_sha256']}); não dá para retomar com outra pré-validação"
-            )
-    pre = _load_prevalidation(pre_path, saved.get("no_prevalidation", False))
-    _, executor, gates, adapter = _build_run(cfg)
-    # select_tasks com lista vazia devolveria tudo; um run sem tarefas segue sem tarefas.
-    pairs = select_tasks(adapter.load(), saved["tasks"], None) if saved["tasks"] else []
-    conditions = [CONDITIONS[c] for c in cfg["run"]["conditions"]]
-    backend = _build_backend(cfg)
-    runs_dir, run_id = run_dir.parent, run_dir.name
-    complete, discarded = discard_incomplete(runs_dir, run_id, cfg["run"]["conditions"])
-    planned = [(t.task_id, rep) for t, _ in pairs for rep in range(1, reps + 1)]
-    pending = [p for p in planned if p not in complete]
-    # Par sem evento mas com diretório (queda antes do 1º registro): limpa para recriar.
-    for task_id, rep in pending:
-        shutil.rmtree(pair_dir(runs_dir, run_id, task_id, rep), ignore_errors=True)
-    skipped = len(planned) - len(pending)
-    saved.setdefault("resumes", []).append(
-        {
-            "timestamp": datetime.now(UTC).isoformat(),
-            **_git_provenance(),
-            "skipped_pairs": skipped,
-            "discarded_pairs": len(discarded),
-        }
-    )
-    config_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False))
-    print(
-        f"resume {run_id}: {skipped} pares completos pulados, "
-        f"{len(discarded)} incompletos descartados, {len(pending)} a rodar",
-        file=sys.stderr,
-    )
-    _run_pairs(
-        cfg, executor, gates, adapter, backend, conditions, pairs, reps, pre, runs_dir, run_id,
-        complete,
-    )  # fmt: skip
-    print(run_dir)
-    return 0
-
-
-# ---------- metrics ----------
-
-
-def cmd_metrics(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir)
-    cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
-    prices = {m: tuple(p) for m, p in cfg.get("prices", {}).items()}
-    metrics = compute_metrics(load_events(run_dir / "events.jsonl"), prices)
-    print(json.dumps(metrics, indent=2, ensure_ascii=False))
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="iac-harness")
     sub = parser.add_subparsers(dest="command", required=True)
-
-    def common(p: argparse.ArgumentParser, config_required: bool = True) -> None:
-        p.add_argument("--config", type=Path, required=config_required)
-        p.add_argument("--tasks", nargs="+")
-        p.add_argument("--limit", type=int)
-
-    p_pre = sub.add_parser("prevalidate", help="roda a referência de cada tarefa pela cadeia")
-    common(p_pre)
-    p_pre.set_defaults(func=cmd_prevalidate)
-
-    p_miac = sub.add_parser(
-        "prevalidate-miac", help="roda initial e expected das triplas Multi-IaC-Eval pela cadeia"
-    )
-    common(p_miac)
-    p_miac.add_argument("--csv", type=Path, required=True, help="test.csv do Multi-IaC-Eval")
-    p_miac.add_argument(
-        "--sequential",
-        action="store_true",
-        help="nas utilizáveis, aplica initial e depois expected no mesmo estado (exercita update)",
-    )
-    p_miac.set_defaults(func=cmd_prevalidate_miac)
 
     p_mpre = sub.add_parser(
         "modality-prevalidate",
@@ -2339,13 +1626,6 @@ def main(argv: list[str] | None = None) -> int:
         help="categorias separadas por vírgula (padrão: modify,query)",
     )
     p_mrep.set_defaults(func=cmd_modality_replay)
-
-    p_mrea = sub.add_parser(
-        "modality-reask",
-        help="reclassifica sem LLM as perguntas (```question.md) que o parser antigo não leu",
-    )
-    p_mrea.add_argument("src_run_dir", type=Path, help="run dir de um modality-run do E2")
-    p_mrea.set_defaults(func=cmd_modality_reask)
 
     p_mmet = sub.add_parser(
         "modality-metrics", help="métricas de um modality-run (ou resumo de um modality-replay)"
@@ -2461,27 +1741,6 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument("-o", "--output", type=Path, help="arquivo de saída (padrão: stdout)")
     p_demo.add_argument("--scene", help="nome da cena (padrão: task_id)")
     p_demo.set_defaults(func=cmd_demo_timeline)
-
-    p_run = sub.add_parser("run", help="roda o agente nas condições configuradas")
-    common(p_run, config_required=False)  # obrigatório sem --resume (validado em cmd_run)
-    p_run.add_argument("--reps", type=int)
-    p_run.add_argument("--prevalidation", type=Path)
-    p_run.add_argument(
-        "--no-prevalidation",
-        action="store_true",
-        help="roda sem pré-validação (só smoke): assume harness_valid e sandbox_supported",
-    )
-    p_run.add_argument(
-        "--resume",
-        type=Path,
-        metavar="RUN_DIR",
-        help="retoma um run interrompido: pula pares (task, rep) completos e refaz os incompletos",
-    )
-    p_run.set_defaults(func=cmd_run)
-
-    p_met = sub.add_parser("metrics", help="imprime as métricas de uma execução")
-    p_met.add_argument("run_dir", type=Path)
-    p_met.set_defaults(func=cmd_metrics)
 
     args = parser.parse_args(argv)
     return args.func(args)

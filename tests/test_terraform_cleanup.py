@@ -145,25 +145,3 @@ def test_missing_dir_is_a_noop(tmp_path):
 def test_real_toolchain_type_is_accepted(tmp_path):
     # sanidade de tipo: o helper aceita um Toolchain local de verdade
     remove_terraform_dir(tmp_path, Toolchain(mode="local"))
-
-
-def test_run_gates_uses_toolchain_fallback(tmp_path, monkeypatch):
-    from iac_harness.runner import run_gates
-    from iac_harness.types import CheckResult, CheckStatus, Stage, TaskOracle
-    from iac_harness.workspace import Workspace
-
-    class _Gate:
-        def check(self, workspace, oracle):
-            _make_tf_dir(workspace.path)
-            return CheckResult(Stage.VALIDATE, CheckStatus.PASS)
-
-    _stub_rmtree_noop(monkeypatch)
-    tc = _FakeToolchain()
-    run_gates(
-        [Stage.VALIDATE],
-        {Stage.VALIDATE: _Gate()},
-        Workspace(tmp_path, "h"),
-        TaskOracle({}, ""),
-        toolchain=tc,
-    )
-    assert tc.calls == [(["rm", "-rf", "/work/.terraform"], tmp_path)]
