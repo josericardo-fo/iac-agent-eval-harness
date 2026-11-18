@@ -229,7 +229,7 @@ def test_floci_workers_match_toolchain_allowlist_and_compose():
 
 def test_worker_cfg_comes_from_floci_workers():
     from iac_harness.agentic.targets import FLOCI_WORKERS
-    from iac_harness.cli import _worker_cfg
+    from iac_harness.cli.agent import _worker_cfg
 
     cfg = {"sandbox": {"endpoint": "http://floci:4566", "region": "us-east-1"}, "x": 1}
     assert _worker_cfg(cfg, 0) is cfg

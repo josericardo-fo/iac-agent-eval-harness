@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from iac_harness import cli
+from iac_harness.cli import agent as cli_agent
 from iac_harness.cli import main
 from iac_harness.cli.common import discard_incomplete, pair_completion
 from iac_harness.workspace import pair_dir
@@ -156,11 +156,11 @@ def _agent_resume_setup(tmp_path, monkeypatch):
 
     tasks = [SimpleNamespace(task_id="t1"), SimpleNamespace(task_id="t2")]
     ran: list[list] = []
-    monkeypatch.setattr(cli, "_select_modality_run", lambda *a, **k: (tasks, None))
-    monkeypatch.setattr(cli, "_build_agent", lambda cfg: None)
-    monkeypatch.setattr(cli, "_build_targets", lambda cfg: [])
-    monkeypatch.setattr(cli, "_agent_loop", lambda cfg, plan, *a, **k: ran.append(plan))
-    monkeypatch.setattr(cli, "_agent_summary", lambda events: "")
+    monkeypatch.setattr(cli_agent, "_select_modality_run", lambda *a, **k: (tasks, None))
+    monkeypatch.setattr(cli_agent, "_build_agent", lambda cfg: None)
+    monkeypatch.setattr(cli_agent, "_build_targets", lambda cfg: [])
+    monkeypatch.setattr(cli_agent, "_agent_loop", lambda cfg, plan, *a, **k: ran.append(plan))
+    monkeypatch.setattr(cli_agent, "_agent_summary", lambda events: "")
     return run_dir, done, orphan, ran
 
 

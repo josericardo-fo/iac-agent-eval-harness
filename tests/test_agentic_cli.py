@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from iac_harness import cli
+from iac_harness.cli import agent as cli_agent
 from iac_harness.cli import main
 from test_agentic_metrics import _final
 
@@ -43,8 +43,8 @@ def test_agent_judge_passes_mutation_summary(tmp_path, monkeypatch):
         _final("mod-sqs-retention", "none", 3, True, final_text="ok", verified_state=False),
     ]
     _write_run(tmp_path / "r", events)
-    monkeypatch.setattr(cli, "LlmJudge", FakeJudge)
-    monkeypatch.setattr(cli, "build_text_model", lambda section, default: None)
+    monkeypatch.setattr(cli_agent, "LlmJudge", FakeJudge)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: None)
     assert main(["agent-judge", str(tmp_path / "r")]) == 0
     assert FakeJudge.last.calls == [True, False, True]
 
@@ -52,7 +52,9 @@ def test_agent_judge_passes_mutation_summary(tmp_path, monkeypatch):
 def test_agent_judge_sample_writes_csv(tmp_path, monkeypatch):
     events = [_final(f"t{i}", "none", 1, True, final_text=f"m{i}") for i in range(5)]
     _write_run(tmp_path / "r", events, _verdicts(events))
-    monkeypatch.setattr(cli, "LlmJudge", lambda **kw: pytest.fail("--sample não chama o juiz"))
+    monkeypatch.setattr(
+        cli_agent, "LlmJudge", lambda **kw: pytest.fail("--sample não chama o juiz")
+    )
     assert main(["agent-judge", str(tmp_path / "r"), "--sample", "3", "--seed", "1"]) == 0
     with (tmp_path / "r" / "judge_sample.csv").open(newline="") as fh:
         rows = list(csv.DictReader(fh))
@@ -117,7 +119,7 @@ def _cfg(**sections):
 
 
 def test_build_user_sim_absent_keeps_old_flow():
-    assert cli._build_user_sim(_cfg()) is None
+    assert cli_agent._build_user_sim(_cfg()) is None
 
 
 def test_build_user_sim_uses_codex_by_default_and_max_replies(monkeypatch):
@@ -129,21 +131,21 @@ def test_build_user_sim_uses_codex_by_default_and_max_replies(monkeypatch):
         seen.append((section, default_provider))
         return FakeText("x")
 
-    monkeypatch.setattr(cli, "build_text_model", fake_factory)
-    monkeypatch.setattr(cli, "_build_judge", lambda section, model=None: FakeJudge())
-    sim, judge = cli._build_user_sim(_cfg(user_sim={"max_replies": 2}, judge={"model": "J"}))
+    monkeypatch.setattr(cli_agent, "build_text_model", fake_factory)
+    monkeypatch.setattr(cli_agent, "_build_judge", lambda section, model=None: FakeJudge())
+    sim, judge = cli_agent._build_user_sim(_cfg(user_sim={"max_replies": 2}, judge={"model": "J"}))
     assert sim.max_replies == 2 and isinstance(judge, FakeJudge)
     assert seen[0][1] == "codex"
-    sim, _ = cli._build_user_sim(_cfg(user_sim={}))
+    sim, _ = cli_agent._build_user_sim(_cfg(user_sim={}))
     assert sim.max_replies == 1
 
 
 def test_build_user_sim_rejects_zero_replies(monkeypatch):
     from test_agentic_judge import FakeText
 
-    monkeypatch.setattr(cli, "build_text_model", lambda s, d: FakeText("x"))
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda s, d: FakeText("x"))
     with pytest.raises(SystemExit):
-        cli._build_user_sim(_cfg(user_sim={"max_replies": 0}))
+        cli_agent._build_user_sim(_cfg(user_sim={"max_replies": 0}))
 
 
 def test_example_config_is_valid_and_fixture_loads():
@@ -172,8 +174,8 @@ def test_agent_judge_out_leaves_primary_untouched(tmp_path, monkeypatch):
     run = tmp_path / "r"
     _write_run(run, events, _verdicts(events, "ask"))
     before = (run / "judge.jsonl").read_bytes()
-    monkeypatch.setattr(cli, "LlmJudge", FakeJudge)
-    monkeypatch.setattr(cli, "build_text_model", lambda section, default: None)
+    monkeypatch.setattr(cli_agent, "LlmJudge", FakeJudge)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: None)
     assert main(["agent-judge", str(run), "--out", "judge_luna.jsonl"]) == 0
     assert (run / "judge.jsonl").read_bytes() == before
     assert len((run / "judge_luna.jsonl").read_text().splitlines()) == 3
@@ -184,8 +186,8 @@ def test_agent_judge_out_resumes_and_redo(tmp_path, monkeypatch):
     run = tmp_path / "r"
     _write_run(run, events)
     _jsonl(run / "alt.jsonl", _verdicts(events[:2]))
-    monkeypatch.setattr(cli, "LlmJudge", FakeJudge)
-    monkeypatch.setattr(cli, "build_text_model", lambda section, default: None)
+    monkeypatch.setattr(cli_agent, "LlmJudge", FakeJudge)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: None)
     assert main(["agent-judge", str(run), "--out", "alt.jsonl"]) == 0
     assert FakeJudge.last.calls == [True]  # só a terceira trajetória
     assert main(["agent-judge", str(run), "--out", "alt.jsonl", "--redo"]) == 0
@@ -201,7 +203,7 @@ def test_agent_judge_provider_codex_ignores_config_model(tmp_path, monkeypatch):
         json.dumps({"config": {"judge": {"provider": "anthropic", "model": "claude-x"}}})
     )
     built = []
-    monkeypatch.setattr(cli, "LlmJudge", lambda llm: built.append(llm) or FakeJudge())
+    monkeypatch.setattr(cli_agent, "LlmJudge", lambda llm: built.append(llm) or FakeJudge())
     assert main(["agent-judge", str(run), "--provider", "codex", "--reasoning-effort", "low",
                  "--out", "o.jsonl"]) == 0  # fmt: skip
     assert isinstance(built[0], CodexText)

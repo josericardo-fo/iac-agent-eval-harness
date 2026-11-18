@@ -4,13 +4,13 @@ import json
 
 import pytest
 
-from iac_harness import cli
 from iac_harness.agentic.question_judge import (
     QUESTION_PROMPT_VERSION,
     QuestionJudge,
     meta_header,
     parse_question_verdict,
 )
+from iac_harness.cli import agent as cli_agent
 from iac_harness.cli import main
 
 
@@ -138,7 +138,7 @@ def _run(tmp_path, asked):
 @pytest.fixture
 def fake_llm(monkeypatch):
     llm = FakeLlm(GOOD)
-    monkeypatch.setattr(cli, "build_text_model", lambda section, default: llm)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: llm)
     return llm
 
 
@@ -190,6 +190,6 @@ def test_judge_questions_uses_codex_provider(tmp_path, monkeypatch):
     run, _ = _run(tmp_path, [True])
     sections = []
     fake = lambda section, default: sections.append(section) or FakeLlm(GOOD)  # noqa: E731
-    monkeypatch.setattr(cli, "build_text_model", fake)
+    monkeypatch.setattr(cli_agent, "build_text_model", fake)
     assert main(["agent-judge-questions", str(run), "--provider", "codex"]) == 0
     assert sections[0]["provider"] == "codex"
