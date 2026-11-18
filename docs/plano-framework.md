@@ -194,8 +194,8 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
 
 - [x] `interfaces.DatasetAdapter`: sem uso. Removido com o pipeline legado (o contrato
   `TaskSource` da fase 4 nasce do zero).
-- [ ] `agentic/stream.py:335` `verified_state()`: o vulture aponta sem uso (o runner usa
-  `ops.verified`). Conferir e apagar.
+- [x] `agentic/stream.py:335` `verified_state()`: o vulture aponta sem uso (o runner usa
+  `ops.verified`). Apagado; os testes que o usavam passaram a conferir `state_ops(...).verified`.
 - [ ] `modalities/loader.py:38`
   (`missing_reason`), `types.py:39-41` (`VALIDATE_FAIL`, `PLAN_FAIL`, `OPA_FAIL`): conferir.
 - [x] Comandos de uso único: `modality-reask` (migração do E2) e `prevalidate-miac` removidos;

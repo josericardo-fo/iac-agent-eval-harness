@@ -330,8 +330,3 @@ def state_ops(tool_calls: list[dict[str, Any]]) -> StateOps:
         return StateOps(False, None, clf.verify_calls)
     last = len(ops) - 1 - ops[::-1].index("mutate")
     return StateOps(True, "read" in ops[last + 1 :], clf.verify_calls)
-
-
-def verified_state(tool_calls: list[dict[str, Any]]) -> bool | None:
-    """Se uma leitura do estado AWS veio depois da última operação que o muda (None sem mudança)."""
-    return state_ops(tool_calls).verified

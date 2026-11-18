@@ -43,11 +43,11 @@ def _write(path, content):
 
 
 def test_verified_state_true_when_read_follows_last_mutation():
-    from iac_harness.agentic.stream import verified_state
+    from iac_harness.agentic.stream import state_ops
 
     parsed = parse_stream(FIXTURE.read_text().splitlines())
     # o fixture escreve fix.py (set_queue_attributes), roda e relê com get-queue-attributes
-    assert verified_state(parsed.tool_calls) is True
+    assert state_ops(parsed.tool_calls).verified is True
 
 
 @pytest.mark.parametrize(
@@ -217,9 +217,9 @@ def test_verified_state_true_when_read_follows_last_mutation():
     ],
 )
 def test_verified_state_cases(calls, expected):
-    from iac_harness.agentic.stream import verified_state
+    from iac_harness.agentic.stream import state_ops
 
-    assert verified_state(calls) is expected
+    assert state_ops(calls).verified is expected
 
 
 def test_state_ops_counts_toolkit_verify_calls_and_mutation():
