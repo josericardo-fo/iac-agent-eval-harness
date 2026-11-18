@@ -35,7 +35,7 @@ linha da tabela.
 | E2 (agenda) | O agente pergunta quando deve? | P4, T7 | `e2-ask-haiku.toml` | `20261030T131533` | Perguntou em 49/54 ambíguas e 0/54 claras; os chutes são em remoção e em premissa falsa |
 | E4 (agenda) | Sem dica, o agente escolhe a forma mais barata? | P5 | `e4-free-haiku.toml` | `20261030T153918` | Escolhe pelo tipo de caso (Terraform para criar e modificar, CLI para consultar) |
 | E3 Floci (agenda) | Toolkit próprio × agente real (Claude Code), 5 condições | P6, T8, decisão E8 | `e3-agent*.toml`, `e3-skillfix.toml` | `20261106T143311`, `20261106T170449`, `20261110T144440` | Pergunta nas ambíguas (18/18 com a skill × 10–12/18 sem); não ganha no total |
-| E3 real (agenda) | O mesmo na AWS real | P6, decisões E5–E9 | `e3-agent-aws.toml`; `e3-agent-aws-30.toml` (18/11) | `20261109T163420`; complemento de 18/11 (§3) | Nas claras, não ganha nem perde de forma significativa |
+| E3 real (agenda) | O mesmo na AWS real | P6, decisões E5–E9 | `e3-agent-aws.toml`; `e3-agent-aws-30.toml` (18/11) | `20261109T163420`; complemento de 18/11 (§3) | Nas claras, não ganha nem perde de forma significativa (vale com 30 tarefas, 18/11) |
 | E11 (decisão) | Ambíguas na AWS real, toolkit v1 × v2 | E11 | `e11-amb-aws.toml` | `20261111T132723` | `none` 8/12 × v1 12/12 × v2 11/12 |
 | E12 (decisão) | Toolkit v2 nas 29 claras da real | E12 | `e12-v2-aws.toml` | `20261111T162415` | v2 52/58 × v1 47/58; o ganho vem das 3 tarefas que originaram a v2. A v2 substitui a v1 |
 | E10 (decisão) | O pedido leigo derruba o acerto? | E10 | `e10-lay-haiku.toml` | `20261112T172414` | Queda pequena (técnica 30 e 29 × leiga 27 e 27 de 30); o toolkit não muda isso |
@@ -573,6 +573,56 @@ gateway) e não acompanha os tokens; a comparação de custo usa os tokens.
   todo de API do modelo (estimado pelo harness, ~US$ 124), não da AWS.
 - **Limites:** N=1 (S4, exploratório); juiz conferido por outro modelo (no Floci e, desde 11/11,
   no E11/E12); conta limitada pela AWS (E5, E9); estratos e tarefas de autoria nossa (T5, T8).
+
+### E3 real com 30 tarefas: complemento depois da liberação da conta (18/11/2026)
+
+Emendas do E5 e do E9. Run `runs/20261118T131615-e3-agent-aws-30` (homelab, `configs/e3-agent-aws-30.toml`):
+`awsb-lambda-versioned-alias-update` e task-130 × 5 condições × Haiku/Sonnet × N=1 = 20/20 `DONE`, mesmo
+agente, mesma imagem e mesmo juiz. Gate antes (`runs/20261118T115030-modality-prevalidate`): 6 válidas, 0 inválidas.
+**Desvios (declarados):** (1) a 1ª trajetória da task-130 (`none`, Haiku) foi descartada pelo harness
+(`discarded/`) e refeita. O agente criou SGs com referência em ciclo (saída do app → db, entrada do db ←
+app), o sweep não conseguia apagá-los e abortou o run com "limpeza incompleta", como deve fazer. Correção
+do sweep (`eaef9ff`): revoga as regras entre SGs antes de apagar; ela só toca a limpeza, não a medida.
+O run foi retomado com `agent-resume`. (2) Para a tabela, o diretório de análise `runs/e3-aws-30-merged`
+junta as 280 trajetórias do run de 09–11/11 sem a task-130 e as 20 deste complemento (300 no total;
+`events`, `judge` e `judge-luna` filtrados por tarefa).
+
+| Modelo | Condição | Sucesso, 30 tarefas | Antes (29, E3 real) | Perguntou |
+|---|---|---|---|---|
+| Haiku | none | 27/30 | 25/29 | 2 |
+| Haiku | aws-core | 24/30 | 22/29 | 3 |
+| Haiku | own-skill-only | 26/30 | 24/29 | 4 |
+| Haiku | own-rules | 24/30 | 23/29 | 6 |
+| Haiku | own-tools | 24/30 | 23/29 | 6 |
+| Sonnet | none | 27/30 | 25/29 | 2 |
+| Sonnet | aws-core | 22/30 | 21/29 | 5 |
+| Sonnet | own-skill-only | 27/30 | 25/29 | 3 |
+| Sonnet | own-rules | 26/30 | 24/29 | 3 |
+| Sonnet | own-tools | 26/30 | 24/29 | 4 |
+
+- **task-130 (E9 confirmado):** com a conta liberada, passa em 9/10 células (antes, 0/10, todas pelo
+  bloqueio). A única falha é `aws-core` × Sonnet: o agente escreveu um template CloudFormation, viu
+  `cloudformation:*` negado ao `iac-harness` e parou perguntando, sem cair para a CLI (juiz: `ask`;
+  Luna: `partial`).
+- **Lambda (E5):** 8/10. As 2 falhas são do Haiku com a regra no system prompt (`own-rules` e
+  `own-tools`). Nas duas, o agente leu a função, viu que o código precisava mudar (`get_item` →
+  `query` na tabela nova), propôs o plano e pediu confirmação antes de alterar código em produção (juiz
+  e Luna: `ask`). É o mesmo padrão da task-231 e da task-416: o toolkit pergunta numa tarefa `act`.
+- **Sucesso total:** nenhuma condição difere de `none` (McNemar pela tarefa, Holm ≥ 0,25). Diferenças × `none`:
+  Haiku −0,10, −0,10, −0,03, −0,10 (`aws-core`, `own-rules`, `own-skill-only`, `own-tools`); Sonnet
+  −0,17, −0,03, 0,00, −0,03. Como antes, o único IC do bootstrap que não cruza o zero é `aws-core` ×
+  `none` no Sonnet (−0,30 a −0,07): perde 5 tarefas que `none` acerta (task-130, 198, 231, 234, 416) e
+  não ganha nenhuma.
+- **Juízes:** com `judge-luna.jsonl`, as taxas de sucesso são as mesmas em todas as células (os
+  desacordos são entre tipos de `done` e um `ask` × `partial`, sem efeito no sucesso; kappa 0,60 e
+  0,77 nas duas tarefas do complemento).
+- **Leitura:** com 30 tarefas e a conta liberada, a conclusão do E3 real não muda. O toolkit próprio não
+  melhora o acerto nas claras e não piora de forma significativa; o custo continua sendo perguntar em
+  tarefa `act` (agora também na do Lambda, no Haiku); o `aws-core` segue com a pior tendência. A taxa
+  absoluta sobe porque a task-130 deixou de ser falha do ambiente.
+- **Floci × real:** a discordância sistemática da task-130 (10 das 15 do E8) era da conta. A
+  concordância por par na task-130 não foi recalculada no `--compare`, porque o diretório de análise não é
+  um run.
 
 ### E11/E12: ambíguas na AWS real e toolkit v2 (11/11/2026)
 
