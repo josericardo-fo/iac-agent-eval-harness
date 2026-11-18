@@ -72,6 +72,7 @@ from iac_harness.cli.common import (
     load_config,
     new_run_id,
 )
+from iac_harness.cli.demo import cmd_demo_timeline
 from iac_harness.cli.provenance import _git_provenance, _sandbox_provenance
 from iac_harness.cli.tables import (
     _agent_metrics_table,
@@ -84,7 +85,6 @@ from iac_harness.cli.tables import (
 )
 from iac_harness.datasets import ambig_iac
 from iac_harness.datasets.iac_eval_v2 import IacEvalV2Adapter
-from iac_harness.demo.timeline import build_timeline, dump_timeline
 from iac_harness.executors import final_cleanup
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
@@ -1050,19 +1050,6 @@ def cmd_agent_metrics(args: argparse.Namespace) -> int:
         print(_agent_metrics_table(metrics))
     else:
         print(json.dumps(metrics, indent=2, ensure_ascii=False))
-    return 0
-
-
-def cmd_demo_timeline(args: argparse.Namespace) -> int:
-    try:
-        timeline = build_timeline(args.unit_dir, args.scene)
-    except (FileNotFoundError, ValueError) as exc:
-        raise SystemExit(f"erro: {exc}") from exc
-    text = dump_timeline(timeline) + "\n"
-    if args.output is None:
-        sys.stdout.write(text)
-    else:
-        args.output.write_text(text, encoding="utf-8")
     return 0
 
 
