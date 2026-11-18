@@ -1,6 +1,6 @@
 import pytest
 
-from iac_harness.cli import build_executor
+from iac_harness.cli.common import build_executor
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.toolchain import Toolchain
 

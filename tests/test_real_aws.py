@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from iac_harness.cli import build_executor, build_toolchain, final_cleanup
-from iac_harness.executors import aws_sweep
+from iac_harness.cli.common import build_executor, build_toolchain
+from iac_harness.executors import aws_sweep, final_cleanup
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.aws_sweep import ORDER, inventory, plan_deletions
 from iac_harness.executors.floci import FlociExecutor

@@ -3,7 +3,8 @@ import json
 import pytest
 
 from iac_harness import cli
-from iac_harness.cli import discard_incomplete, main, pair_completion
+from iac_harness.cli import main
+from iac_harness.cli.common import discard_incomplete, pair_completion
 from iac_harness.workspace import pair_dir
 
 CONDITIONS = ["A", "B"]

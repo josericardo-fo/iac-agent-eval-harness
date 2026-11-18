@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from iac_harness import cli
+from iac_harness.cli import common as cli_common
 from iac_harness.cli import main
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.modalities import prompts
@@ -559,7 +560,9 @@ def test_modality_resume_skips_completed(tmp_path, monkeypatch):
              if (t.task_id, m, r) not in skip]
         ),
     )  # fmt: skip
-    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False})
+    monkeypatch.setattr(
+        cli_common, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False}
+    )
 
     assert main(["modality-run", "--resume", str(run_dir)]) == 0
 
@@ -1072,7 +1075,9 @@ def test_free_resume_skips_completed(tmp_path, monkeypatch):
              if (t.task_id, m, r) not in skip]
         ),
     )  # fmt: skip
-    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False})
+    monkeypatch.setattr(
+        cli_common, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False}
+    )
     assert main(["modality-run", "--resume", str(run_dir)]) == 0
     assert ran == [[("task-108", "free", 2)]]
 
@@ -1246,16 +1251,18 @@ def test_modality_resume_output_is_byte_identical(tmp_path, monkeypatch, capsys)
     )  # fmt: skip
     monkeypatch.setattr(cli, "_modality_loop", lambda *a, **k: None)
     monkeypatch.setattr(cli, "_modality_summary", lambda events: "SUMMARY")
-    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False})
+    monkeypatch.setattr(
+        cli_common, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False}
+    )
 
-    real_datetime = cli.datetime
+    real_datetime = cli_common.datetime
 
     class FixedDatetime:
         @staticmethod
         def now(tz):
             return real_datetime(2026, 1, 2, 3, 4, 5, tzinfo=tz)
 
-    monkeypatch.setattr(cli, "datetime", FixedDatetime)
+    monkeypatch.setattr(cli_common, "datetime", FixedDatetime)
     assert main(["modality-run", "--resume", str(run_dir)]) == 0
     expected = (
         '{\n  "config": {\n    "run": {\n      "name": "x"\n    },\n    "agent": {\n'
