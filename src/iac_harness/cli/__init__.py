@@ -105,7 +105,7 @@ EXECUTORS: dict[str, type[FlociExecutor]] = {
 }
 DATA_DIR = Path("data")
 # E3: raiz dos plugins das condições (toolkit/, third_party/).
-AGENT_PLUGIN_ROOT = Path(__file__).resolve().parents[2]
+AGENT_PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 
 
 # ---------- montagem ----------
