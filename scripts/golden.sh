@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Teste de ouro (docs/plano-framework.md §7): roda os leitores (agent-metrics,
-# agent-questions-report, modality-metrics, metrics, demo-timeline) sobre runs gravados em runs/
+# agent-questions-report, modality-metrics, demo-timeline) sobre runs gravados em runs/
 # e compara a saída com um snapshot. A refatoração não pode mudar nenhum byte.
 #
 # Uso:
@@ -31,7 +31,6 @@ CASES=(
   "modality-metrics-replay|modality-metrics $R/20261029T191956-replay-20261027T150905-modality-haiku --format json"
   "modality-metrics-ask|modality-metrics $R/20261030T131533-e2-ask-haiku --format json"
   "modality-metrics-free|modality-metrics $R/20261030T153918-e4-free-haiku --baseline $R/20261027T150905-modality-haiku --format table"
-  "metrics-main-n3|metrics $R/20261015T010828-main-n3"
   "demo-timeline-e13|demo-timeline $R/20261114T194733-e13-real-aws/real-ssh-vpn-ip/2/own-rules-v2/Sonnet-5.5"
 )
 
@@ -61,7 +60,13 @@ case "${1:-}" in
     TMP=$(mktemp -d)
     trap 'rm -rf "$TMP"' EXIT
     run_cases "$TMP" || exit 1
-    if diff -r -x COMMIT -x '*.err' "$SNAPSHOT" "$TMP"; then
+    # Compara só os casos de CASES: o snapshot pode ter casos que já saíram (ex.: metrics-main-n3).
+    mismatch=0
+    for c in "${CASES[@]}"; do
+      name=${c%%|*}
+      diff "$SNAPSHOT/$name.out" "$TMP/$name.out" || mismatch=1
+    done
+    if [ "$mismatch" -eq 0 ]; then
       echo "ouro OK: ${#CASES[@]} casos idênticos ao snapshot de $(cut -c1-7 "$SNAPSHOT/COMMIT")"
     else
       echo "ouro FALHOU: a saída mudou em relação ao snapshot" >&2

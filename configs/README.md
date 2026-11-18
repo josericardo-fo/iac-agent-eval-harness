@@ -12,14 +12,14 @@ encerrada, só para reproduzir; **base** = nunca rodou sozinha, as outras deriva
 
 | Config | Para quê | Runs | Status |
 |---|---|---|---|
-| `smoke.toml` | Valida a cadeia, N=1 | `20260930T*-smoke` | ativa (testes de integração) |
-| `pilot.toml` | Piloto estratificado, N=1 | `20261014T*-pilot` | histórica |
-| `screen.toml` | Triagem, condição A nas 93 tarefas | `20261014T*-screen` | histórica |
-| `ablation-rulenames.toml` | Ablação do feedback de intenção (só nomes das regras) | `20261014T225134-ablation-rulenames` | histórica |
-| `ablation-full.toml` | Ablação do feedback de intenção (policy completa, teto) | `20261014T235418`, `20261015T010140` | histórica |
-| `main-n3.toml` | Rodada principal, 93 tarefas, N=3 | `20261015T010828-main-n3` | histórica |
-| `miac.toml` | Pré-validação do Multi-IaC-Eval (segundo Floci) | `20261014T220037`, `20261015T13*-miac-prevalidate` | histórica |
-| `mvp.toml` | Execução completa planejada (186 tarefas, N=5) | nenhum | histórica (não rodou) |
+| `smoke.toml` | Valida a cadeia, N=1 | `20260930T*-smoke` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `pilot.toml` | Piloto estratificado, N=1 | `20261014T*-pilot` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `screen.toml` | Triagem, condição A nas 93 tarefas | `20261014T*-screen` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `ablation-rulenames.toml` | Ablação do feedback de intenção (só nomes das regras) | `20261014T225134-ablation-rulenames` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `ablation-full.toml` | Ablação do feedback de intenção (policy completa, teto) | `20261014T235418`, `20261015T010140` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `main-n3.toml` | Rodada principal, 93 tarefas, N=3 | `20261015T010828-main-n3` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `miac.toml` | Pré-validação do Multi-IaC-Eval (segundo Floci) | `20261014T220037`, `20261015T13*-miac-prevalidate` | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
+| `mvp.toml` | Execução completa planejada (186 tarefas, N=5) | nenhum | removida (pipeline legado saiu do código; está na tag `v1.0.0`) |
 
 As pré-validações de 30/09 e 01/10 (`*-prevalidate`) são desta fase.
 
