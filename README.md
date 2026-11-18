@@ -25,7 +25,7 @@ when the request is ambiguous, and does not touch what it should not.
 | Simulated user for ambiguous cloud requests (hidden `user.md`) | `agentic/user_sim.py` |
 | Validated LLM judges (human sample, second judge, kappa) | `agentic/judge.py`, `agentic/question_judge.py`, `agent-judge --agreement/--compare-with` |
 | Real AWS reset by inventory (baseline + sweep) | `executors/aws_sweep.py` |
-| Provenance in every run (git commit, image ids and digests, tool versions, prompt versions) | `cli.py` (`_git_provenance`, `_sandbox_provenance`, `_agent_run_config`) |
+| Provenance in every run (git commit, image ids and digests, tool versions, prompt versions) | `cli/provenance.py` (`_git_provenance`, `_sandbox_provenance`), `cli/agent.py` (`_agent_run_config`) |
 
 Paths are relative to `src/iac_harness/`.
 

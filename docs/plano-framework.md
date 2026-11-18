@@ -49,7 +49,7 @@ código morto removido, arquivos grandes separados, contratos explícitos e, dep
 | Usuário simulado para pedido ambíguo em operação de nuvem (`user.md` oculto) | `agentic/user_sim.py` |
 | Juízes LLM validados (amostra humana, 2º juiz, kappa) | `agentic/judge.py`, `agentic/question_judge.py`, `agent-judge --agreement/--compare-with` |
 | Reset da AWS real por inventário (baseline + sweep) | `executors/aws_sweep.py` |
-| Procedência em cada run (git, imagens por digest, providers, sha da pré-validação) | `cli.py` (`_git_provenance`, `_sandbox_provenance`, `_agent_run_config`) |
+| Procedência em cada run (git, imagens por digest, providers, sha da pré-validação) | `cli/provenance.py` (`_git_provenance`, `_sandbox_provenance`), `cli/agent.py` (`_agent_run_config`) |
 
 ### 3.2 Trabalhos próximos (para a tabela de posicionamento)
 
@@ -119,7 +119,7 @@ saiu com o `conditions.py` do legado.
 
 | Arquivo | Linhas | Problema |
 |---|---|---|
-| `cli.py` | 1.750 (era 2.492) | 12 subcomandos, montagem, procedência, laços, tabelas, resume: tudo junto |
+| `cli.py` | 1.750 (era 2.492) | 12 subcomandos, montagem, procedência, laços, tabelas, resume: tudo junto. Separado na fase 3 no pacote `cli/` (7 módulos, o maior com 565) |
 | `executors/aws_sweep.py` | 667 | um serviço AWS atrás do outro no mesmo arquivo |
 | `modalities/metrics.py` | 485 | |
 | `modalities/execute.py` | 482 | |
@@ -143,7 +143,7 @@ saiu com o `conditions.py` do legado.
 
 **Nomes de experimento no código e nas configs:** `e3-*`, `e10-*` … `e19-*`, `own-rules-v2/v3`
 (as configs `miac`, `ablation-*`, `pilot`, `screen`, `mvp` e `main-n3` saíram com o legado),
-comentários "E2/E4/E13" em docstrings e seções do `cli.py`. A descrição no `pyproject.toml` ainda fala de feedback em Terraform.
+comentários "E2/E4/E13" em docstrings e seções da `cli/`. A descrição no `pyproject.toml` ainda fala de feedback em Terraform.
 
 **Documentação:** o README é um diário de pesquisa (fases, E1–E19, datas de gate). Os 13 arquivos
 de `docs/` são de pesquisa. Usuário simulado, juízes, sweep e formato de task não têm documento
@@ -219,7 +219,7 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
 
 Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro verde.
 
-- [ ] **`cli.py` → pacote `cli/`**:
+- [x] **`cli.py` → pacote `cli/`**:
   - `cli/__init__.py`: só `main()` e o registro dos subparsers;
   - `cli/common.py`: `load_config`, `_select_modality_run`, `new_run_id`, montagem de toolchain/executor;
   - `cli/provenance.py`: `_git_provenance`, `_sandbox_provenance` e auxiliares;
@@ -230,6 +230,10 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
     `_agent_metrics_table`, `_free_table`…);
   - `cli/demo.py`: `demo-timeline`.
   - Os laços (`_agent_loop`, `_modality_loop`, `_run_pairs`) saem da CLI e vão para os runners.
+    *Não feito: ficaram em `cli/agent.py` e `cli/modality.py`. Os dois montam o contexto a partir
+    da config (backends por modalidade, raiz dos plugins, estratos) e imprimem o progresso;
+    levá-los para os runners muda assinaturas, não só o lugar do código. Fica para a fase 4
+    (contratos). O `_run_pairs` saiu com o pipeline legado.*
 - [ ] **`executors/aws_sweep.py`**: um módulo por grupo de serviço (`sweep/ec2.py`, `sweep/s3.py`,
   `sweep/iam.py`…) com um registro de sweepers. Atenção: o arquivo roda dentro da toolchain;
   conferir como ele é copiado/montado antes de virar pacote.
@@ -323,3 +327,4 @@ Perguntar ao usuário antes de executar o item que depende delas.
 | 18/11/2026 | LocalStack removido por completo (executor, config, compose, testes); entra depois da tag `v1.0.0` | exige token desde 03/2026, o spike acabou e o compose obrigava a exportar um token falso |
 | 18/11/2026 | Pipeline de feedback no loop removido (comandos, runner, condições A/B/C, OPA, configs); entra depois da tag `v1.0.0` | a tag preserva; o código vivo fica só com modalidades e agente real |
 | 18/11/2026 | `modality-reask` e `prevalidate-miac` removidos; `ambig-prevalidate` fica | uso único × gate das tasks do Ambig-IaC |
+| 18/11/2026 | `cli.py` vira o pacote `cli/`; os laços de execução ficam na CLI até a fase 4 | mover sem mudar a lógica; tirar os laços da CLI exige mudar assinaturas |
