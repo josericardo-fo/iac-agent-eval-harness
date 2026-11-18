@@ -112,8 +112,6 @@ alvo, serviços…): `configs/strata.toml`.
 |---|---|---|
 | Catálogo (ou `tasks_dir`), qualquer categoria | `uv run iac-harness modality-prevalidate --config <config> --tasks <id>` | por modalidade: o estado inicial aplica; o check reprova no estado inicial; a referência executa e o check passa. Em `expect = "ask"`, invertido: o check passa no inicial, a referência executa e reprova e, se houver `check_final.py`, a referência passa nele |
 | Ambig-IaC | `uv run iac-harness ambig-prevalidate --config <config> --order <selection.json>` (ou `--tasks`, `--target-pass N`) | a referência passa no oráculo e um `main.tf` vazio reprova |
-| IaC-Eval v2 no pipeline legado | `uv run iac-harness prevalidate --config <config>` | a referência passa pela cadeia validate/plan/OPA/sandbox |
-| Multi-IaC-Eval (legado) | `uv run iac-harness prevalidate-miac --config <config> --csv <test.csv>` | `initial` e `expected` das triplas pela cadeia |
 
 O `modality-prevalidate` grava `runs/<id>-modality-prevalidate/prevalidation.jsonl` (uma linha por
 task × modalidade, com `valid`) e `prevalidation_config.json` com a procedência, e imprime uma

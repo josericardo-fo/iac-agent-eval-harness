@@ -99,6 +99,10 @@ Chaves de `[sandbox]`: `endpoint` (visão da toolchain), `host_endpoint` (visão
 
 ### 3. Pré-validar as referências (pipeline de feedback no loop)
 
+> Os comandos `prevalidate`, `run` e `metrics` dos passos 3–5 e as configs citadas
+> (`smoke.toml`, `mvp.toml`) existem só na tag `v1.0.0` (`git checkout v1.0.0`); o pipeline de
+> feedback no loop saiu do código depois dela.
+
 ```bash
 uv run iac-harness prevalidate --config configs/smoke.toml --limit 3
 uv run iac-harness prevalidate --config configs/mvp.toml --tasks aws/task-269
@@ -188,7 +192,8 @@ uv run iac-harness modality-metrics runs/<id>
   cada trajetória (padrão: `--categories modify,query`) e mede `collateral_ok` à parte da nota.
   Resumo: `modality-metrics <run do replay>`.
 - **Reclassificar perguntas (E2):** `modality-reask <run>` corta, sem LLM, as trajetórias em que o
-  agente perguntou com um bloco ` ```question.md ` que o parser antigo não lia.
+  agente perguntou com um bloco ` ```question.md ` que o parser antigo não lia. Comando de uso
+  único: existe só na tag `v1.0.0` (`git checkout v1.0.0`).
 
 ## E3: agente real (Claude Code headless em container)
 

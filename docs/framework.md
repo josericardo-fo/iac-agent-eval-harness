@@ -127,7 +127,9 @@ lendo os runs antigos. O teste de ouro (`scripts/golden.sh check`) confere isso.
 
 ## Mapa da CLI
 
-`uv run iac-harness <comando> --help` mostra as opções. Os 17 subcomandos, em três grupos:
+`uv run iac-harness <comando> --help` mostra as opções. Os 12 subcomandos, em dois grupos. O
+pipeline de feedback no loop (Semanas 4–6, condições A/B/C), com os comandos `prevalidate`, `run`,
+`metrics` e `prevalidate-miac`, e o `modality-reask` (uso único, E2) estão só na tag `v1.0.0`.
 
 **Principal: agente real**
 
@@ -149,17 +151,7 @@ lendo os runs antigos. O teste de ouro (`scripts/golden.sh check`) confere isso.
 | `modality-run` | roda o agente da camada de LLM nas modalidades (`--resume` retoma) |
 | `modality-metrics` | métricas de um `modality-run` (ou resumo de um replay); `--baseline` compara com a forma livre |
 | `modality-replay` | reexecuta sem LLM o artefato final de cada trajetória e mede o efeito colateral |
-| `modality-reask` | reclassifica sem LLM as perguntas que o parser antigo não lia (uso único, E2) |
 | `ambig-prevalidate` | gate do Ambig-IaC: a referência passa no oráculo e um `main.tf` vazio reprova (E16) |
-
-**Legado: feedback no loop (Semanas 4–6)**
-
-| Comando | O que faz |
-|---|---|
-| `prevalidate` | roda a referência de cada tarefa do IaC-Eval v2 pela cadeia validate/plan/OPA/sandbox |
-| `prevalidate-miac` | o mesmo para as triplas do Multi-IaC-Eval |
-| `run` | roda o agente nas condições A/B/C de feedback |
-| `metrics` | métricas de um `run` |
 
 ## Posicionamento
 
@@ -200,8 +192,8 @@ estado só em memória) e LocalStack (Community Edition arquivada em 03/2026, to
 - **Usuário simulado via Codex CLI logado** por padrão (`gpt-6-luna`); com `max_replies` limitado.
 - **AWS Emulator não avaliado**; o LocalStack (token obrigatório desde 03/2026) só foi usado num spike e saiu do código (está na tag `v1.0.0`).
 - **Floci 2.1.0** não reseta pela API (apaga a VPC default); o reset é por restart do container.
-- **Pipelines paralelos.** Feedback no loop, modalidades e agente real têm laço, eventos e
-  métricas próprios; a unificação está nas fases 3–4 do [plano-framework.md](plano-framework.md).
+- **Pipelines paralelos.** Modalidades e agente real têm laço, eventos e métricas próprios; a
+  unificação está nas fases 3–4 do [plano-framework.md](plano-framework.md).
 - **Formato de task acoplado ao catálogo:** uma task nova no catálogo exige entrada em
   `configs/strata.toml` e no conjunto esperado dos testes ([tarefas.md](tarefas.md)).
 - Ameaças à validade dos resultados: registro §2 (auditoria pelo ABC) e §3.

@@ -112,7 +112,9 @@ In the harness the rules enter through `--append-system-prompt-file`; in the plu
   money; read [docs/componentes.md](docs/componentes.md) before using it.
 - The official AWS Emulator was not evaluated. LocalStack (now token-only) was removed; the spike
   that used it is in tag `v1.0.0`.
-- The prompts of the modality and feedback pipelines pin Terraform ≥ 1.15 and `hashicorp/aws ~> 6.0`.
+- The modality prompts pin Terraform ≥ 1.15 and `hashicorp/aws ~> 6.0`.
+- The feedback-in-the-loop pipeline of the early research (conditions A/B/C) was removed; it is in
+  tag `v1.0.0`.
 - Names still carry research history (experiment ids in configs, `agentic/`, `modalities/`); the
   renaming plan is in [docs/plano-framework.md](docs/plano-framework.md).
 

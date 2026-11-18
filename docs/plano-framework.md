@@ -93,31 +93,33 @@ glossário só liga os termos aos nomes atuais; o código não muda de nome ante
 | Run (Job) | conjunto de trials de uma config | `runs/<id>/` |
 | Strata | eixos de análise (intenção, categoria, origem, dificuldade, alvo) | `agentic/strata.py`, `configs/strata.toml` |
 
-## 5. Diagnóstico (18/11/2026)
+## 5. Diagnóstico (18/11/2026; atualizado em 18/11 após a remoção do legado)
 
-**Estado geral.** 701 testes unitários verdes (49 de integração fora do padrão). Nenhum segredo
-rastreado; `runs/` e `data/` fora do git; código de terceiros (`third_party/agent-toolkit-for-aws`)
-com LICENSE e NOTICE.
+**Estado geral.** 701 testes unitários verdes (49 de integração fora do padrão); 650 (48) depois
+da remoção do legado. Nenhum segredo rastreado; `runs/` e `data/` fora do git; código de terceiros
+(`third_party/agent-toolkit-for-aws`) com LICENSE e NOTICE.
 
-**Três pipelines paralelos**, que são as três fases da pesquisa:
+**Pipelines paralelos.** Eram três, as três fases da pesquisa; o de feedback no loop saiu do código
+(está na tag `v1.0.0`) e ficaram dois:
 
 | Pipeline | Entrada na CLI | Código | Situação |
 |---|---|---|---|
-| Feedback no loop (A/B/C) | `prevalidate`, `prevalidate-miac`, `run`, `metrics` | `runner.py`, `conditions.py`, `feedback.py`, `agents/`, `verifiers/`, `metrics.py` | legado (Semanas 4–6) |
+| Feedback no loop (A/B/C) | `prevalidate`, `prevalidate-miac`, `run`, `metrics` | `runner.py`, `conditions.py`, `verifiers/opa.py` … | removido (Semanas 4–6; tag `v1.0.0`) |
 | Modalidades | `modality-*`, `ambig-prevalidate` | `modalities/` | resultado da fase 2; tasks reaproveitadas pelo agente |
 | Agente real | `agent-*`, `demo-timeline` | `agentic/` | **caminho principal do framework** |
 
 Cada pipeline tem seu laço, sua gravação de eventos, sua procedência e suas métricas. Conceitos
-duplicados: dois `Condition` (`conditions.py` e `agentic/conditions.py`), dois enums de término
-(`types.py` e `ModTermination` em `modalities/runner.py`), quatro módulos de métricas
-(`metrics.py`, `modalities/metrics.py`, `agentic/metrics.py`, `agentic/question_metrics.py`),
-dois conceitos de backend (`executors/` e `agentic/targets.py`).
+duplicados: dois enums de término (`types.py`, que guarda os schemas gravados do legado, e
+`ModTermination` em `modalities/runner.py`), três módulos de métricas (`modalities/metrics.py`,
+`agentic/metrics.py`, `agentic/question_metrics.py`; o `metrics.py` ficou só com a estatística
+comum), dois conceitos de backend (`executors/` e `agentic/targets.py`). O `Condition` duplicado
+saiu com o `conditions.py` do legado.
 
 **Arquivos grandes** (linhas):
 
 | Arquivo | Linhas | Problema |
 |---|---|---|
-| `cli.py` | 2.492 | 17 subcomandos, montagem, procedência, laços, tabelas, resume: tudo junto |
+| `cli.py` | 1.750 (era 2.492) | 12 subcomandos, montagem, procedência, laços, tabelas, resume: tudo junto |
 | `executors/aws_sweep.py` | 667 | um serviço AWS atrás do outro no mesmo arquivo |
 | `modalities/metrics.py` | 485 | |
 | `modalities/execute.py` | 482 | |
@@ -134,14 +136,14 @@ dois conceitos de backend (`executors/` e `agentic/targets.py`).
 - toolkit: dicionário fixo (`agentic/conditions.py`);
 - backend: `LocalStackExecutor` herda de `FlociExecutor`; serviços e regiões AWS fixos; proxy fixo
   em `http://egress-proxy:3128` (`agentic/targets.py`);
-- tasks: `DatasetAdapter` existe em `interfaces.py` e ninguém usa; as tasks são diretórios sem
-  formato documentado;
+- tasks: as tasks são diretórios sem formato documentado (o `DatasetAdapter` sem uso saiu com o
+  legado);
 - prompts fixam Terraform ≥ 1.15 e `hashicorp/aws ~> 6.0` (`agents/prompts.py`,
   `modalities/prompts.py`).
 
-**Nomes de experimento no código e nas configs:** `e3-*`, `e10-*` … `e19-*`, `miac`, `ablation-*`,
-`pilot`, `screen`, `mvp`, `main-n3`, `own-rules-v2/v3`, comentários "E2/E4/E13" em docstrings e
-seções do `cli.py`. A descrição no `pyproject.toml` ainda fala de feedback em Terraform.
+**Nomes de experimento no código e nas configs:** `e3-*`, `e10-*` … `e19-*`, `own-rules-v2/v3`
+(as configs `miac`, `ablation-*`, `pilot`, `screen`, `mvp` e `main-n3` saíram com o legado),
+comentários "E2/E4/E13" em docstrings e seções do `cli.py`. A descrição no `pyproject.toml` ainda fala de feedback em Terraform.
 
 **Documentação:** o README é um diário de pesquisa (fases, E1–E19, datas de gate). Os 13 arquivos
 de `docs/` são de pesquisa. Usuário simulado, juízes, sweep e formato de task não têm documento
@@ -161,7 +163,8 @@ são refatoração sem mudar o comportamento. A fase 6 traz features novas.
 - [x] `demo/` no `.gitignore` (hoje só no `.git/info/exclude`).
 - [x] Descrição do `pyproject.toml` atualizada (o que o harness avalia hoje).
 - [x] Criar o teste de ouro (seção 7) antes de qualquer refatoração: `scripts/golden.sh`
-  (16 casos, determinístico). Falta gravar o snapshot na tag: `scripts/golden.sh capture`.
+  (16 casos, determinístico; 15 depois que o `metrics` do legado saiu). Falta gravar o snapshot
+  na tag: `scripts/golden.sh capture`.
 
 ### Fase 1: documentação de produto
 
@@ -189,14 +192,14 @@ Confirme cada candidato com `grep` e testes antes de apagar. O vulture
 (`uvx vulture src --min-confidence 60 --exclude '*/tasks/*'`) dá falsos positivos nos campos de
 dataclass de `types.py`, que são serializados nos eventos: **não apague campos gravados**.
 
-- [ ] `interfaces.DatasetAdapter`: sem uso. Apagar ou substituir pelo contrato `TaskSource` da
-  fase 4.
+- [x] `interfaces.DatasetAdapter`: sem uso. Removido com o pipeline legado (o contrato
+  `TaskSource` da fase 4 nasce do zero).
 - [ ] `agentic/stream.py:335` `verified_state()`: o vulture aponta sem uso (o runner usa
   `ops.verified`). Conferir e apagar.
 - [ ] `datasets/multi_iac_eval.py:29` (`utterance`), `modalities/loader.py:38`
   (`missing_reason`), `types.py:39-41` (`VALIDATE_FAIL`, `PLAN_FAIL`, `OPA_FAIL`): conferir.
-- [ ] Comandos de uso único: `modality-reask` (migração do E2), `ambig-prevalidate` (E16),
-  `prevalidate-miac`. Decidir se ficam, viram script em `scripts/` ou saem (ver 8.2).
+- [x] Comandos de uso único: `modality-reask` (migração do E2) e `prevalidate-miac` removidos;
+  `ambig-prevalidate` (E16) fica, porque é o gate das tasks do Ambig-IaC (ver 8.5).
 - [ ] Scripts de seleção (`scripts/select_*.py`, `scripts/e15_overnight.sh`): mover para
   `scripts/experiments/` com nota de qual experimento os usou.
 - [x] `executors/localstack.py` e `configs/modality-spike-localstack.toml`: o LocalStack exige
@@ -205,8 +208,8 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
 - [ ] Toolkit v1 e v3 (`toolkit/src/`, `toolkit/src-v3/`, plugins `own-rules`, `own-rules-v3`,
   `own-tools`): ficam, porque as condições medidas os montam, mas o README deixa claro que a
   distribuída é a `iac-cloud` (v2).
-- [ ] Pipeline de feedback no loop: decidir o destino (8.2). Se ficar, vai para um subpacote
-  `legacy/` com nota no README.
+- [x] Pipeline de feedback no loop: removido (comandos, runner, condições A/B/C, OPA, adaptador
+  Multi-IaC-Eval, configs); a tag `v1.0.0` preserva (ver 8.2).
 
 ### Fase 3: modularizar e separar os arquivos grandes
 
@@ -299,12 +302,12 @@ Perguntar ao usuário antes de executar o item que depende delas.
 
 1. **Nome de venda do framework** e nome da tag de referência. O repo pode manter o nome atual.
    *Tag decidida (`v1.0.0`); nome de venda fica para depois.*
-2. **Destino do pipeline de feedback no loop** (Semanas 4–6): manter em `legacy/`, manter
-   congelado onde está ou remover (a tag preserva).
+2. ~~**Destino do pipeline de feedback no loop**~~ *Decidido em 18/11: removido; a tag `v1.0.0`
+   preserva (seção 9).*
 3. **Quando renomear o pacote** (fase 5): antes ou depois da entrega do TCC.
 4. ~~**Idioma do material externo**~~ *Decidido em 18/11 (ver seção 9).*
-5. **Destino dos comandos de uso único** (`modality-reask`, `ambig-prevalidate`,
-   `prevalidate-miac`). *LocalStack decidido em 18/11: sai (seção 9).*
+5. ~~**Destino dos comandos de uso único**~~ *Decidido em 18/11: `modality-reask` e
+   `prevalidate-miac` saem, `ambig-prevalidate` fica (seção 9). LocalStack também decidido: sai.*
 
 ## 9. Registro de decisões
 
@@ -315,3 +318,5 @@ Perguntar ao usuário antes de executar o item que depende delas.
 | 18/11/2026 | README em inglês, com link para um resumo em português; `docs/` (incl. `framework.md`) em português | o README é a vitrine para público de fora; `docs/` é material do TCC e segue a convenção do repo |
 | 18/11/2026 | Nome de venda do framework decidido depois | só trava a fase 5 |
 | 18/11/2026 | LocalStack removido por completo (executor, config, compose, testes); entra depois da tag `v1.0.0` | exige token desde 03/2026, o spike acabou e o compose obrigava a exportar um token falso |
+| 18/11/2026 | Pipeline de feedback no loop removido (comandos, runner, condições A/B/C, OPA, configs); entra depois da tag `v1.0.0` | a tag preserva; o código vivo fica só com modalidades e agente real |
+| 18/11/2026 | `modality-reask` e `prevalidate-miac` removidos; `ambig-prevalidate` fica | uso único × gate das tasks do Ambig-IaC |
