@@ -1,4 +1,4 @@
-"""CLI: prevalidate | run | metrics | modality-* | agent-*. Mapeamentos simples, sem registry."""
+"""CLI: modality-* | ambig-prevalidate | agent-* | demo-timeline. Mapeamentos simples."""
 
 from __future__ import annotations
 

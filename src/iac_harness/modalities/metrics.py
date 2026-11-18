@@ -1,4 +1,4 @@
-"""Métricas do teste de modalidades, no mesmo vocabulário do A/B/C (iac_harness.metrics).
+"""Métricas do teste de modalidades (estatística comum em iac_harness.metrics).
 
 "Modalidade" ocupa o lugar de "condição"; a categoria (create/modify/delete/query) é o estrato.
 """

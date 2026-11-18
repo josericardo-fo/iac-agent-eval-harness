@@ -611,7 +611,7 @@ def test_build_wires_aws_kind(iac_env):
         build_executor({"sandbox": {"kind": "aws"}}, tc, allow_real_aws=True)
 
 
-def test_abc_commands_refuse_aws_kind(iac_env):
+def test_commands_without_allow_real_aws_refuse_aws_kind(iac_env):
     cfg = {"sandbox": {"kind": "aws", "expected_arn": ARN}}
     tc = build_toolchain(cfg)
     with pytest.raises(SystemExit, match="modality"):

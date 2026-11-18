@@ -222,7 +222,6 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
   - `cli/agent.py`: `agent-run`, `agent-resume`, `agent-judge*`, `agent-questions-report`,
     `agent-metrics`;
   - `cli/modality.py`: `modality-*`, `ambig-prevalidate`;
-  - `cli/legacy.py`: `prevalidate`, `prevalidate-miac`, `run`, `metrics`, resume do feedback;
   - `cli/tables.py`: formatação de tabelas, hoje espalhada (`_modality_table`,
     `_agent_metrics_table`, `_free_table`…);
   - `cli/demo.py`: `demo-timeline`.

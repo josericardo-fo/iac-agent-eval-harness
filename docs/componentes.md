@@ -104,7 +104,8 @@ region = "us-east-1"
 
 - Credenciais: `IAC_AWS_ACCESS_KEY_ID` e `IAC_AWS_SECRET_ACCESS_KEY` no ambiente (a CLI não lê
   `.env`); o harness as repassa como `AWS_*` à toolchain e ao agente, só pelo nome.
-- `kind = "aws"` é aceito pelos comandos de modalidade e do agente.
+- `kind = "aws"` é aceito por `modality-prevalidate`, `modality-run` (e seu resume) e pelo
+  agente; `ambig-prevalidate` e `modality-replay` recusam.
 - No alvo aws, `agent-run` força `workers = 1` (o sweep é da conta inteira) e o agente sai pelo
   proxy `egress-proxy-aws` (abaixo).
 - Use um usuário IAM com política escopada para o harness, não o root.
