@@ -198,7 +198,7 @@ estado só em memória) e LocalStack (Community Edition arquivada em 03/2026, to
   modelo das configs (`Haiku 5.5`, `Sonnet 5.5`) são os do gateway.
 - **Juiz padrão Anthropic** (`Sonnet 5.5`); o provedor `codex` é a alternativa.
 - **Usuário simulado via Codex CLI logado** por padrão (`gpt-6-luna`); com `max_replies` limitado.
-- **AWS Emulator não avaliado**; o LocalStack exige token desde 03/2026 e só foi usado num spike.
+- **AWS Emulator não avaliado**; o LocalStack (token obrigatório desde 03/2026) só foi usado num spike e saiu do código (está na tag `v1.0.0`).
 - **Floci 2.1.0** não reseta pela API (apaga a VPC default); o reset é por restart do container.
 - **Pipelines paralelos.** Feedback no loop, modalidades e agente real têm laço, eventos e
   métricas próprios; a unificação está nas fases 3–4 do [plano-framework.md](plano-framework.md).

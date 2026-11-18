@@ -201,7 +201,6 @@ em `src/iac_harness/agentic/`; o toolkit próprio sai de `toolkit/src/` e `toolk
 ```bash
 docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest .
 set -a; source .env; set +a
-export LOCALSTACK_AUTH_TOKEN=unused   # o compose exige a variável
 docker compose -f docker/compose.yaml --profile agent --profile agent-workers up -d --wait
 
 uv run iac-harness agent-run --config configs/e3-agent-haiku.toml   # --tasks/--reps para recortar

@@ -182,10 +182,8 @@ Os dois rodam a mesma task, o mesmo agente e o mesmo `check.py`; a concordância
 | `floci2`, `floci3`, `floci4` | `agent-workers` | um Floci por worker extra (portas 4567–4569) |
 | `egress-proxy` | `agent` | saída do agente no alvo Floci |
 | `egress-proxy-aws` | `agent` | saída do agente no alvo aws |
-| `localstack` | `localstack` | alternativa histórica (exige token) |
 
-O compose exige `LOCALSTACK_AUTH_TOKEN` definido mesmo sem o perfil `localstack`; com Floci, um
-valor qualquer basta. Com `workers = 4`, suba `--profile agent --profile agent-workers`.
+Com `workers = 4`, suba `--profile agent --profile agent-workers`.
 
 ### Proxy de egresso
 

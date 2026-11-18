@@ -199,8 +199,9 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
   `prevalidate-miac`. Decidir se ficam, viram script em `scripts/` ou saem (ver 8.2).
 - [ ] Scripts de seleção (`scripts/select_*.py`, `scripts/e15_overnight.sh`): mover para
   `scripts/experiments/` com nota de qual experimento os usou.
-- [ ] `executors/localstack.py` e `configs/modality-spike-localstack.toml`: o LocalStack exige
-  token desde 03/2026 e o spike acabou. Decidir se sai.
+- [x] `executors/localstack.py` e `configs/modality-spike-localstack.toml`: o LocalStack exige
+  token desde 03/2026 e o spike acabou. Removidos (executor, config, serviço do compose, host da
+  allowlist, testes); a tag `v1.0.0` preserva.
 - [ ] Toolkit v1 e v3 (`toolkit/src/`, `toolkit/src-v3/`, plugins `own-rules`, `own-rules-v3`,
   `own-tools`): ficam, porque as condições medidas os montam, mas o README deixa claro que a
   distribuída é a `iac-cloud` (v2).
@@ -303,7 +304,7 @@ Perguntar ao usuário antes de executar o item que depende delas.
 3. **Quando renomear o pacote** (fase 5): antes ou depois da entrega do TCC.
 4. ~~**Idioma do material externo**~~ *Decidido em 18/11 (ver seção 9).*
 5. **Destino dos comandos de uso único** (`modality-reask`, `ambig-prevalidate`,
-   `prevalidate-miac`) e do executor LocalStack.
+   `prevalidate-miac`). *LocalStack decidido em 18/11: sai (seção 9).*
 
 ## 9. Registro de decisões
 
@@ -313,3 +314,4 @@ Perguntar ao usuário antes de executar o item que depende delas.
 | 18/11/2026 | Tag de referência `v1.0.0`, sem citar gate ou semana | o nome descreve a versão, não o calendário da Residência |
 | 18/11/2026 | README em inglês, com link para um resumo em português; `docs/` (incl. `framework.md`) em português | o README é a vitrine para público de fora; `docs/` é material do TCC e segue a convenção do repo |
 | 18/11/2026 | Nome de venda do framework decidido depois | só trava a fase 5 |
+| 18/11/2026 | LocalStack removido por completo (executor, config, compose, testes); entra depois da tag `v1.0.0` | exige token desde 03/2026, o spike acabou e o compose obrigava a exportar um token falso |

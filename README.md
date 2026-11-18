@@ -60,7 +60,6 @@ docker build -f docker/toolchain.Dockerfile -t iac-harness-toolchain:latest .
 docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest .
 
 export ANTHROPIC_BASE_URL=... ANTHROPIC_AUTH_TOKEN=...
-export LOCALSTACK_AUTH_TOKEN=unused             # the compose file requires the variable
 docker compose -f docker/compose.yaml --profile agent up -d --wait   # Floci + egress proxy
 
 uv run iac-harness agent-run --config configs/quickstart-floci.toml # prints runs/<id>
@@ -111,7 +110,8 @@ In the harness the rules enter through `--append-system-prompt-file`; in the plu
   (`gpt-6-luna`), which needs a logged-in `codex`.
 - The real AWS backend deletes everything outside its baseline in the scoped regions and costs
   money; read [docs/componentes.md](docs/componentes.md) before using it.
-- The official AWS Emulator was not evaluated; LocalStack now requires a token.
+- The official AWS Emulator was not evaluated. LocalStack (now token-only) was removed; the spike
+  that used it is in tag `v1.0.0`.
 - The prompts of the modality and feedback pipelines pin Terraform ≥ 1.15 and `hashicorp/aws ~> 6.0`.
 - Names still carry research history (experiment ids in configs, `agentic/`, `modalities/`); the
   renaming plan is in [docs/plano-framework.md](docs/plano-framework.md).

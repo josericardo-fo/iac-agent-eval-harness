@@ -30,7 +30,7 @@ Desenho em `docs/desenho-modalidades.md`. Tarefas e gates em `docs/selecao-taref
 | Config | Para quê | Runs | Status |
 |---|---|---|---|
 | `modality-spike.toml` | Sonnet, Floci, 25 tarefas, N=3 | `20261020T184924-modality-spike` | histórica (base das seguintes) |
-| `modality-spike-localstack.toml` | Igual, no LocalStack (segunda opinião só para as referências) | nenhum próprio | histórica |
+| `modality-spike-localstack.toml` | Igual, no LocalStack (segunda opinião só para as referências) | nenhum próprio | removida (LocalStack saiu do código; está na tag `v1.0.0`) |
 | `modality-haiku.toml` | Haiku, Floci, 25 tarefas, N=3 | `20261027T150905-modality-haiku` | histórica (base do E2 e do E4) |
 | `modality-real-aws.toml` | AWS real, 25 tarefas menos a task-201; gate das referências | `20261028T*-modality-prevalidate` | base |
 | `modality-real-aws-msk.toml` | AWS real, só task-201 (MSK, cara) | nenhum | histórica (não rodou) |

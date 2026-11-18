@@ -1,4 +1,4 @@
-"""Executores (Floci, LocalStack, AWS real) e a limpeza final comum a todos."""
+"""Executores (Floci, AWS real) e a limpeza final comum a todos."""
 
 from __future__ import annotations
 

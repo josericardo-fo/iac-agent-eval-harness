@@ -73,7 +73,6 @@ from iac_harness.demo.timeline import build_timeline, dump_timeline
 from iac_harness.executors import final_cleanup
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecutor
-from iac_harness.executors.localstack import LocalStackExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.llm import build_text_model
 from iac_harness.metrics import compute_metrics, load_events
@@ -118,7 +117,7 @@ from iac_harness.workspace import OVERRIDE_FILENAME, RESPONSE_FILENAME, create_w
 CONDITIONS: dict[str, Condition] = {"A": A, "B": B, "C": C}
 BACKENDS = {"anthropic": AnthropicBackend}
 EXECUTORS: dict[str, type[FlociExecutor]] = {
-    cls.KIND: cls for cls in (FlociExecutor, LocalStackExecutor, RealAwsExecutor)
+    cls.KIND: cls for cls in (FlociExecutor, RealAwsExecutor)
 }
 DATA_DIR = Path("data")
 MIRROR_DIR = "/opt/terraform-providers"  # filesystem mirror dentro da imagem da toolchain
