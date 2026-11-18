@@ -45,7 +45,7 @@ linha da tabela.
 | E16 (decisão) | Num dataset de terceiros com pedidos ambíguos (Ambig-IaC) e um usuário leigo simulado, o toolkit v3 (como perguntar) entrega mais o que a pessoa queria? | E16 | `e16-ambig-iac.toml`; teto `e16-ceiling.toml` | `20261116T125901`; teto `20261116T150128` | Teto 35/50 × pedido ambíguo `none` 9, v2 8, v3 9 de 50: a ambiguidade custa ~26 tarefas e nenhum toolkit recupera. Perguntaram só 4/50 (v2 e v3), todas sobre um recurso "existente" que não existe. A v2 continua a distribuída |
 | E17 (decisão) | Quando o agente pergunta, um usuário leigo que sabe dizer o que quer em palavras simples muda o resultado? | E17 | a do E16 com `user-sim-lay-v2` e `max_replies = 3` (não versionada; o `e17-lay-detail.toml` previsto não foi criado; procedência no `run_config.json`) | `20261116T163028-e16-userv2-check` | 0/8: hipótese não confirmada. O oráculo do Ambig-IaC cobra a forma do código (valor literal, nome interno); relatado no §3 como teste exploratório do E16 |
 | E18 (exploratório) | Por que o toolkit pergunta em umas tarefas do E16 e não em outras? | nenhuma | nenhuma (sem run) | os do E16 | Ajuda quando falta o tipo de recurso ou o alvo; não ajuda quando faltam atributos |
-| E19 (decisão) | Casos reais do E13 com a v3 na AWS real | E19 | `e19-real-aws.toml` | 18/11 (§3) | Não rodado em 17/11; desenho corrigido e rodado em 18/11, depois da liberação da conta |
+| E19 (decisão) | Casos reais do E13 com a v3 na AWS real | E19 | `e19-real-aws.toml` | `20261118T165154` | `success_final`: `none` 1/9 × v2 5/9 × v3 3/9; v3 ≥ v2 não confirmada, a v2 continua a distribuída |
 
 Agenda E5–E7 (mais tarefas de consulta e remoção, ciclo de vida, drift) ficaram como trabalho
 futuro. Índice completo das configs: `configs/README.md`.
@@ -872,6 +872,7 @@ R1 (só na real, N=3); análises de 29/10 (tokens, H3, falha silenciosa).
 - 16/11 (com o usuário): E17 registrado (usuário leigo que diz a preferência em palavras simples, nas 4 tarefas com pergunta do E16) antes de escrever o prompt. A regra de pergunta por atributos no toolkit espera o E17.
 - 16/11 (com o usuário, depois do resultado): teste exploratório do E16 com o usuário `user-sim-lay-v2` (8 trajetórias, 0/8); o oráculo cobra a forma do código. O E16 para aqui; nada de toolkit novo antes do gate.
 - 17/11 (com o usuário, antes do gate S10): E17 registrado como rodado, porque o teste exploratório do E16 com `user-sim-lay-v2` (`20261116T163028-e16-userv2-check`) seguiu o desenho dele (4 tarefas × v2/v3, N=1, Mac, até 3 respostas); 0/8, hipótese não confirmada; pela regra de decisão, o usuário v2 não entra num run maior. E19 não rodado (ver a seção dele no §3). O AWS Emulator (AWS, lançado em 11/11/2026, <https://github.com/aws/aws-emulator>) é citado como alternativa ao Floci para trabalho futuro, sem avaliação aqui. Desenvolvimento congelado para o gate.
+- 18/11: runs feitos e no §3 ("E3 real com 30 tarefas" e "E19"). Correção do sweep (SGs em ciclo, `eaef9ff`) durante o complemento do E3.
 - 18/11 (com o usuário): a AWS tirou a limitação da conta em 17/11 (e-mail de Fraud Prevention; o caso de suporte 179477063900448 nunca foi respondido, e a resposta de 18/11 pede confirmação por escrito). O desenvolvimento não está congelado. Ficou decidido rodar o que a restrição tinha impedido: a tarefa do Lambda e a task-130 nas 10 células da matriz real (emendas do E5 e do E9, `configs/e3-agent-aws-30.toml`, 20 trajetórias) e o E19 com o desenho corrigido (27 trajetórias). Tudo em série no homelab, com gate antes.
 - Não precisam ser rodados de novo: os runs de Sonnet e Haiku no emulador (o protocolo e o prompt `mod-v3` são os mesmos, e os problemas são de leitura, não de coleta) e o A/B/C da Semana 6 (tem protocolo e referências próprias, `protocolo.md`).
 
@@ -892,6 +893,39 @@ Mesma estrutura de E13 (`configs/e13-real-aws.toml`), incluindo a condição `ow
 **Não rodado (decisão do usuário, 17/11).** Motivos: (1) a conta AWS está sob aviso de suspensão (caso 179477063900448, prazo 30/11), e a resposta ao caso promete parar os runs que criam usuários e chaves IAM; (2) o registro acima tem furos: fala em 27 tarefas e 81 trajetórias, mas o E13 tem 9 tarefas com N=3 (a config `e19-real-aws.toml` tem 9 tarefas × 3 condições × N=1 = 27); cita um sorteio com semente e um `configs/e19-selection.json` que não existe, embora as tarefas sejam as mesmas do E13. A v3 nos casos reais fica como trabalho futuro.
 
 **Emenda de 18/11 (com o usuário, antes do gate e de qualquer trajetória): rodar.** O motivo (1) caiu: a AWS tirou a limitação em 17/11 (E5, emenda). Nenhum dos 9 casos cria usuário ou chave IAM, então a promessa feita no caso 179477063900448 vale. O motivo (2) é corrigido aqui, e este desenho substitui o parágrafo de 17/11 acima. **Tarefas:** as 9 do E13, sem sorteio e sem `e19-selection.json`. **Condições:** `none`, `own-rules-v2`, `own-rules-v3`; Sonnet; **N=1**; **27 trajetórias** (`configs/e19-real-aws.toml`), em série no homelab, com o usuário simulado do E13 (`user-sim-v1`, `gpt-6-luna`, até 1 resposta) e a mesma ficha oculta. **Gate:** `modality-prevalidate` na real, como no E13; tarefa reprovada sai e é relatada. **Desfechos:** os do E13 (`success` no 1º turno, pelo P6, e `success_final`). Juiz principal `e3-judge-v2` (Sonnet) e segundo juiz `gpt-6-luna` (E14). **Hipótese (fixada antes):** v3 ≥ v2 em `success_final`, somando as 9 tarefas. **Comparação com o E13:** só descritiva, porque o E13 tem N=3 e o E19 tem N=1. A 1ª rep do E13 entra como referência e é declarada assim. **Limites:** N=1 com 9 casos é leitura exploratória (S4); a regra de decisão do E16 não muda (a v2 continua a distribuída, salvo decisão nova do usuário).
+
+**Resultado (18/11).** Run `runs/20261118T165154-e19-real-aws` (homelab, 27/27 `DONE`, nenhuma falha do
+harness). Gate (`runs/20261118T122453-modality-prevalidate`): 23 válidas, 0 inválidas, 4 sem referência,
+igual ao gate do E13. Juízes `e3-judge-v2` e `gpt-6-luna` nas 27. O `claude-home` das trajetórias ficou no
+homelab, como no E13.
+
+| | `none` | `own-rules-v2` | `own-rules-v3` |
+|---|---|---|---|
+| `success` 1º turno (Sonnet / Luna) | 1/9 / 1/9 | 3/9 / 4/9 | 3/9 / 4/9 |
+| Perguntou (Sonnet) | 1 | 4 | 3 |
+| Usuário respondeu | 1 | 4 | 2 |
+| **`success_final`** | **1/9** | **5/9** | **3/9** |
+| E13, 1ª rep (`success_final`) | 0/9 | 4/9 | — |
+
+- **Hipótese v3 ≥ v2 em `success_final`: não confirmada** (3/9 × 5/9). Com N=1, as duas
+  diferenças estão em duas tarefas: (1) `real-charges-after-delete`: a v2 perguntou, o usuário respondeu e
+  o estado final passou; a v3 listou a causa e parou sem perguntar. (2) `real-s3-delete-versions`: o juiz
+  principal (depois do run) classifica a mensagem da v3 como `ask`, mas o juiz chamado durante o run, logo
+  depois do 1º turno, a classificou como `done_with_followup`. Por isso o usuário simulado não respondeu e o
+  estado final ficou sem a remoção. É não determinismo do juiz no mecanismo do E13, não uma falha do
+  agente, e isso vale para as duas condições.
+- **Toolkit × `none`:** as duas versões ganham do `none` no 1º turno (+0,22 cada no Sonnet, McNemar p = 0,5;
+  Luna, v2 +0,33, Holm 0,5) e no `success_final` (+4 e +2 tarefas). Repete o E13: o `none` pergunta pouco
+  (1/9) e quase não chega ao estado final.
+- **Replicação do E13 (descritiva):** a v2 dá 5/9 aqui × 4/9 na 1ª rep do E13, e o `none` 1/9 × 0/9.
+  O ganho do toolkit nos casos reais se repete numa corrida nova.
+- **Limites:** N=1 com 9 casos; o juiz durante o run decide se o usuário responde (o mesmo juiz, em outra
+  chamada, pode discordar); casos e checks de autoria nossa (T5).
+- **Leitura:** nos casos reais, a v3 não melhora a v2. Junto com o E16 (ganho só em C4, n = 4), sustenta
+  a decisão de 16/11: **a v2 continua a distribuída**. A v3 fica como variante para pedidos de leigo em que
+  a pergunta precisa de opções e consequências, sem evidência de ganho no desfecho.
+- **Conta (18/11, root):** inventário sem nada fora de `runs/aws-baseline.json` depois dos dois runs;
+  Cost Explorer, novembro até 18/11: **US$ 0,67**.
 
 **Declarar** (ameaças à validade): autoria das tarefas não-IaC-Eval (T5); prompt único por forma (D3); construto "gerar e corrigir" (P1, R.5); contaminação desigual entre formas (R.3); N=1 na real (S4).
 
