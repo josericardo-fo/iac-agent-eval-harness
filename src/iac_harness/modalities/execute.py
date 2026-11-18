@@ -47,7 +47,7 @@ class ExecResult:
 
 
 def truncate(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
-    """Mesma truncagem do feedback do agente (feedback.build_feedback)."""
+    """Mesma truncagem do feedback do agente do pipeline legado (tag v1.0.0)."""
     text = strip_ansi(text).strip()
     return text[:max_chars].rstrip() + TRUNCATION_MARK if len(text) > max_chars else text
 
@@ -94,7 +94,7 @@ def _run_commands(
         full = "\n".join(outputs)
         return ExecResult(True, truncate(full, max_chars), raw=full)
     finally:
-        # Mesmo motivo de runner.run_gates: o provider copiado pelo init enche o disco.
+        # O provider copiado pelo init enche o disco.
         remove_terraform_dir(path, toolchain)
 
 
@@ -263,7 +263,7 @@ def run_check(
     settle: bool = False,
     final: bool = False,
 ) -> tuple[bool, dict[str, Any]]:
-    """Roda o check.py num diretório temporário FORA do workspace (como o OpaVerifier).
+    """Roda o check.py num diretório temporário FORA do workspace.
 
     Com `final` (estado depois da resposta do usuário simulado), roda o `check_final.py` da
     tarefa se existir; sem ele, o `check.py`.

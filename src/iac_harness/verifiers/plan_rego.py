@@ -1,11 +1,11 @@
 """Oráculo do Ambig-IaC (E16): `terraform plan` dos arquivos finais do agente + OPA no `data`.
 
 Os arquivos do /work do agente são copiados para um diretório limpo (sem estado, lock, `.terraform`
-nem o override do agente), com o override do Floci do harness; o plan usa o `PlanVerifier` do
-A/B/C. A regra de aprovação é a do avaliador do IaC-Eval (de onde vêm os `checks_rego`): `opa eval
+nem o override do agente), com o override do Floci do harness; o plan usa o `PlanVerifier`.
+A regra de aprovação é a do avaliador do IaC-Eval (de onde vêm os `checks_rego`): `opa eval
 data` e reprova se alguma folha do documento for `false` (aqui só booleanos; o IaC-Eval, em Python,
 também reprovaria um `0`). Os pacotes variam por tarefa e não há regra `main`, por isso não se usa
-o `OpaVerifier` (`data.terraform.policy.main`). Políticas sem `import rego.v1` são Rego v0: com o
+uma regra fixa como `data.terraform.policy.main`. Políticas sem `import rego.v1` são Rego v0: com o
 OPA 1.x da toolchain, rodam com `--v0-compatible` (o IaC-Eval usava OPA 0.x).
 """
 

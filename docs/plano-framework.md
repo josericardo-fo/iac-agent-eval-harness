@@ -49,7 +49,7 @@ código morto removido, arquivos grandes separados, contratos explícitos e, dep
 | Usuário simulado para pedido ambíguo em operação de nuvem (`user.md` oculto) | `agentic/user_sim.py` |
 | Juízes LLM validados (amostra humana, 2º juiz, kappa) | `agentic/judge.py`, `agentic/question_judge.py`, `agent-judge --agreement/--compare-with` |
 | Reset da AWS real por inventário (baseline + sweep) | `executors/aws_sweep.py` |
-| Procedência em cada run (git, imagens por digest, providers, sha da pré-validação) | `cli.py` (`collect_provenance`) |
+| Procedência em cada run (git, imagens por digest, providers, sha da pré-validação) | `cli.py` (`_git_provenance`, `_sandbox_provenance`, `_agent_run_config`) |
 
 ### 3.2 Trabalhos próximos (para a tabela de posicionamento)
 
@@ -134,7 +134,7 @@ saiu com o `conditions.py` do legado.
 - LLM de texto: `if/elif` com `PROVIDERS = ("anthropic", "codex")` (`llm/__init__.py`);
 - juiz: sem interface comum; `DEFAULT_JUDGE_MODEL = DEFAULT_MODEL` amarra ao Anthropic;
 - toolkit: dicionário fixo (`agentic/conditions.py`);
-- backend: `LocalStackExecutor` herda de `FlociExecutor`; serviços e regiões AWS fixos; proxy fixo
+- backend: serviços e regiões AWS fixos; proxy fixo
   em `http://egress-proxy:3128` (`agentic/targets.py`);
 - tasks: as tasks são diretórios sem formato documentado (o `DatasetAdapter` sem uso saiu com o
   legado);
@@ -196,7 +196,7 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
   `TaskSource` da fase 4 nasce do zero).
 - [ ] `agentic/stream.py:335` `verified_state()`: o vulture aponta sem uso (o runner usa
   `ops.verified`). Conferir e apagar.
-- [ ] `datasets/multi_iac_eval.py:29` (`utterance`), `modalities/loader.py:38`
+- [ ] `modalities/loader.py:38`
   (`missing_reason`), `types.py:39-41` (`VALIDATE_FAIL`, `PLAN_FAIL`, `OPA_FAIL`): conferir.
 - [x] Comandos de uso único: `modality-reask` (migração do E2) e `prevalidate-miac` removidos;
   `ambig-prevalidate` (E16) fica, porque é o gate das tasks do Ambig-IaC (ver 8.5).
@@ -217,8 +217,8 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
 
 - [ ] **`cli.py` → pacote `cli/`**:
   - `cli/__init__.py`: só `main()` e o registro dos subparsers;
-  - `cli/common.py`: `load_config`, `select_tasks`, `new_run_id`, montagem de toolchain/executor;
-  - `cli/provenance.py`: `collect_provenance` e auxiliares;
+  - `cli/common.py`: `load_config`, `_select_modality_run`, `new_run_id`, montagem de toolchain/executor;
+  - `cli/provenance.py`: `_git_provenance`, `_sandbox_provenance` e auxiliares;
   - `cli/agent.py`: `agent-run`, `agent-resume`, `agent-judge*`, `agent-questions-report`,
     `agent-metrics`;
   - `cli/modality.py`: `modality-*`, `ambig-prevalidate`;
