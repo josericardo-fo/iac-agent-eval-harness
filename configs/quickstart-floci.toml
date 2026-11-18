@@ -1,0 +1,40 @@
+# Quickstart: um trial curto do agente real no Floci, sem número de experimento.
+# 1 tarefa (mod-sqs-retention: muda a retenção de uma fila SQS existente) × 2 condições
+# (`none` e o toolkit distribuído, `own-rules-v2` = plugin iac-cloud) × Haiku × N=1 = 2 trajetórias.
+# Rodar: `uv run iac-harness agent-run --config configs/quickstart-floci.toml`, depois
+# `agent-judge runs/<id>` e `agent-metrics runs/<id> --format table` (README, "Quickstart").
+# Derivada de configs/e3-pilot.toml; não é citada pelo registro metodológico.
+[run]
+name = "quickstart-floci"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = ["mod-sqs-retention"]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "own-rules-v2"]
+models = ["Haiku 5.5"]   # ID aceito pelo gateway (ANTHROPIC_BASE_URL)
+max_turns = 60
+timeout_s = 1200
+workers = 1
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+endpoint = "http://floci:4566"
+host_endpoint = "http://127.0.0.1:4566"
+container = "iac-harness-floci-1"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 180

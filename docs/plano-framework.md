@@ -165,22 +165,22 @@ são refatoração sem mudar o comportamento. A fase 6 traz features novas.
 
 ### Fase 1: documentação de produto
 
-- [ ] **README com cara de produto**: o que é, para quem, diferenciais (3.1), componentes,
+- [x] **README com cara de produto**: o que é, para quem, diferenciais (3.1), componentes,
   quickstart de um trial no Floci, instalação do toolkit. "Estado/fases" e a história dos
   experimentos vão para `docs/pesquisa.md` (ou ficam no registro), com link.
-- [ ] **`docs/framework.md`**: arquitetura (diagrama dos componentes da seção 4), o ciclo achado →
+- [x] **`docs/framework.md`**: arquitetura (diagrama dos componentes da seção 4), o ciclo achado →
   regra → medida, pré-registro, o que é medido em cada trial, posicionamento (3.2).
-- [ ] **`docs/tarefas.md`**: formato da task (`prompt.md`, `meta.toml`, `initial.tf`, `check.py`,
+- [x] **`docs/tarefas.md`**: formato da task (`prompt.md`, `meta.toml`, `initial.tf`, `check.py`,
   `user.md`, `check_final.py`, `upstream/`), os prefixos por dataset, como criar e pré-validar uma
   task nova.
-- [ ] **`docs/componentes.md`** (ou uma seção por componente): usuário simulado (`[user_sim]`,
+- [x] **`docs/componentes.md`** (ou uma seção por componente): usuário simulado (`[user_sim]`,
   `max_replies`, `success_final`), juízes (prompts versionados, `--sample`, `--agreement`,
   `--compare-with`, kappa), sweep da AWS real (baseline, escopo de regiões e prefixos, o que
   aborta, riscos).
-- [ ] **Mapa da CLI**: os 17 subcomandos agrupados em principal (`agent-*`), modalidades e legado.
-- [ ] **Limitações**: só AWS; agente só Claude Code; juiz padrão Anthropic; usuário simulado via
+- [x] **Mapa da CLI**: os 17 subcomandos agrupados em principal (`agent-*`), modalidades e legado.
+- [x] **Limitações**: só AWS; agente só Claude Code; juiz padrão Anthropic; usuário simulado via
   Codex CLI logado; AWS Emulator não avaliado.
-- [ ] `configs/quickstart-floci.toml`: config neutra para o quickstart (as configs `e*` ficam
+- [x] `configs/quickstart-floci.toml`: config neutra para o quickstart (as configs `e*` ficam
   como estão, pois o registro as cita).
 
 ### Fase 2: código morto e higiene

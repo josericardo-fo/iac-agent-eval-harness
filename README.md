@@ -1,220 +1,127 @@
 # iac-agent-eval-harness
 
-Harness para avaliar agentes que mantêm infraestrutura AWS. Pergunta: em que casos usar cada forma
-(Terraform, AWS CLI, boto3), por tipo de caso e dificuldade. O projeto fecha com um toolkit
-próprio (skill + regras) para ajudar agentes a manter a nuvem de pessoas leigas, com cada regra
-ligada a um achado ([docs/regras-achados.md](docs/regras-achados.md)).
+A framework for evaluating coding agents that operate a cloud account. A real production agent
+(Claude Code, headless, in a container) gets a task on an AWS emulator or a real AWS account; the
+harness resets the backend, plants the initial state, runs the agent with or without a toolkit,
+and grades the final cloud state with a deterministic verifier, plus LLM judges and an optional
+simulated user for ambiguous requests.
 
-## Estado
+It came out of a research residency on agentic systems for cloud infrastructure engineering. The
+results, the toolkit and the method are documented in Portuguese under [`docs/`](docs/)
+(summary in Portuguese: [docs/framework.md](docs/framework.md)).
 
-O projeto teve três fases. Todas usam o mesmo harness (emulador Floci ou AWS real, toolchain em
-Docker, procedência registrada em cada run):
+**Who it is for:** researchers and engineers who want to measure whether an agent (or a skill,
+rule set, plugin or MCP server given to it) actually leaves the cloud in the right state, asks
+when the request is ambiguous, and does not touch what it should not.
 
-1. **Feedback no loop (Semanas 4–6):** quanto validate, plan, OPA e sandbox ajudam um agente que
-   gera Terraform (IaC-Eval v2, condições A/B/C). Protocolo em [docs/protocolo.md](docs/protocolo.md).
-2. **Modalidades (Semanas 6–8):** a mesma tarefa em Terraform, CLI e boto3, no Floci e na AWS
-   real. Nenhuma forma domina; a forma muda o custo em tokens, não o acerto.
-3. **Toolkit (Semanas 8–10):** experimentos E1–E4 e E10–E18, incluindo o Claude Code de verdade
-   com 5 condições de toolkit. O toolkit troca chute por pergunta nos pedidos ambíguos e não perde
-   nas claras; a v2 (`toolkit/src-v2/`) substitui a v1 e é a distribuída. Nos casos reais com
-   usuário simulado (E13), `none` acerta 2/27 e a v2 11/27 no 1º turno (12/27 depois da
-   resposta); com o toolkit, as perguntas saem um pouco melhores (E15). No Ambig-IaC (E16–E18),
-   nenhum toolkit recupera o que a ambiguidade custa: o toolkit ajuda quando falta o tipo de
-   recurso ou o alvo, não quando faltam atributos. A v3 (`toolkit/src-v3/`) fica como achado. O E19 não foi rodado.
+## What it combines
 
-O desenvolvimento congela no gate da Semana 10 (19/11/2026).
+| Feature | Where in the code |
+|---|---|
+| Real production agent (Claude Code headless, in a container, egress only through a proxy) | `agentic/agents.py`, `docker/agent.Dockerfile`, `docker/egress/` |
+| The same task in Terraform, AWS CLI and boto3 | `modalities/` |
+| Toolkit (skill, rules, plugin, MCP) as a controlled variable; a test guarantees the distributed plugin carries the same text as the measured condition | `agentic/conditions.py`, `toolkit/`, `tests/test_toolkit.py` |
+| Emulator × real AWS agreement on the same tasks and verifiers | `agent-metrics --compare`, `executors/floci.py`, `executors/aws.py` |
+| Simulated user for ambiguous cloud requests (hidden `user.md`) | `agentic/user_sim.py` |
+| Validated LLM judges (human sample, second judge, kappa) | `agentic/judge.py`, `agentic/question_judge.py`, `agent-judge --agreement/--compare-with` |
+| Real AWS reset by inventory (baseline + sweep) | `executors/aws_sweep.py` |
+| Provenance in every run (git commit, image ids and digests, tool versions, prompt versions) | `cli.py` (`collect_provenance`, `_agent_run_config`) |
 
-Onde ler:
+Paths are relative to `src/iac_harness/`.
 
-- Decisões de método e resultados: [docs/registro-metodologico.md](docs/registro-metodologico.md).
-  A seção "Experimentos" mapeia experimento → config → run.
-- Guia de decisão (que forma usar e quando usar o toolkit, só com o que tem medida):
-  [docs/guia-decisao.md](docs/guia-decisao.md).
-- Configs por fase: [configs/README.md](configs/README.md).
-- Os runs ficam em `runs/` (fora do git).
+## Components
 
-## Instalar o toolkit no Claude Code
+| Term | Meaning | Current name in the code |
+|---|---|---|
+| Task | directory with request, initial state and verifier | `modalities/tasks/<id>/` ([format](docs/tarefas.md)) |
+| Dataset | set of tasks (IaC-Eval v2, aws-bench, authored, real-world cases, Ambig-IaC) | task id prefixes `task-`, `awsb-`, `mod-`, `amb-`, `real-`, `lay-`… |
+| Backend | where the cloud runs: Floci emulator or a real AWS account | `executors/`, `agentic/targets.py` |
+| Agent | who solves the task | `agentic/agents.py` (`ClaudeCodeAgent`) |
+| Toolkit | what the agent is given: nothing, skill, rules, plugin | `agentic/conditions.py` (`REGISTRY`) |
+| Verifier | checks the final state, no LLM | task `check.py` / `check_final.py` |
+| Judge | LLM classification (did it ask? how good was the question?) | `agentic/judge.py`, `agentic/question_judge.py` |
+| User Simulator | LLM that answers from the hidden `user.md` | `agentic/user_sim.py` |
+| Trial | one execution (task × rep × toolkit × model) | `runs/<id>/<task>/<rep>/<cond>/<model>/` |
 
-O toolkit distribuído é o plugin `iac-cloud`, com o mesmo texto da condição `own-rules-v2`
-medida no E11/E12 (um teste garante isso). Para instalar:
+Architecture diagram, CLI map and what is recorded per trial: [docs/framework.md](docs/framework.md).
+
+## Quickstart: one trial on Floci
+
+Requirements: Docker, [uv](https://docs.astral.sh/uv/), and an Anthropic-compatible gateway
+(`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`). The model IDs in the configs (`Haiku 5.5`,
+`Sonnet 5.5`) are the IDs that gateway accepts; adjust them to yours. The CLI does not read
+`.env`: export the variables.
+
+```bash
+uv sync
+uv run pytest                                   # unit tests, no Docker
+
+docker build -f docker/toolchain.Dockerfile -t iac-harness-toolchain:latest .
+docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest .
+
+export ANTHROPIC_BASE_URL=... ANTHROPIC_AUTH_TOKEN=...
+export LOCALSTACK_AUTH_TOKEN=unused             # the compose file requires the variable
+docker compose -f docker/compose.yaml --profile agent up -d --wait   # Floci + egress proxy
+
+uv run iac-harness agent-run --config configs/quickstart-floci.toml # prints runs/<id>
+uv run iac-harness agent-judge runs/<id>                            # LLM judge: did it ask?
+uv run iac-harness agent-metrics runs/<id> --format table
+
+docker compose -f docker/compose.yaml --profile agent down
+```
+
+[`configs/quickstart-floci.toml`](configs/quickstart-floci.toml) runs one task
+(`mod-sqs-retention`) under two conditions, `none` and `own-rules-v2` (the distributed toolkit),
+with one model and one repetition: two trials. The real cost per trial is recorded in the
+event (`cost_usd`) and shown by `agent-metrics`.
+
+## Install the toolkit in Claude Code
+
+The distributed toolkit is the `iac-cloud` plugin (skill + rules: inventory before acting, ask
+when the request is ambiguous, verify the final state through the API). It carries the same text
+as the measured condition `own-rules-v2`.
 
 ```bash
 claude plugin marketplace add josericardo-fo/iac-agent-eval-harness
 claude plugin install iac-cloud@iac-cloud-toolkit
 ```
 
-Ou, numa sessão: `/plugin install iac-cloud --marketplace josericardo-fo/iac-agent-eval-harness`.
+Or, inside a session: `/plugin install iac-cloud --marketplace josericardo-fo/iac-agent-eval-harness`.
 
-**Diferença em relação ao experimento:** no harness, o `RULES.md` entra pelo
-`--append-system-prompt-file`. Num plugin isso não é possível, então um hook `SessionStart` põe
-o mesmo texto no contexto da sessão. A regra chega ao agente, mas por outro caminho, e esse
-caminho não foi medido. O efeito esperado vem do E3 e do E11/E12: com a regra, o Haiku aciona a
-skill sempre; sem ela, só em parte dos pedidos.
+In the harness the rules enter through `--append-system-prompt-file`; in the plugin a
+`SessionStart` hook adds them to the session context. That delivery path was not measured
+(details in [docs/pesquisa.md](docs/pesquisa.md)). Each rule is traced to a finding in
+[docs/regras-achados.md](docs/regras-achados.md).
 
-## Uso
+## Documentation (Portuguese)
 
-```bash
-uv sync
-uv run ruff check && uv run ruff format --check
-uv run pytest                  # exclui testes de integração por padrão
-uv run pytest -m integration   # sobe o compose; exige Docker e a imagem da toolchain
-```
+- [docs/framework.md](docs/framework.md): summary, architecture, finding → rule → measure cycle,
+  what is recorded, CLI map, positioning, limitations.
+- [docs/tarefas.md](docs/tarefas.md): task format, datasets, how to create and pre-validate a task.
+- [docs/componentes.md](docs/componentes.md): simulated user, judges, real AWS sweep, backends.
+- [docs/registro-metodologico.md](docs/registro-metodologico.md): pre-registered decisions and
+  results (the source of truth); [docs/guia-decisao.md](docs/guia-decisao.md): decision guide.
+- [docs/pesquisa.md](docs/pesquisa.md): research history and per-experiment usage;
+  [configs/README.md](configs/README.md): which config produced which run.
 
-### 1. Construir a imagem da toolchain
+## Limitations
 
-```bash
-docker build -f docker/toolchain.Dockerfile -t iac-harness-toolchain:latest .
-```
+- AWS only. One agent (Claude Code); the LLM layer talks to an Anthropic gateway or the Codex CLI.
+- The default judge is Anthropic (`Sonnet 5.5`); the simulated user defaults to the Codex CLI
+  (`gpt-6-luna`), which needs a logged-in `codex`.
+- The real AWS backend deletes everything outside its baseline in the scoped regions and costs
+  money; read [docs/componentes.md](docs/componentes.md) before using it.
+- The official AWS Emulator was not evaluated; LocalStack now requires a token.
+- The prompts of the modality and feedback pipelines pin Terraform ≥ 1.15 and `hashicorp/aws ~> 6.0`.
+- Names still carry research history (experiment ids in configs, `agentic/`, `modalities/`); the
+  renaming plan is in [docs/plano-framework.md](docs/plano-framework.md).
 
-A imagem traz Terraform (1.15.x exato, `ARG TERRAFORM_VERSION`), OPA 1.16.1 e um filesystem mirror
-com os providers fixados (`aws` 6.66.0, `archive` 2.8.1 e `random` 3.9.1, via `ARG`), então
-`terraform init` funciona sem internet.
+## Reproducibility
 
-### 2. Subir o Floci
+The commands, configs and run ids cited in
+[docs/registro-metodologico.md](docs/registro-metodologico.md) are valid for tag **`v1.0.0`**,
+not for `HEAD`: after the tag the code may be refactored (without changing recorded values). To
+reproduce a registered run, `git checkout v1.0.0`. Runs live in `runs/` (outside git); each one
+records its config, git commit, image digests and prompt versions in `run_config.json`.
 
-```bash
-docker compose -f docker/compose.yaml up -d --wait
-docker compose -f docker/compose.yaml down   # ao terminar
-```
-
-O Floci fica na rede `iac-sandbox` (`internal: true`); a porta 4566 é exposta só em 127.0.0.1.
-A imagem do Floci está fixada por digest. A toolchain acessa `http://floci:4566`; o harness, no host,
-usa `sandbox.host_endpoint` (127.0.0.1).
-
-O reset é um `docker restart` do container `sandbox.container`, seguido de espera pelo health e da
-criação da VPC default em todas as regiões. O `POST /_floci/state/reset` do Floci 2.1.0 não serve:
-apaga a VPC default e não a recria (protocolo §9.2). Se o reset falhar, o comando aborta.
-
-Existe também o [AWS Emulator](https://github.com/aws/aws-emulator), emulador oficial da AWS lançado
-em 11/11/2026. Ele não foi avaliado neste estudo e fica como alternativa ao Floci em trabalho futuro.
-
-Chaves de `[sandbox]`: `endpoint` (visão da toolchain), `host_endpoint` (visão do host, padrão
-`http://127.0.0.1:4566`), `container` (padrão `iac-harness-floci-1`) e `region`.
-
-### 3. Pré-validar as referências
-
-```bash
-uv run iac-harness prevalidate --config configs/smoke.toml --limit 3
-uv run iac-harness prevalidate --config configs/mvp.toml --tasks aws/task-269
-```
-
-Grava `runs/<id>/prevalidation.jsonl` (status por estágio, `harness_valid`, `sandbox_supported`) e
-`prevalidation_summary.json` (Floci coverage), mais `prevalidation_config.json` com a procedência. O dataset é baixado para `data/` na primeira vez.
-
-### 4. Rodar o agente
-
-```bash
-export ANTHROPIC_API_KEY=...   # a CLI não lê .env: exporte (ex.: set -a; source .env)
-uv run iac-harness run --config configs/smoke.toml --tasks aws/task-269 --reps 1 \
-    --prevalidation runs/<id>/prevalidation.jsonl   # ou --no-prevalidation (smoke)
-```
-
-Grava `runs/<id>/events.jsonl` e `run_config.json` (config, procedência, `prompt_version` e o sha256
-da pré-validação). `--prevalidation`
-é obrigatório; só `--no-prevalidation` (smoke) permite rodar sem ela, assumindo `harness_valid` e
-`sandbox_supported` verdadeiros.
-
-### 5. Métricas
-
-```bash
-uv run iac-harness metrics runs/<id>
-```
-
-Para rodar sem Docker (dev), use `toolchain.mode = "local"` com `terraform` e `opa` no PATH; o
-endpoint do Floci deve então ser alcançável do host (por exemplo `http://127.0.0.1:4566`).
-
-A chave da Anthropic vem da variável de ambiente (modelo em `.env.example`).
-
-### AWS real (modalidades)
-
-`[sandbox] kind = "aws"` troca o emulador pela conta AWS real (`configs/modality-real-aws.toml`, e
-`configs/modality-real-aws-msk.toml` só para a task-201). A toolchain usa as credenciais
-`IAC_AWS_ACCESS_KEY_ID`/`IAC_AWS_SECRET_ACCESS_KEY` do ambiente (passadas ao container só pelo
-nome, nunca na linha de comando), sem `AWS_ENDPOINT_URL` e na rede `bridge`. Antes de tudo,
-`aws sts get-caller-identity` precisa devolver `[sandbox] expected_arn`; senão o comando aborta.
-
-O reset tira um inventário (baseline) na primeira chamada e, a cada tentativa, apaga tudo o que
-não está nele (`executors/aws_sweep.py`, rodado na toolchain): EC2 (com volumes e snapshots),
-RDS sem snapshot final, Lightsail, MSK, S3 (com versões), DynamoDB, SQS, SNS, parâmetros SSM,
-Secrets Manager sem recuperação, chaves KMS do cliente (exclusão agendada em 7 dias), usuários/grupos
-IAM `del-*`/`mod-*` e, em `us-west-2`, EIPs, volumes e snapshots (E13). Recursos da VPC
-default ficam intactos. Se sobrar algo fora do baseline, o comando aborta.
-Ao fim de `modality-prevalidate`/`modality-run` (inclusive com erro), uma limpeza final apaga o
-que o último par criou.
-
-O baseline fica em `[sandbox] baseline_file` (padrão `runs/aws-baseline.json`) e representa a
-conta limpa: é reaproveitado entre runs e no `--resume`, para que as sobras de um run que caiu
-sejam apagadas. Apagar o arquivo faz o próximo run tirar um inventário novo da conta; só faça isso
-com a conta limpa, ou as sobras viram baseline e nunca são apagadas.
-
-Premissas:
-- não crie nada em `us-east-1` nem EC2 em `us-west-2` (nem usuários/grupos IAM `del-*`/`mod-*`)
-  durante um run real: o que aparecer fora do baseline é apagado;
-- custa dinheiro: RDS, EC2 e sobretudo MSK cobram por hora; confira o Cost Explorer depois de
-  cada run (orçamento da conta: US$ 20 com alertas);
-- a task-201 (MSK) roda à parte, e as tarefas 108, 110, 115 e 118 falham por desenho
-  (`docs/datasets.md`).
-
-```bash
-set -a; source .env; set +a   # IAC_AWS_* (a CLI não lê .env)
-uv run iac-harness modality-prevalidate --config configs/modality-real-aws.toml \
-    --tasks mod-sqs-retention del-s3-bucket
-```
-
-O resultado de cada limpeza (apagados, falhas, restantes) sai no stderr como `aws sweep: {...}`.
-
-## Estudo de modalidades (Terraform, AWS CLI, boto3)
-
-O agente resolve a mesma tarefa em cada forma; a nota vem do estado final dos recursos
-(`check.py` da tarefa). Desenho e decisões: [docs/registro-metodologico.md](docs/registro-metodologico.md).
-
-```bash
-uv run iac-harness modality-prevalidate --config configs/modality-haiku.toml   # referência e estado inicial
-uv run iac-harness modality-run --config configs/modality-haiku.toml           # --resume <run> retoma
-uv run iac-harness modality-metrics runs/<id>
-```
-
-- **Forma livre (E4):** `modalities = ["free"]` (`configs/e4-free-haiku.toml`); o agente escolhe a
-  forma a cada tentativa. Roda sozinha e sem `allow_question`. Compare com uma forma fixa:
-  `modality-metrics <run> --baseline <run de forma fixa>`.
-- **Efeito colateral por replay (E1):** `modality-replay <run>` reexecuta sem LLM o artefato final de
-  cada trajetória (padrão: `--categories modify,query`) e mede `collateral_ok` à parte da nota.
-  Resumo: `modality-metrics <run do replay>`.
-- **Reclassificar perguntas (E2):** `modality-reask <run>` corta, sem LLM, as trajetórias em que o
-  agente perguntou com um bloco ` ```question.md ` que o parser antigo não lia.
-
-## E3: agente real (Claude Code headless em container)
-
-O Claude Code (`claude -p`) age sozinho no Floci ou na AWS real, sob 5 condições de toolkit
-(`none`, `aws-core`, `own-skill-only`, `own-rules`, `own-tools`), mais `own-rules-v2` desde o
-E11/E12 (texto em `toolkit/src-v2/`; pela regra de decisão do registro, a v2 substitui a v1). Código
-em `src/iac_harness/agentic/`; o toolkit próprio sai de `toolkit/src/` e `toolkit/src-v2/` com
-`uv run python toolkit/build.py`.
-
-```bash
-docker build -f docker/agent.Dockerfile -t iac-harness-agent:latest .
-set -a; source .env; set +a
-export LOCALSTACK_AUTH_TOKEN=unused   # o compose exige a variável
-docker compose -f docker/compose.yaml --profile agent --profile agent-workers up -d --wait
-
-uv run iac-harness agent-run --config configs/e3-agent-haiku.toml   # --tasks/--reps para recortar
-uv run iac-harness agent-resume runs/<id>                           # pula o que já tem evento final
-uv run iac-harness agent-judge runs/<id>                            # juiz: a mensagem final pergunta algo?
-uv run iac-harness agent-judge runs/<id> --sample 30 --seed 20261106   # judge_sample.csv para leitura à mão
-uv run iac-harness agent-judge runs/<id> --agreement runs/<id>/judge_sample.csv   # juiz × humano
-uv run iac-harness agent-judge runs/<id> --provider codex --out judge-luna.jsonl   # 2º juiz (gpt-6-luna, E14)
-uv run iac-harness agent-judge runs/<id> --compare-with judge-luna.jsonl   # juiz × juiz (kappa)
-uv run iac-harness agent-metrics runs/<id> --format table           # condição × modelo, estratos, alvo
-uv run iac-harness agent-metrics runs/<floci> --compare runs/<aws>  # concordância Floci × AWS real
-uv run iac-harness demo-timeline runs/<id>/<task>/<rep>/<cond>/<modelo> -o cena.json   # timeline da demo animada
-```
-
-- O agente roda como usuário não-root, com egresso só pelo proxy squid (perfil `agent`).
-- Os estratos (intenção, categoria, origem, dificuldade, alvo) ficam em `configs/strata.toml`.
-- Usuário simulado (E13, opcional): com `[user_sim]` na config, quando o juiz classifica o 1º turno
-  como `ask`, um modelo (`provider = "codex"`, `model = "gpt-6-luna"`, Codex CLI logado) responde a
-  partir do `user.md` oculto da tarefa e a sessão é retomada (`max_replies`, padrão 1). O
-  `check_final.py` opcional confere o estado depois da resposta (`success_final`). `[judge] provider`
-  escolhe o fornecedor do juiz (padrão `anthropic`); `[modality] tasks_dir` troca o catálogo de
-  tarefas. Smoke: `configs/e13-usersim-floci.toml`.
-- Os testes de integração fazem `docker compose down`: não rode com um run em andamento.
+Third-party code under `third_party/` keeps its own LICENSE and NOTICE.

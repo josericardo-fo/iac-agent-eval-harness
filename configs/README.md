@@ -64,3 +64,9 @@ Desenho em `docs/desenho-modalidades.md`. Tarefas e gates em `docs/selecao-taref
 | E19 | `e19-real-aws.toml` | Casos reais do E13 com a v3 na real | nenhum | não rodado |
 | todos | `strata.toml` | Estratos das tarefas, lidos pelo `agent-metrics` | n/a | ativa |
 
+
+## Framework (sem número de experimento)
+
+| Config | Para quê | Runs | Status |
+|---|---|---|---|
+| `quickstart-floci.toml` | Quickstart do README: 1 tarefa (`mod-sqs-retention`) × `none`/v2 × Haiku × N=1 no Floci; derivada do `e3-pilot.toml` | nenhum | ativa |
