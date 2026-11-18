@@ -158,13 +158,14 @@ são refatoração sem mudar o comportamento. A fase 6 traz features novas.
 
 ### Fase 0: base
 
-- [ ] Esperar o fim do r18 (homelab) e registrar os resultados antes de mexer em código.
-- [ ] Tag de referência dos resultados (`v1.0.0`, ver 8.1), com push.
+- [x] Esperar o fim do r18 (homelab) e registrar os resultados antes de mexer em código (18/11:
+  E3 real com 30 tarefas e E19 no registro).
+- [x] Tag de referência dos resultados (`v1.0.0`, ver 8.1), com push (18/11, sobre `de13ca7`).
 - [x] `demo/` no `.gitignore` (hoje só no `.git/info/exclude`).
 - [x] Descrição do `pyproject.toml` atualizada (o que o harness avalia hoje).
 - [x] Criar o teste de ouro (seção 7) antes de qualquer refatoração: `scripts/golden.sh`
-  (16 casos, determinístico; 15 depois que o `metrics` do legado saiu). Falta gravar o snapshot
-  na tag: `scripts/golden.sh capture`.
+  (16 casos, determinístico; 15 depois que o `metrics` do legado saiu). Snapshot gravado
+  na tag (`de13ca7`, 16 casos); as branches do framework conferem 15.
 
 ### Fase 1: documentação de produto
 
