@@ -196,8 +196,11 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
   `TaskSource` da fase 4 nasce do zero).
 - [x] `agentic/stream.py:335` `verified_state()`: o vulture aponta sem uso (o runner usa
   `ops.verified`). Apagado; os testes que o usavam passaram a conferir `state_ops(...).verified`.
-- [ ] `modalities/loader.py:38`
-  (`missing_reason`), `types.py:39-41` (`VALIDATE_FAIL`, `PLAN_FAIL`, `OPA_FAIL`): conferir.
+- [x] `modalities/loader.py:38`
+  (`missing_reason`), `types.py:39-41` (`VALIDATE_FAIL`, `PLAN_FAIL`, `OPA_FAIL`): conferidos,
+  ficam. `missing_reason` é lido do `meta.toml` (6 tasks e o adaptador do Ambig-IaC); os três
+  valores de `FirstFailure` estão gravados nos `events.jsonl` dos runs do legado (comentário no
+  enum).
 - [x] Comandos de uso único: `modality-reask` (migração do E2) e `prevalidate-miac` removidos;
   `ambig-prevalidate` (E16) fica, porque é o gate das tasks do Ambig-IaC (ver 8.5).
 - [ ] Scripts de seleção (`scripts/select_*.py`, `scripts/e15_overnight.sh`): mover para

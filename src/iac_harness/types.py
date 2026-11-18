@@ -36,6 +36,8 @@ class FirstFailure(StrEnum):
     """Primeira falha da cadeia (vocabulário único para tentativas e avaliação final)."""
 
     PASS = "PASS"
+    # VALIDATE_FAIL, PLAN_FAIL e OPA_FAIL: sem uso no código, mas gravados nos events.jsonl dos
+    # runs do pipeline de feedback no loop (tag v1.0.0); ficam para os leitores dos runs antigos.
     VALIDATE_FAIL = "VALIDATE_FAIL"
     PLAN_FAIL = "PLAN_FAIL"
     OPA_FAIL = "OPA_FAIL"
