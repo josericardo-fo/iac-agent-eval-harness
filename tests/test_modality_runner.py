@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from iac_harness import cli
 from iac_harness.cli import common as cli_common
 from iac_harness.cli import main
+from iac_harness.cli import modality as cli_modality
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.modalities import prompts
 from iac_harness.modalities.execute import _run_commands, truncate_middle
@@ -493,7 +493,7 @@ def _metrics_run(tmp_path, events):
 
 
 def test_modality_metrics_cli_exclude_tasks(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(cli, "_modality_difficulty", dict)
+    monkeypatch.setattr(cli_modality, "_modality_difficulty", dict)
     events = [
         _final("cli", "create", True, 1, 10, "EXEC_OK", task_id="a"),
         _final("cli", "create", False, 1, 10, "EXEC_OK", task_id="b"),
@@ -509,7 +509,7 @@ def test_modality_metrics_cli_exclude_tasks(tmp_path, capsys, monkeypatch):
 
 
 def test_modality_metrics_cli_exclude_unknown_task_fails(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "_modality_difficulty", dict)
+    monkeypatch.setattr(cli_modality, "_modality_difficulty", dict)
     run_dir = _metrics_run(tmp_path, [_final("cli", "create", True, 1, 10, "EXEC_OK", task_id="a")])
     with pytest.raises(SystemExit, match="não encontradas no run"):
         main(["modality-metrics", str(run_dir), "--exclude-tasks", "taks-a"])
@@ -554,7 +554,7 @@ def test_modality_resume_skips_completed(tmp_path, monkeypatch):
     )  # fmt: skip
     ran = []
     monkeypatch.setattr(
-        cli, "_modality_loop",
+        cli_modality, "_modality_loop",
         lambda cfg, tasks, mods, reps, rd, rid, tc, ex, skip=frozenset(): ran.append(
             [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in mods
              if (t.task_id, m, r) not in skip]
@@ -681,10 +681,10 @@ def test_modality_replay_cli(tmp_path, monkeypatch, capsys):
     src = _src_run(tmp_path)
     tc = ScriptedToolchain()
     ex = FakeExec(tc)
-    monkeypatch.setattr(cli, "build_toolchain", lambda cfg: tc)
-    monkeypatch.setattr(cli, "build_executor", lambda cfg, t, allow_real_aws=False: ex)
-    monkeypatch.setattr(cli, "_git_provenance", lambda: {"git_commit": "def"})
-    monkeypatch.setattr(cli, "_sandbox_provenance", lambda e: {"sandbox_kind": "floci"})
+    monkeypatch.setattr(cli_modality, "build_toolchain", lambda cfg: tc)
+    monkeypatch.setattr(cli_modality, "build_executor", lambda cfg, t, allow_real_aws=False: ex)
+    monkeypatch.setattr(cli_modality, "_git_provenance", lambda: {"git_commit": "def"})
+    monkeypatch.setattr(cli_modality, "_sandbox_provenance", lambda e: {"sandbox_kind": "floci"})
     contents = []
 
     def fake_replay(task, modality, content, *a, rep, max_chars):
@@ -693,7 +693,7 @@ def test_modality_replay_cli(tmp_path, monkeypatch, capsys):
                 "check_details": {"k": 1}, "collateral_ok": False,
                 "collateral_details": {"changed": {"id": {"before": 1, "after": 2}}}}  # fmt: skip
 
-    monkeypatch.setattr(cli, "replay_pair", fake_replay)
+    monkeypatch.setattr(cli_modality, "replay_pair", fake_replay)
     assert main(["modality-replay", str(src)]) == 0
     run_dir = Path(capsys.readouterr().out.strip())
     assert run_dir.parent == src.parent and run_dir.name.endswith("-replay-src-run")
@@ -728,7 +728,9 @@ def test_modality_replay_rejects_real_aws(tmp_path, monkeypatch):
     saved = json.loads((src / "run_config.json").read_text())
     saved["config"]["sandbox"] = {"kind": "aws"}
     (src / "run_config.json").write_text(json.dumps(saved))
-    monkeypatch.setattr(cli, "build_executor", lambda *a, **k: pytest.fail("não pode construir"))
+    monkeypatch.setattr(
+        cli_modality, "build_executor", lambda *a, **k: pytest.fail("não pode construir")
+    )
     with pytest.raises(SystemExit, match="só roda no Floci"):
         main(["modality-replay", str(src)])
     assert not list((tmp_path / "runs").glob("*-replay-src-run"))
@@ -1045,9 +1047,9 @@ def test_free_invalid_combinations_are_rejected(tmp_path, modality_cfg, match):
 
 def test_free_backend_uses_free_prompts(monkeypatch):
     built = []
-    monkeypatch.setattr(cli, "_build_backend", lambda cfg, **kw: built.append(kw) or kw)
+    monkeypatch.setattr(cli_modality, "_build_backend", lambda cfg, **kw: built.append(kw) or kw)
     cfg = {"modality": {"modalities": ["free"]}}
-    backends = cli._modality_backends(cfg, ["free"])
+    backends = cli_modality._modality_backends(cfg, ["free"])
     assert set(backends) == {"free"}
     (kw,) = built
     assert kw["system_prompt"] == prompts.free_system_prompt()
@@ -1069,7 +1071,7 @@ def test_free_resume_skips_completed(tmp_path, monkeypatch):
     )
     ran = []
     monkeypatch.setattr(
-        cli, "_modality_loop",
+        cli_modality, "_modality_loop",
         lambda cfg, tasks, mods, reps, rd, rid, tc, ex, skip=frozenset(): ran.append(
             [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in mods
              if (t.task_id, m, r) not in skip]
@@ -1179,7 +1181,7 @@ def test_compare_free_to_baseline():
 
 
 def test_modality_metrics_cli_baseline(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(cli, "_modality_difficulty", dict)
+    monkeypatch.setattr(cli_modality, "_modality_difficulty", dict)
     (tmp_path / "f").mkdir()
     (tmp_path / "b").mkdir()
     free_dir = _metrics_run(tmp_path / "f", [_free_final("a", "create", "terraform", 150, 15)])
@@ -1249,8 +1251,8 @@ def test_modality_resume_output_is_byte_identical(tmp_path, monkeypatch, capsys)
         json.dumps({"config": cfg, "reps": 1, "tasks": ["task-108"],
                     "modalities": ["cli", "boto3"], "nota": "ação"})
     )  # fmt: skip
-    monkeypatch.setattr(cli, "_modality_loop", lambda *a, **k: None)
-    monkeypatch.setattr(cli, "_modality_summary", lambda events: "SUMMARY")
+    monkeypatch.setattr(cli_modality, "_modality_loop", lambda *a, **k: None)
+    monkeypatch.setattr(cli_modality, "_modality_summary", lambda events: "SUMMARY")
     monkeypatch.setattr(
         cli_common, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False}
     )
