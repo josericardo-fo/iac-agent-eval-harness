@@ -1,0 +1,39 @@
+# E3 real, complemento de 18/11 (registro, emendas do E5 e do E9): a conta foi liberada em 17/11.
+# A tarefa do Lambda (fora desde 09/11) e a task-130 (bloqueada pela conta na matriz) rodam nas
+# 10 células da matriz (5 condições x Haiku/Sonnet x N=1 = 20 trajetórias). O resto é igual a
+# configs/e3-agent-aws.toml.
+[run]
+name = "e3-agent-aws-30"
+reps = 1
+runs_dir = "runs"
+
+[modality]
+tasks = ["awsb-lambda-versioned-alias-update", "task-130"]
+
+[agentic]
+agent = "claude-code"
+image = "iac-harness-agent:latest"
+conditions = ["none", "aws-core", "own-skill-only", "own-rules", "own-tools"]
+models = ["Haiku 5.5", "Sonnet 5.5"]
+max_turns = 60
+timeout_s = 1200
+workers = 1   # obrigatório no alvo aws
+strata_file = "configs/strata.toml"
+
+[judge]
+model = "Sonnet 5.5"
+
+[feedback]
+max_chars = 2000
+
+[sandbox]
+# AWS real (README, "AWS real"): credenciais IAC_AWS_* do ambiente; reset = limpeza por inventário.
+kind = "aws"
+# Guarda de identidade: conferida antes de cada trajetória.
+expected_arn = "arn:aws:iam::931493484341:user/iac-harness"
+region = "us-east-1"
+
+[toolchain]
+mode = "docker"
+image = "iac-harness-toolchain:latest"
+timeout_s = 1800   # RDS, EC2 e a limpeza levam minutos

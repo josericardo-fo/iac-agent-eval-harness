@@ -1,5 +1,5 @@
 # E19 (registro): replicação de E13 com toolkit v3 na AWS real.
-# NÃO RODADO (decisão de 17/11, registro §3 "E19"): conta AWS sob aviso de suspensão.
+# Não rodado em 17/11; rodado em 18/11 depois da liberação da conta (registro §3 "E19", emenda).
 # 9 tarefas (mesmas do E13) x 3 condições (none, own-rules-v2, own-rules-v3) x Sonnet x N=1 = 27 trajetórias, em série.
 # Hipótese: v3 (pergunta com opções e consequências) mantém o ganho de v2 em casos reais.
 # Antes: `modality-prevalidate` para garantir que as 9 tarefas passam.
