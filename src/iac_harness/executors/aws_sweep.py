@@ -503,6 +503,19 @@ def _deleters(session: Any) -> dict[str, Any]:
             client.disassociate_address(AssociationId=addr["AssociationId"])
         client.release_address(AllocationId=allocation_id)
 
+    def security_group(group_id: str) -> None:
+        # SGs que se referenciam em ciclo (ex.: saída do app → db, entrada do db ← app) nunca saem
+        # com DeleteSecurityGroup puro: revoga antes as regras que apontam para outro SG.
+        group = ec2.describe_security_groups(GroupIds=[group_id])["SecurityGroups"][0]
+        for key, revoke in (
+            ("IpPermissions", ec2.revoke_security_group_ingress),
+            ("IpPermissionsEgress", ec2.revoke_security_group_egress),
+        ):
+            perms = [p for p in group.get(key, []) if p.get("UserIdGroupPairs")]
+            if perms:
+                revoke(GroupId=group_id, IpPermissions=perms)
+        ec2.delete_security_group(GroupId=group_id)
+
     def delete_volume(volume_id: str, client: Any = ec2) -> None:
         # Volume de instância terminada some sozinho; o resto sai já ("in-use" falha e é retentado).
         try:
@@ -589,7 +602,7 @@ def _deleters(session: Any) -> dict[str, Any]:
         "usw2_snapshots": lambda i: delete_snapshot(i, ec2_west),
         "usw2_volumes": lambda i: delete_volume(i, ec2_west),
         "ec2_network_interfaces": network_interface,
-        "ec2_security_groups": lambda i: ec2.delete_security_group(GroupId=i),
+        "ec2_security_groups": security_group,
         "ec2_subnets": lambda i: ec2.delete_subnet(SubnetId=i),
         "ec2_internet_gateways": igw,
         "ec2_route_tables": route_table,
