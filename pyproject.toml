@@ -1,7 +1,7 @@
 [project]
 name = "iac-agent-eval-harness"
 version = "0.1.0"
-description = "Harness para medir o ganho incremental de feedback (validate/plan/OPA/sandbox) em agentes que geram Terraform."
+description = "Framework para avaliar agentes que operam a nuvem (AWS): agente real em container, emulador ou conta real, verificador de estado, juízes LLM e usuário simulado."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["anthropic", "httpx2>=2.13,<3"]
