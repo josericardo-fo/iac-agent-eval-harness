@@ -33,4 +33,7 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 pythonpath = ["tests"]
 addopts = '-m "not integration"'
-markers = ["integration: exige Docker + Floci (rode com -m integration)"]
+markers = [
+    "integration: exige Docker + Floci (rode com -m integration)",
+    "collateral: matriz de colateral da integração (~7 min); só quando mudam checks, replay ou tasks",
+]

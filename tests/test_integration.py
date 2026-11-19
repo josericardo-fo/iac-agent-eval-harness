@@ -195,6 +195,7 @@ def modality_env(floci):
     return toolchain, build_executor(cfg, toolchain)
 
 
+@pytest.mark.collateral
 @pytest.mark.parametrize(("task_id", "modality", "kind"), COLLATERAL_CASES)
 def test_collateral_reference_and_sabotage(modality_env, tmp_path, task_id, modality, kind):
     """Referência nas três modalidades não mexe no retrato; a sabotagem (CLI) mexe."""

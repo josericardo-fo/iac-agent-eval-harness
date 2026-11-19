@@ -335,7 +335,9 @@ simples. Só o necessário para as peças que já existem mais as da fase 6; nad
 
 1. Gate do repo: `uv run ruff check && uv run ruff format --check && uv run pytest`.
 2. Integração, quando a mudança tocar backend, toolchain ou agente:
-   `uv run pytest -m integration` (sobe o compose; não rode com um run em andamento).
+   `uv run pytest -m integration` (sobe o compose; não rode com um run em andamento; ~13 min).
+   Sem a matriz de colateral (~3 min): `uv run pytest -m "integration and not collateral"`; a
+   matriz só é necessária quando mudam `modalities/checks.py`, `modalities/replay.py` ou as tasks.
 3. **Teste de ouro** (criar na fase 0): rodar os leitores sobre runs já existentes e comparar a
    saída com a da tag de referência. Exemplo:
    `agent-metrics`, `agent-questions-report`, `modality-metrics`, `metrics` e `demo-timeline` sobre
