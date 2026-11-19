@@ -234,7 +234,7 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
     *Não feito: ficaram em `cli/agent.py` e `cli/modality.py`. Os dois montam o contexto a partir
     da config (backends por modalidade, raiz dos plugins, estratos) e imprimem o progresso;
     levá-los para os runners muda assinaturas, não só o lugar do código. Fica para a fase 4
-    (contratos). O `_run_pairs` saiu com o pipeline legado.*
+    (contratos). O `_run_pairs` saiu com o pipeline legado. Em 19/11 a fase 4 fechou sem esse item (seção 9).*
 - [x] **`executors/aws_sweep.py`**: um módulo por grupo de serviço (`sweep/ec2.py`, `sweep/s3.py`,
   `sweep/iam.py`…) com um registro de sweepers. Atenção: o arquivo roda dentro da toolchain;
   conferir como ele é copiado/montado antes de virar pacote.
@@ -368,3 +368,4 @@ Perguntar ao usuário antes de executar o item que depende delas.
 | 18/11/2026 | Pipeline de feedback no loop removido (comandos, runner, condições A/B/C, OPA, configs); entra depois da tag `v1.0.0` | a tag preserva; o código vivo fica só com modalidades e agente real |
 | 18/11/2026 | `modality-reask` e `prevalidate-miac` removidos; `ambig-prevalidate` fica | uso único × gate das tasks do Ambig-IaC |
 | 18/11/2026 | `cli.py` vira o pacote `cli/`; os laços de execução ficam na CLI até a fase 4 | mover sem mudar a lógica; tirar os laços da CLI exige mudar assinaturas |
+| 19/11/2026 | Fase 4 sem tirar os laços (`_agent_loop`, `_modality_loop`) da CLI; o item passa para depois da entrega, antes da fase 5 | com os contratos prontos (Backend, TaskSource, Toolkit, Agent), tirar os laços muda as assinaturas do caminho principal; não cabia antes do gate de 19/11 |
