@@ -554,8 +554,8 @@ def test_modality_resume_skips_completed(tmp_path, monkeypatch):
     )  # fmt: skip
     ran = []
     monkeypatch.setattr(
-        cli_modality, "_modality_loop",
-        lambda cfg, tasks, mods, reps, rd, rid, tc, ex, skip=frozenset(): ran.append(
+        cli_modality, "run_all",
+        lambda tasks, mods, reps, backends, ctx, skip=frozenset(): ran.append(
             [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in mods
              if (t.task_id, m, r) not in skip]
         ),
@@ -1071,8 +1071,8 @@ def test_free_resume_skips_completed(tmp_path, monkeypatch):
     )
     ran = []
     monkeypatch.setattr(
-        cli_modality, "_modality_loop",
-        lambda cfg, tasks, mods, reps, rd, rid, tc, ex, skip=frozenset(): ran.append(
+        cli_modality, "run_all",
+        lambda tasks, mods, reps, backends, ctx, skip=frozenset(): ran.append(
             [(t.task_id, m, r) for r in range(1, reps + 1) for t in tasks for m in mods
              if (t.task_id, m, r) not in skip]
         ),
@@ -1251,7 +1251,7 @@ def test_modality_resume_output_is_byte_identical(tmp_path, monkeypatch, capsys)
         json.dumps({"config": cfg, "reps": 1, "tasks": ["task-108"],
                     "modalities": ["cli", "boto3"], "nota": "ação"})
     )  # fmt: skip
-    monkeypatch.setattr(cli_modality, "_modality_loop", lambda *a, **k: None)
+    monkeypatch.setattr(cli_modality, "run_all", lambda *a, **k: None)
     monkeypatch.setattr(cli_modality, "_modality_summary", lambda events: "SUMMARY")
     monkeypatch.setattr(
         cli_common, "_git_provenance", lambda: {"git_commit": "abc", "git_dirty": False}

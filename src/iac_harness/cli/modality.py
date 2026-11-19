@@ -6,7 +6,6 @@ import argparse
 import json
 import shutil
 import sys
-from collections.abc import Container
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +51,7 @@ from iac_harness.modalities.replay import prevalidate_pair, replay_pair
 from iac_harness.modalities.runner import (
     DEFAULT_MAX_ATTEMPTS,
     ModRunContext,
-    run_pair,
+    run_all,
 )
 from iac_harness.modalities.spec import FREE, MODALITIES
 from iac_harness.recorder.jsonl import JsonlRecorder
@@ -335,19 +334,16 @@ def _modality_backends(cfg: dict[str, Any], modalities: list[str]) -> dict[str, 
     }
 
 
-def _modality_loop(
+def _modality_context(
     cfg: dict[str, Any],
-    tasks: list[Any],
     modalities: list[str],
-    reps: int,
     runs_dir: Path,
     run_id: str,
     toolchain: Toolchain,
     executor: FlociExecutor,
-    skip: Container[tuple] = frozenset(),
-) -> None:
-    """Rep externo: as modalidades de uma tarefa rodam lado a lado no tempo (menos deriva)."""
-    ctx = ModRunContext(
+) -> ModRunContext:
+    """Contexto do runner a partir de `[agent]`, `[modality]` e `[feedback]`."""
+    return ModRunContext(
         run_id=run_id,
         runs_dir=runs_dir,
         toolchain=toolchain,
@@ -358,25 +354,6 @@ def _modality_loop(
         allow_question=_allow_question(cfg),
         free_choice=FREE.name in modalities,
     )
-    backends = _modality_backends(cfg, modalities)
-    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
-    try:
-        for rep in range(1, reps + 1):
-            for task in tasks:
-                for name in modalities:
-                    if (task.task_id, name, rep) in skip:
-                        continue
-                    modality = FREE if name == FREE.name else MODALITIES[name]
-                    final = run_pair(task, modality, rep, backends[name], recorder, ctx)
-                    print(
-                        f"{task.task_id} × {name} rep {rep}: success={final['success']} "
-                        f"check={final['check_pass']} "
-                        f"{final['termination']} ({final['attempts']} tent.)",
-                        file=sys.stderr,
-                    )
-    finally:
-        recorder.close()
-        final_cleanup(executor)  # modality-run e --resume passam por aqui
 
 
 def cmd_modality_run(args: argparse.Namespace) -> int:
@@ -416,7 +393,8 @@ def cmd_modality_run(args: argparse.Namespace) -> int:
             ensure_ascii=False,
         )
     )
-    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, toolchain, executor)
+    ctx = _modality_context(cfg, modalities, runs_dir, run_id, toolchain, executor)
+    run_all(tasks, modalities, reps, _modality_backends(cfg, modalities), ctx)
     print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0
@@ -451,7 +429,8 @@ def cmd_modality_resume(args: argparse.Namespace) -> int:
     )  # fmt: skip
     toolchain = build_toolchain(cfg)
     executor = build_executor(cfg, toolchain, allow_real_aws=True)
-    _modality_loop(cfg, tasks, modalities, reps, runs_dir, run_id, toolchain, executor, complete)
+    ctx = _modality_context(cfg, modalities, runs_dir, run_id, toolchain, executor)
+    run_all(tasks, modalities, reps, _modality_backends(cfg, modalities), ctx, complete)
     print(_modality_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0

@@ -17,12 +17,15 @@ tentativa executa com a modalidade escolhida. A escolha vai nos eventos (`chosen
 from __future__ import annotations
 
 import re
+import sys
 import time
+from collections.abc import Container
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from iac_harness.executors import final_cleanup
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.interfaces import ModelBackend, Recorder
@@ -44,7 +47,8 @@ from iac_harness.modalities.prompts import (
     prompt_version,
     user_prompt,
 )
-from iac_harness.modalities.spec import MODALITIES, Modality
+from iac_harness.modalities.spec import FREE, MODALITIES, Modality
+from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import Artifact, Feedback, Stage, Task, Turn
 from iac_harness.workspace import RESPONSE_FILENAME, create_workspace
@@ -320,3 +324,35 @@ def run_pair(
         )
     recorder.record(final)
     return final
+
+
+def run_all(
+    tasks: list[ModalityTask],
+    modalities: list[str],
+    reps: int,
+    backends: dict[str, ModelBackend],
+    ctx: ModRunContext,
+    skip: Container[tuple] = frozenset(),
+) -> None:
+    """Rep externo: as modalidades de uma tarefa rodam lado a lado no tempo (menos deriva).
+
+    Pula as unidades (task_id, modalidade, rep) em `skip` (resume); o progresso vai ao stderr.
+    """
+    recorder = JsonlRecorder(ctx.runs_dir / ctx.run_id / "events.jsonl")
+    try:
+        for rep in range(1, reps + 1):
+            for task in tasks:
+                for name in modalities:
+                    if (task.task_id, name, rep) in skip:
+                        continue
+                    modality = FREE if name == FREE.name else MODALITIES[name]
+                    final = run_pair(task, modality, rep, backends[name], recorder, ctx)
+                    print(
+                        f"{task.task_id} × {name} rep {rep}: success={final['success']} "
+                        f"check={final['check_pass']} "
+                        f"{final['termination']} ({final['attempts']} tent.)",
+                        file=sys.stderr,
+                    )
+    finally:
+        recorder.close()
+        final_cleanup(ctx.executor)  # modality-run e --resume passam por aqui
