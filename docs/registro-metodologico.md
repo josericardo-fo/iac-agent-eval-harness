@@ -726,7 +726,8 @@ de cada run; 1806 trajetórias, nenhuma falha de chamada. Comando:
 - **`kind`:** a concordância fina é menor (κ 0,43–0,91), quase toda entre `done` e
   `done_with_followup`, que não entram no `success`.
 - **Leitura às cegas** dos 16 pelo usuário: folha em `runs/e14-leitura/leitura-cega.md` (ordem
-  sorteada, semente `20261114`; rótulos em `gabarito-juizes.json`). Pendente.
+  sorteada, semente `20261114`; rótulos em `gabarito-juizes.json`). Lida em 16/11 pelo 3º leitor LLM
+  (emenda do E14; desempate abaixo).
 - **E13 (1º turno, `20261114T194733`, julgado em 14/11):** `asked` igual em 47/54 (κ 0,67) e `kind`
   em 38/54 (κ 0,58), abaixo dos outros runs. São 7 desacordos no `asked`: em 5, o Luna dá `ask` e o
   Sonnet não; em 2, o contrário. O sinal do toolkit é o mesmo com os dois (§3, "E13").

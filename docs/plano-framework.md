@@ -210,7 +210,7 @@ dataclass de `types.py`, que são serializados nos eventos: **não apague campos
 - [x] `executors/localstack.py` e `configs/modality-spike-localstack.toml`: o LocalStack exige
   token desde 03/2026 e o spike acabou. Removidos (executor, config, serviço do compose, host da
   allowlist, testes); a tag `v1.0.0` preserva.
-- [ ] Toolkit v1 e v3 (`toolkit/src/`, `toolkit/src-v3/`, plugins `own-rules`, `own-rules-v3`,
+- [x] Toolkit v1 e v3 (`toolkit/src/`, `toolkit/src-v3/`, plugins `own-rules`, `own-rules-v3`,
   `own-tools`): ficam, porque as condições medidas os montam, mas o README deixa claro que a
   distribuída é a `iac-cloud` (v2).
 - [x] Pipeline de feedback no loop: removido (comandos, runner, condições A/B/C, OPA, adaptador

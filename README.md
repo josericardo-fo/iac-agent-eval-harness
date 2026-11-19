@@ -78,7 +78,9 @@ event (`cost_usd`) and shown by `agent-metrics`.
 
 The distributed toolkit is the `iac-cloud` plugin (skill + rules: inventory before acting, ask
 when the request is ambiguous, verify the final state through the API). It carries the same text
-as the measured condition `own-rules-v2`.
+as the measured condition `own-rules-v2`. The other toolkits in `toolkit/` (v1 in `toolkit/src/`, v3 in
+`toolkit/src-v3/`, and the `own-rules`, `own-rules-v3` and `own-tools` plugins) stay in the repo
+only because the registered conditions build them; they are not distributed.
 
 ```bash
 claude plugin marketplace add josericardo-fo/iac-agent-eval-harness
