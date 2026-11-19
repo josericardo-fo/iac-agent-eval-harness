@@ -48,7 +48,7 @@ código morto removido, arquivos grandes separados, contratos explícitos e, dep
 | Concordância emulador × AWS real nas mesmas tarefas e verificadores | `agent-metrics --compare`, `executors/floci.py`, `executors/aws.py` |
 | Usuário simulado para pedido ambíguo em operação de nuvem (`user.md` oculto) | `agentic/user_sim.py` |
 | Juízes LLM validados (amostra humana, 2º juiz, kappa) | `agentic/judge.py`, `agentic/question_judge.py`, `agent-judge --agreement/--compare-with` |
-| Reset da AWS real por inventário (baseline + sweep) | `executors/aws_sweep.py` |
+| Reset da AWS real por inventário (baseline + sweep) | `executors/aws_sweep/` |
 | Procedência em cada run (git, imagens por digest, providers, sha da pré-validação) | `cli/provenance.py` (`_git_provenance`, `_sandbox_provenance`), `cli/agent.py` (`_agent_run_config`) |
 
 ### 3.2 Trabalhos próximos (para a tabela de posicionamento)
@@ -88,7 +88,7 @@ glossário só liga os termos aos nomes atuais; o código não muda de nome ante
 | Verifier | confere o estado final sem LLM | `check.py`, `check_final.py`, `verifiers/` |
 | Judge | classificação por LLM (pergunta? qualidade da pergunta) | `agentic/judge.py`, `agentic/question_judge.py` |
 | User Simulator | LLM que responde a partir do `user.md` oculto | `agentic/user_sim.py` |
-| Reset | volta o backend ao estado limpo | `docker restart` do Floci; `aws_sweep.py` na AWS |
+| Reset | volta o backend ao estado limpo | `docker restart` do Floci; `executors/aws_sweep/` na AWS |
 | Trial | uma execução (task × rep × toolkit × modelo) | diretório `runs/<id>/<task>/<rep>/<cond>/<modelo>` |
 | Run (Job) | conjunto de trials de uma config | `runs/<id>/` |
 | Strata | eixos de análise (intenção, categoria, origem, dificuldade, alvo) | `agentic/strata.py`, `configs/strata.toml` |
@@ -235,9 +235,13 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
     da config (backends por modalidade, raiz dos plugins, estratos) e imprimem o progresso;
     levá-los para os runners muda assinaturas, não só o lugar do código. Fica para a fase 4
     (contratos). O `_run_pairs` saiu com o pipeline legado.*
-- [ ] **`executors/aws_sweep.py`**: um módulo por grupo de serviço (`sweep/ec2.py`, `sweep/s3.py`,
+- [x] **`executors/aws_sweep.py`**: um módulo por grupo de serviço (`sweep/ec2.py`, `sweep/s3.py`,
   `sweep/iam.py`…) com um registro de sweepers. Atenção: o arquivo roda dentro da toolchain;
   conferir como ele é copiado/montado antes de virar pacote.
+  *Feito: pacote `executors/aws_sweep/` (`common`, `inventory`, `ec2`, `databases`, `storage`,
+  `iam`, `other`); o `aws.py` copia o diretório inteiro para a toolchain e roda
+  `python3 -m aws_sweep`. Só imports relativos, sem `iac_harness`; `sweep` e `main` ficam no
+  `__init__.py`.*
 - [x] **`agentic/stream.py`**: separar o parser do stream do Claude Code (genérico) das
   heurísticas de classificação (`_AWS_VALUE_FLAGS`, `_TF_MUTATE`, `TOOLKIT_READ_SCRIPTS`). *O classificador foi para `agentic/state_ops.py`.*
 - [x] **Métricas**: um núcleo comum (taxas, intervalos, tokens, estratos) usado pelos quatro

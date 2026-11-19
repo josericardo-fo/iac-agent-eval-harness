@@ -34,7 +34,7 @@ Os nomes seguem o vocabulário da seção 4 do [plano-framework.md](plano-framew
 | Verifier | confere o estado final, sem LLM | `check.py`, `check_final.py`, `collateral.py` da task |
 | Judge | classificação por LLM | `agentic/judge.py`, `agentic/question_judge.py` |
 | User Simulator | responde a partir do `user.md` oculto | `agentic/user_sim.py` |
-| Reset | volta o backend ao estado limpo | `docker restart` do Floci; `executors/aws_sweep.py` na AWS |
+| Reset | volta o backend ao estado limpo | `docker restart` do Floci; `executors/aws_sweep/` na AWS |
 | Trial | task × rep × toolkit × modelo | `runs/<id>/<task>/<rep>/<cond>/<modelo>/` |
 | Run | conjunto de trials de uma config | `runs/<id>/` |
 | Strata | eixos de análise | `agentic/strata.py`, `configs/strata.toml` |

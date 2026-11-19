@@ -86,7 +86,7 @@ Os parâmetros de cada juiz (provedor, modelo, versão do prompt) vão em cada l
 
 ## Sweep da AWS real
 
-`executors/aws.py` (`RealAwsExecutor`) e `executors/aws_sweep.py` (roda dentro da toolchain, com
+`executors/aws.py` (`RealAwsExecutor`) e `executors/aws_sweep/` (pacote copiado inteiro e rodado com `python3 -m aws_sweep` dentro da toolchain, com
 o boto3 da imagem). É o que faz uma conta AWS real servir de backend: não há "reset" na AWS, então
 o harness apaga tudo o que não estava num inventário da conta limpa.
 
@@ -134,7 +134,7 @@ viram baseline e nunca mais são apagadas.
 
 - A região de `AWS_DEFAULT_REGION` (`us-east-1`), IAM (global) e, em `us-west-2`, só EIPs,
   volumes e snapshots EC2 (usados pelos casos reais).
-- Categorias (`ORDER` em `aws_sweep.py`, nesta ordem de remoção): instâncias EC2, RDS (sem
+- Categorias (`ORDER` em `aws_sweep/common.py`, nesta ordem de remoção): instâncias EC2, RDS (sem
   snapshot final), MSK, Lightsail, Lambda, CloudFront, alarmes CloudWatch, usuários ElastiCache,
   DAX, human task UIs do SageMaker, Glacier, Kinesis Video, NAT gateways, EIPs, snapshots,
   volumes, ENIs, security groups, subnets, internet gateways, route tables, VPCs, subnet groups
