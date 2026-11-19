@@ -306,3 +306,57 @@ def test_secret_values_cover_each_registered_agent(monkeypatch):
     for name in names:
         monkeypatch.setenv(name, f"v-{name}")
     assert set(secret_values({"X": "extra"})) == {f"v-{n}" for n in names} | {"extra"}
+
+
+# ---------- runs gravados antes de provider/model serem obrigatórios ----------
+
+OLD_RUN_CONFIG = {"judge": {"model": "Sonnet 5.5"}, "user_sim": {"model": "gpt-6-luna",
+                  "max_replies": 1}}  # fmt: skip
+
+
+def test_recorded_run_config_fills_historical_providers():
+    cfg = cli_agent._recorded_run_config(OLD_RUN_CONFIG)
+    assert cfg["judge"] == {"provider": "anthropic", "model": "Sonnet 5.5"}
+    assert cfg["user_sim"]["provider"] == "codex" and cfg["user_sim"]["model"] == "gpt-6-luna"
+    assert "provider" not in OLD_RUN_CONFIG["judge"]  # não muda o original (vai ao run_config.json)
+
+
+def test_recorded_run_config_without_sections_uses_provider_defaults():
+    cfg = cli_agent._recorded_run_config({})
+    assert cfg["judge"] == {"provider": "anthropic", "model": "Sonnet 5.5"}
+    assert "user_sim" not in cfg
+
+
+def test_recorded_run_config_keeps_explicit_values():
+    cfg = cli_agent._recorded_run_config({"judge": {"provider": "codex", "model": "m"}})
+    assert cfg["judge"] == {"provider": "codex", "model": "m"}
+
+
+def test_old_run_builds_judge_questions_judge_and_user_sim(monkeypatch):
+    built = []
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda s: built.append(s) or object())
+    cfg = cli_agent._recorded_run_config(OLD_RUN_CONFIG)
+    cli_agent._build_judge(cfg["judge"])  # agent-judge
+    cli_agent._text_model(cli_agent._judge_section(cfg["judge"]), "judge")  # judge-questions
+    cli_agent._build_user_sim(cfg)  # agent-resume (usuário simulado + juiz inline)
+    assert [s["provider"] for s in built] == ["anthropic", "anthropic", "codex", "anthropic"]
+
+
+def test_agent_judge_cli_reads_old_run_without_provider(tmp_path, monkeypatch):
+    run_dir = tmp_path / "old"
+    _write_run(run_dir, [])
+    (run_dir / "run_config.json").write_text(json.dumps({"config": {"judge": {"model": "M"}}}))
+    seen = {}
+    monkeypatch.setattr(
+        cli_agent, "_build_judge", lambda section, *a, **k: seen.update(section) or FakeJudge()
+    )
+    monkeypatch.setattr(cli_agent, "_load_cfg_tasks", lambda cfg: [])
+    assert main(["agent-judge", str(run_dir)]) == 0
+    assert seen == {"provider": "anthropic", "model": "M"}
+
+
+def test_new_config_without_provider_still_fails():
+    with pytest.raises(SystemExit, match="provider"):
+        cli_agent._build_judge({"model": "M"})
+    with pytest.raises(SystemExit, match="provider"):
+        cli_agent._build_user_sim({"user_sim": {"model": "m"}})

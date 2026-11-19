@@ -48,7 +48,10 @@ agente perguntou.
 `ask`, `done`, `done_with_followup`, `partial` ou `gave_up`, e grava `judge.jsonl`. O provedor e o
 modelo vêm de `[judge]` (`provider`, `model`), ambos obrigatórios: não há juiz padrão. As configs
 do repositório usam `provider = "anthropic"` e `model = "Sonnet 5.5"`. Runs gravados antes disso
-não têm `provider` no `run_config.json`; julgue-os com `--provider anthropic`.
+não têm `provider` no `run_config.json`; os comandos que releem o run (`agent-judge`,
+`agent-judge-questions`, `agent-resume`) completam o histórico sozinhos (`[judge]` = `anthropic`,
+`[user_sim]` = `codex`, com o modelo padrão do provedor se faltar), sem `--provider`. Configs
+novas (`--config`) continuam exigindo `provider` e `model`.
 
 ```bash
 uv run iac-harness agent-judge runs/<id>                       # julga o que falta

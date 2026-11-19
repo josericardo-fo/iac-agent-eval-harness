@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from iac_harness.agentic.agents import AGENTS, DEFAULT_AGENT_IMAGE, ClaudeCodeAgent, CodingAgent
-from iac_harness.agentic.conditions import load_toolkits, resolve_toolkit
+from iac_harness.agentic.conditions import DEFAULT_ROOT, load_toolkits, resolve_toolkit
 from iac_harness.agentic.judge import JUDGE_FILENAME, Judge, LlmJudge
 from iac_harness.agentic.metrics import (
     JUDGE_SAMPLE_FIELDS,
@@ -71,15 +71,37 @@ from iac_harness.metrics import load_events
 from iac_harness.modalities.loader import TASKS_DIR as MODALITY_TASKS_DIR
 from iac_harness.recorder.jsonl import JsonlRecorder
 
-# Raiz dos plugins dos toolkits (toolkit/, third_party/).
-AGENT_PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+# Raiz do registro e dos plugins dos toolkits (toolkit/, third_party/).
+AGENT_PLUGIN_ROOT = DEFAULT_ROOT
+
+
+# Provedores que valiam antes de `provider` ser obrigatório (só para runs já gravados).
+_LEGACY_PROVIDERS = {"judge": "anthropic", "user_sim": "codex"}
+
+
+def _recorded_run_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Cópia da config de um run gravado, com os provedores históricos onde faltam.
+
+    Vale só para runs gravados antes de `provider`/`model` serem obrigatórios em `[judge]` e
+    `[user_sim]` (então o juiz era Anthropic e o usuário simulado, Codex, com o modelo padrão do
+    provedor). Configs novas (`--config`) não passam aqui e seguem exigindo as duas chaves.
+    """
+    out = dict(cfg)
+    for name, provider in _LEGACY_PROVIDERS.items():
+        if name == "user_sim" and name not in cfg:
+            continue  # sem [user_sim] não há usuário simulado a preencher
+        section = dict(cfg.get(name, {}))
+        section.setdefault("provider", provider)
+        section.setdefault("model", default_model(section["provider"]))
+        out[name] = section
+    return out
 
 
 def _agentic_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     ag = cfg.get("agentic")
     if not ag:
         raise SystemExit("erro: config sem a seção [agentic]")
-    unknown = set(ag.get("conditions", [])) - set(load_toolkits())
+    unknown = set(ag.get("conditions", [])) - set(load_toolkits(AGENT_PLUGIN_ROOT))
     if unknown:
         raise SystemExit(f"condições desconhecidas: {sorted(unknown)}")
     return ag
@@ -337,7 +359,7 @@ def _move_to_discarded(run_dir: Path, path: Path) -> bool:
 def cmd_agent_resume(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     config_path, saved = _load_run_config(run_dir)
-    cfg, reps = saved["config"], saved["reps"]
+    cfg, reps = _recorded_run_config(saved["config"]), saved["reps"]
     tasks, _ = _select_modality_run(cfg, saved["tasks"], ["terraform"])
     runs_dir, run_id = run_dir.parent, run_dir.name
 
@@ -430,7 +452,7 @@ def cmd_agent_judge(args: argparse.Namespace) -> int:
         return _agent_judge_sample(run_dir, args.sample, args.seed)
     if args.compare_with is not None:
         return _agent_judge_compare(run_dir, args.compare_with)
-    cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
+    cfg = _recorded_run_config(json.loads((run_dir / "run_config.json").read_text())["config"])
     judge = _build_judge(cfg.get("judge", {}), args.model, args.provider, args.reasoning_effort)
     judge_path = run_dir / args.out
     done = set()
@@ -466,7 +488,7 @@ def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
     Retomável: pula as trajetórias que já têm linha no arquivo de saída.
     """
     run_dir = Path(args.run_dir)
-    cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
+    cfg = _recorded_run_config(json.loads((run_dir / "run_config.json").read_text())["config"])
     section = _judge_section(cfg.get("judge", {}), args.model, args.provider)
     judge = QuestionJudge(_text_model({**section, "max_tokens": QUESTION_MAX_TOKENS}, "judge"))
     out_path = run_dir / args.out
