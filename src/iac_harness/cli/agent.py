@@ -13,8 +13,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from iac_harness.agentic.agents import DEFAULT_AGENT_IMAGE, ClaudeCodeAgent
-from iac_harness.agentic.conditions import REGISTRY as AGENT_CONDITIONS
-from iac_harness.agentic.conditions import resolve_condition
+from iac_harness.agentic.conditions import load_toolkits, resolve_toolkit
 from iac_harness.agentic.judge import JUDGE_FILENAME, Judge, LlmJudge
 from iac_harness.agentic.metrics import (
     JUDGE_SAMPLE_FIELDS,
@@ -81,7 +80,7 @@ def _agentic_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     ag = cfg.get("agentic")
     if not ag:
         raise SystemExit("erro: config sem a seção [agentic]")
-    unknown = set(ag.get("conditions", [])) - set(AGENT_CONDITIONS)
+    unknown = set(ag.get("conditions", [])) - set(load_toolkits())
     if unknown:
         raise SystemExit(f"condições desconhecidas: {sorted(unknown)}")
     return ag
@@ -214,7 +213,7 @@ def _agent_loop(
     ag = cfg["agentic"]
     strata = load_strata(Path(ag.get("strata_file", DEFAULT_STRATA_FILE)))
     for cond in ag["conditions"]:  # falha cedo: plugin ausente
-        resolve_condition(cond, AGENT_PLUGIN_ROOT)
+        resolve_toolkit(cond, AGENT_PLUGIN_ROOT)
     recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
     ctx = AgentRunContext(
         run_id=run_id, runs_dir=runs_dir, agent=agent,

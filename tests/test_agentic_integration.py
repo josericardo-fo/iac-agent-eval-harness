@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from iac_harness.agentic.agents import DEFAULT_AGENT_IMAGE, ClaudeCodeAgent
-from iac_harness.agentic.conditions import resolve_condition
+from iac_harness.agentic.conditions import resolve_toolkit
 from iac_harness.agentic.targets import FlociTarget
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.toolchain import Toolchain
@@ -56,7 +56,7 @@ def _run_in_agent(tmp_path: Path, script: str) -> subprocess.CompletedProcess[st
     work.mkdir()
     work.chmod(0o777)
     argv, client_env = agent.docker_argv(
-        "unused", work, resolve_condition("none", ROOT), "unused", target, "iac-agent-itest"
+        "unused", work, resolve_toolkit("none", ROOT), "unused", target, "iac-agent-itest"
     )
     argv = argv[: argv.index(agent.image) + 1] + ["sh", "-c", script]
     return subprocess.run(argv, capture_output=True, text=True, timeout=120, env=client_env)

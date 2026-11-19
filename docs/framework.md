@@ -30,7 +30,7 @@ Os nomes seguem o vocabulário da seção 4 do [plano-framework.md](plano-framew
 | Backend | onde a nuvem roda (Floci ou AWS real) | `executors/`, `agentic/targets.py` |
 | Agent | quem resolve a task | `agentic/agents.py` (`ClaudeCodeAgent`) |
 | Modality | forma de agir (`terraform`, `cli`, `boto3`, `free`) | `modalities/spec.py` (pipeline de modalidades) |
-| Toolkit | o que se dá ao agente | `agentic/conditions.py` (`REGISTRY`) |
+| Toolkit | o que se dá ao agente | `toolkit/toolkits.toml` (registro), `agentic/conditions.py` (`Toolkit`) |
 | Verifier | confere o estado final, sem LLM | `check.py`, `check_final.py`, `collateral.py` da task |
 | Judge | classificação por LLM | `agentic/judge.py`, `agentic/question_judge.py` |
 | User Simulator | responde a partir do `user.md` oculto | `agentic/user_sim.py` |

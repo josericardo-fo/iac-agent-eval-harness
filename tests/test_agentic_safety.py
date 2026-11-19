@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from iac_harness.agentic.agents import ClaudeCodeAgent
-from iac_harness.agentic.conditions import resolve_condition
+from iac_harness.agentic.conditions import resolve_toolkit
 from iac_harness.agentic.targets import AwsTarget, FlociTarget
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import FlociExecutor
@@ -56,7 +56,7 @@ def _aws_target() -> AwsTarget:
 
 def _argv(target, tmp_path, condition="none"):
     agent = ClaudeCodeAgent(max_turns=60, timeout_s=1200)
-    cond = resolve_condition(condition, _plugin_root(tmp_path))
+    cond = resolve_toolkit(condition, _plugin_root(tmp_path))
     work = tmp_path / "work"
     work.mkdir(exist_ok=True)
     argv, client_env = agent.docker_argv("do it", work, cond, "Haiku 5.5", target, "c1")
@@ -165,16 +165,16 @@ def test_condition_flags(host_env, tmp_path):
 
 def test_missing_condition_dir_is_rejected(tmp_path):
     with pytest.raises(FileNotFoundError):
-        resolve_condition("own-tools", tmp_path)
+        resolve_toolkit("own-tools", tmp_path)
 
 
 def test_unknown_condition_is_rejected(tmp_path):
     with pytest.raises(ValueError):
-        resolve_condition("everything", tmp_path)
+        resolve_toolkit("everything", tmp_path)
 
 
 def test_condition_loaded_checks_init_plugins(tmp_path):
-    cond = resolve_condition("own-tools", _plugin_root(tmp_path))
+    cond = resolve_toolkit("own-tools", _plugin_root(tmp_path))
     ok = {
         "plugins": [{"name": "own-tools", "path": "/opt/conditions/own-tools"}],
         "skills": ["deep-research", "own-tools:iac-cloud"],
@@ -184,7 +184,7 @@ def test_condition_loaded_checks_init_plugins(tmp_path):
     # plugin carregado, mas sem nenhuma skill dele
     assert cond.loaded({"plugins": ok["plugins"], "skills": ["deep-research"]}) is False
     assert cond.loaded(None) is False
-    assert resolve_condition("none", tmp_path).loaded({"plugins": []}) is True
+    assert resolve_toolkit("none", tmp_path).loaded({"plugins": []}) is True
 
 
 @pytest.mark.parametrize("make_target", [_floci_target, _aws_target])

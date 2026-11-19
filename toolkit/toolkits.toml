@@ -1,0 +1,36 @@
+# Toolkits: o que se dá ao agente, por nome (o nome vai para a config, `[agentic] conditions`, e
+# para os eventos, campo `condition`). Os nomes medidos não mudam: identificam o que foi medido.
+#
+# Cada toolkit tem, opcionalmente:
+#   plugin = diretório do plugin (montado e passado em --plugin-dir)
+#   rules  = arquivo de regras (montado e passado em --append-system-prompt-file)
+# Caminhos relativos à raiz do repositório. Sem nenhum dos dois, o agente roda sem toolkit.
+# Toolkit novo: acrescente uma tabela aqui, sem mudar código.
+
+[none]
+
+[aws-core]
+plugin = "third_party/agent-toolkit-for-aws/plugins/aws-core"
+rules = "third_party/agent-toolkit-for-aws/rules/aws-agent-rules.md"
+
+# só o plugin, sem regras no system prompt (no piloto: 0 chamadas de Skill)
+[own-skill-only]
+plugin = "toolkit/plugins/own-rules"
+
+[own-rules]
+plugin = "toolkit/plugins/own-rules"
+rules = "toolkit/plugins/own-rules/RULES.md"
+
+[own-tools]
+plugin = "toolkit/plugins/own-tools"
+rules = "toolkit/plugins/own-tools/RULES.md"
+
+# texto revisado; a v1 fica intacta
+[own-rules-v2]
+plugin = "toolkit/plugins/own-rules-v2"
+rules = "toolkit/plugins/own-rules-v2/RULES.md"
+
+# como perguntar; a v2 continua a distribuída
+[own-rules-v3]
+plugin = "toolkit/plugins/own-rules-v3"
+rules = "toolkit/plugins/own-rules-v3/RULES.md"

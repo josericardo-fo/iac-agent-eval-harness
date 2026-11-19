@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from iac_harness.agentic.agents import AgentResult, CodingAgent
-from iac_harness.agentic.conditions import Condition, resolve_condition
+from iac_harness.agentic.conditions import Toolkit, resolve_toolkit
 from iac_harness.agentic.judge import Judge
 from iac_harness.agentic.state_ops import state_ops
 from iac_harness.agentic.strata import strata_fields
@@ -237,7 +237,7 @@ def run_agent_pair(
     # Proxy parado: aborta o run antes de gravar qualquer evento (senão viram AGENT_ERROR).
     target.check_proxy()
     start = time.monotonic()
-    condition = resolve_condition(condition_name, ctx.plugin_root)
+    condition = resolve_toolkit(condition_name, ctx.plugin_root)
     udir = unit_dir(ctx.runs_dir, ctx.run_id, task.task_id, condition_name, model, rep)
     group = str(udir.relative_to(pair_dir(ctx.runs_dir, ctx.run_id, task.task_id, rep)))
     final: dict[str, Any] = {
@@ -348,7 +348,7 @@ def run_agent_pair(
     return _finish(final, start, recorder, ctx)
 
 
-def _lost_condition(last: AgentResult, condition: Condition) -> bool:
+def _lost_condition(last: AgentResult, condition: Toolkit) -> bool:
     """Se o turno retomado perdeu o plugin da condição (a trajetória final não vale)."""
     return _termination(last, condition.loaded(last.init)) is AgentTermination.CONDITION_LOAD_FAIL
 

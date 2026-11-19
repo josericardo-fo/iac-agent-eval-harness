@@ -84,7 +84,7 @@ glossário só liga os termos aos nomes atuais; o código não muda de nome ante
 | Backend | onde a nuvem roda: emulador ou conta real | `executors/` (feedback e modalidades), `agentic/targets.py` (agente) |
 | Agent | quem resolve a task | `agentic/agents.py` (`ClaudeCodeAgent`), `agents/anthropic_backend.py` |
 | Modality | forma de agir: `terraform`, `cli`, `boto3`, `free` | `modalities/spec.py` |
-| Toolkit | o que se dá ao agente: nada, skill, regras, plugin, MCP | `agentic/conditions.py` (`REGISTRY`) |
+| Toolkit | o que se dá ao agente: nada, skill, regras, plugin, MCP | `toolkit/toolkits.toml` (registro), `agentic/conditions.py` (`Toolkit`) |
 | Verifier | confere o estado final sem LLM | `check.py`, `check_final.py`, `verifiers/` |
 | Judge | classificação por LLM (pergunta? qualidade da pergunta) | `agentic/judge.py`, `agentic/question_judge.py` |
 | User Simulator | LLM que responde a partir do `user.md` oculto | `agentic/user_sim.py` |
@@ -263,12 +263,19 @@ simples. Só o necessário para as peças que já existem mais as da fase 6; nad
 - [ ] `Verifier` e `Judge`: interfaces separadas (sem LLM × com LLM). Modelo e fornecedor do juiz
   vêm da config, sem default Anthropic escondido.
 - [ ] `UserSimulator`: o que `user_sim.py` já faz, atrás de uma interface.
-- [ ] `Toolkit`: registro carregado de diretório/config, não do dicionário em
+- [x] `Toolkit`: registro carregado de diretório/config, não do dicionário em
   `agentic/conditions.py` (os nomes medidos continuam válidos).
+  *O registro virou `toolkit/toolkits.toml` (nome → `plugin`, `rules`), lido com `tomllib`; um
+  teste garante que os 7 nomes medidos resolvem como o dicionário antigo.*
 - [ ] `TaskSource`: carrega tasks de um diretório (`modalities/tasks/` vira um dataset entre
   outros) e de adapters (IaC-Eval, Ambig-IaC).
-- [ ] Unificar `Condition` (renomear a do agente para `Toolkit` resolve a colisão) e os enums de
+- [x] Unificar `Condition` (renomear a do agente para `Toolkit` resolve a colisão) e os enums de
   término.
+  *`Condition` → `Toolkit` e `resolve_condition` → `resolve_toolkit` (a chave `[agentic]
+  conditions` e o campo `condition` dos eventos ficam); o `Termination` de `types.py`, sem uso,
+  saiu; `AgentTermination` e `ModTermination` ficam separados, porque descrevem laços diferentes
+  (`DONE`/`MAX_TURNS`/`TIMEOUT` × `EXEC_OK`/`FORMAT_FAIL`/`ASKED`) e só `INITIAL_FAIL` é comum:
+  juntar não mudaria strings gravadas, mas misturaria estados que um laço nunca produz.*
 - [ ] Tirar ids de experimento dos nomes de constante e das docstrings (os valores gravados
   ficam; ver seção 2).
 

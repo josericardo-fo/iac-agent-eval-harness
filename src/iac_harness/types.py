@@ -46,14 +46,6 @@ class FirstFailure(StrEnum):
     HARNESS_ERROR = "HARNESS_ERROR"
 
 
-class Termination(StrEnum):
-    PASSED = "PASSED"
-    NO_FEEDBACK = "NO_FEEDBACK"
-    SANDBOX_UNSUPPORTED = "SANDBOX_UNSUPPORTED"
-    GATE_ERROR = "GATE_ERROR"
-    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
-
-
 @dataclass(frozen=True)
 class Task:
     """Visão da tarefa que o agente pode ver (sem referência nem política)."""

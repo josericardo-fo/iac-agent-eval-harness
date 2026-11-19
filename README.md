@@ -37,7 +37,7 @@ Paths are relative to `src/iac_harness/`.
 | Dataset | set of tasks (IaC-Eval v2, aws-bench, authored, real-world cases, Ambig-IaC) | task id prefixes `task-`, `awsb-`, `mod-`, `amb-`, `real-`, `lay-`… |
 | Backend | where the cloud runs: Floci emulator or a real AWS account | `executors/`, `agentic/targets.py` |
 | Agent | who solves the task | `agentic/agents.py` (`ClaudeCodeAgent`) |
-| Toolkit | what the agent is given: nothing, skill, rules, plugin | `agentic/conditions.py` (`REGISTRY`) |
+| Toolkit | what the agent is given: nothing, skill, rules, plugin | `toolkit/toolkits.toml` (registry), `agentic/conditions.py` (`Toolkit`) |
 | Verifier | checks the final state, no LLM | task `check.py` / `check_final.py` |
 | Judge | LLM classification (did it ask? how good was the question?) | `agentic/judge.py`, `agentic/question_judge.py` |
 | User Simulator | LLM that answers from the hidden `user.md` | `agentic/user_sim.py` |

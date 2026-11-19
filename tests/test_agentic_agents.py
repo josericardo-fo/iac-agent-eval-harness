@@ -6,7 +6,7 @@ import pytest
 
 from iac_harness.agentic import agents
 from iac_harness.agentic.agents import ClaudeCodeAgent
-from iac_harness.agentic.conditions import resolve_condition
+from iac_harness.agentic.conditions import resolve_toolkit
 from iac_harness.agentic.targets import AgentEnv
 
 
@@ -78,7 +78,7 @@ def _plugin_root(tmp_path):
 def _run(tmp_path, events, fake_docker, condition="own-tools"):
     calls = fake_docker(events)
     target = FakeTarget()
-    cond = resolve_condition(condition, _plugin_root(tmp_path))
+    cond = resolve_toolkit(condition, _plugin_root(tmp_path))
     work = tmp_path / "work"
     work.mkdir()
     result = ClaudeCodeAgent().run("p", work, cond, "Haiku 5.5", target, tmp_path / "out")
@@ -131,7 +131,7 @@ def test_transcript_redacts_target_secret(tmp_path, fake_docker):
 
 
 def _argv(tmp_path, **kw):
-    cond = resolve_condition("none", tmp_path)
+    cond = resolve_toolkit("none", tmp_path)
     return ClaudeCodeAgent().docker_argv(
         "the prompt", tmp_path, cond, "Haiku 5.5", FakeTarget(), "c1", **kw
     )[0]
@@ -159,7 +159,7 @@ def test_docker_argv_with_session_mounts_it_and_resumes(tmp_path, fake_docker):
 def test_session_id_comes_from_init_and_turn_files_are_separate(tmp_path, fake_docker):
     init = {**INIT_OK, "session_id": "sess-xyz"}
     calls = fake_docker([init, ASSISTANT, RESULT])
-    cond = resolve_condition("own-tools", _plugin_root(tmp_path))
+    cond = resolve_toolkit("own-tools", _plugin_root(tmp_path))
     work = tmp_path / "work"
     work.mkdir()
     agent, target, out = ClaudeCodeAgent(), FakeTarget(), tmp_path / "out"

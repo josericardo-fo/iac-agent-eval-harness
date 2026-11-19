@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from iac_harness.agentic.conditions import Condition
+from iac_harness.agentic.conditions import Toolkit
 from iac_harness.agentic.stream import parse_stream, redact
 from iac_harness.agentic.targets import AgentEnv, Target
 
@@ -71,7 +71,7 @@ class CodingAgent(Protocol):
     name: str
 
     def run(
-        self, prompt: str, workdir: Path, condition: Condition, model: str, target: Target,
+        self, prompt: str, workdir: Path, condition: Toolkit, model: str, target: Target,
         out_dir: Path, session_dir: Path | None = None, resume_session: str | None = None,
         turn: int = 1,
     ) -> AgentResult: ...  # fmt: skip
@@ -109,7 +109,7 @@ class ClaudeCodeAgent:
         self.timeout_s = timeout_s
 
     def docker_argv(
-        self, prompt: str, workdir: Path, condition: Condition, model: str, target: Target,
+        self, prompt: str, workdir: Path, condition: Toolkit, model: str, target: Target,
         name: str, env: AgentEnv | None = None, session_dir: Path | None = None,
         resume_session: str | None = None,
     ) -> tuple[list[str], dict[str, str]]:  # fmt: skip
@@ -153,7 +153,7 @@ class ClaudeCodeAgent:
         return argv, {**base, **secret_values}
 
     def run(
-        self, prompt: str, workdir: Path, condition: Condition, model: str, target: Target,
+        self, prompt: str, workdir: Path, condition: Toolkit, model: str, target: Target,
         out_dir: Path, session_dir: Path | None = None, resume_session: str | None = None,
         turn: int = 1,
     ) -> AgentResult:  # fmt: skip
