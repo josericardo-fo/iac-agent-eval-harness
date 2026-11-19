@@ -23,6 +23,7 @@ from iac_harness.metrics import (
     BOOTSTRAP_ITERATIONS,
     BOOTSTRAP_SEED,
     _rate,
+    _success,
     holm,
     mcnemar_exact,
     paired_bootstrap,
@@ -194,10 +195,6 @@ def _vs_none(rows: list[Row], n_boot: int, seed: int) -> dict[str, list[dict[str
             {"pair": f"{BASELINE_CONDITION}x{cond}", "diff_mean": diff, "diff_ci95": [lo, hi]}
         )
     return out
-
-
-def _success(e: Row) -> bool:
-    return bool(e["success"])
 
 
 def _by_condition(rows: list[Row]) -> tuple[list[Row], dict[str, list[Row]]]:

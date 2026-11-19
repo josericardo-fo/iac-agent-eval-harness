@@ -81,6 +81,10 @@ def _rate(k: int, n: int) -> dict[str, Any]:
     return {"k": k, "n": n, "rate": k / n if n else None, "wilson": [lo, hi]}
 
 
+def _success(e: dict[str, Any]) -> bool:
+    return bool(e["success"])
+
+
 def _tokens(e: dict[str, Any], *, shared: bool = True) -> tuple[int, int]:
     """Tokens (entrada, saída) de um FinalRecord: repair da condição (+ tentativa 1 se shared)."""
     t_in, t_out = e["repair_input_tokens"], e["repair_output_tokens"]

@@ -18,6 +18,7 @@ from iac_harness.metrics import (
     PriceTable,
     _cost,
     _rate,
+    _success,
     holm,
     mcnemar_exact,
     paired_bootstrap,
@@ -35,10 +36,6 @@ ASK_PAIRS = {
     "amb-del-sqs": "clr-del-sqs",
     "amb-del-s3": "clr-del-s3",
 }
-
-
-def _success(e: Row) -> bool:
-    return bool(e["success"])
 
 
 def _first_attempt(e: Row) -> bool:
