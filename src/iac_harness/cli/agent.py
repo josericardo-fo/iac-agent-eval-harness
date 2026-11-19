@@ -266,7 +266,7 @@ def _agent_loop(
 
 
 def _agent_run_config(
-    cfg: dict[str, Any], tasks: list[Any], reps: int, run_dir: Path, agent: ClaudeCodeAgent,
+    cfg: dict[str, Any], tasks: list[Any], reps: int, run_dir: Path, agent: CodingAgent,
     targets: list[Target], user_sim: UserSimSetup | None = None,
 ) -> dict[str, Any]:  # fmt: skip
     toolchain, executor = targets[0].toolchain, targets[0].executor

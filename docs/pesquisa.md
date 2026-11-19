@@ -226,6 +226,6 @@ uv run iac-harness demo-timeline runs/<id>/<task>/<rep>/<cond>/<modelo> -o cena.
   como `ask`, um modelo (`provider = "codex"`, `model = "gpt-6-luna"`, Codex CLI logado) responde a
   partir do `user.md` oculto da tarefa e a sessão é retomada (`max_replies`, padrão 1). O
   `check_final.py` opcional confere o estado depois da resposta (`success_final`). `[judge] provider`
-  escolhe o fornecedor do juiz (padrão `anthropic`); `[modality] tasks_dir` troca o catálogo de
+  escolhe o fornecedor do juiz (obrigatório desde a fase 4; antes, padrão `anthropic`); `[modality] tasks_dir` troca o catálogo de
   tarefas. Smoke: `configs/e13-usersim-floci.toml`.
 - Os testes de integração fazem `docker compose down`: não rode com um run em andamento.
