@@ -12,7 +12,9 @@ respostas vai nos campos `*_final`.
 from __future__ import annotations
 
 import os
+import queue
 import shutil
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -33,6 +35,7 @@ from iac_harness.modalities.checks import diff_snapshots, run_check, run_setup, 
 from iac_harness.modalities.execute import ANSWER_FILENAME, INHERITED_TF_FILES, run_artifact
 from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.spec import MODALITIES
+from iac_harness.recorder.jsonl import JsonlRecorder
 from iac_harness.toolchain import remove_terraform_dir
 from iac_harness.workspace import _safe_name, pair_dir
 
@@ -384,3 +387,49 @@ def _finish(final: dict[str, Any], start: float, recorder: Any, ctx: AgentRunCon
     with ctx.lock:
         recorder.record(final)
     return final
+
+
+def run_agent_plan(plan: list[tuple], targets: list[Target], ctx: AgentRunContext) -> None:
+    """Distribui as unidades (tarefa, condição, modelo, rep) entre os workers (um alvo cada).
+
+    O recorder (`<runs_dir>/<run_id>/events.jsonl`) é compartilhado; o progresso vai ao stderr.
+    """
+    recorder = JsonlRecorder(ctx.runs_dir / ctx.run_id / "events.jsonl")
+    pending: queue.SimpleQueue[tuple] = queue.SimpleQueue()
+    for unit in plan:
+        pending.put(unit)
+    errors: list[BaseException] = []
+
+    def worker(index: int, target: Target) -> None:
+        try:
+            while not errors:
+                try:
+                    task, cond, model, rep = pending.get_nowait()
+                except queue.Empty:
+                    return
+                final = run_agent_pair(task, cond, model, rep, target, recorder, ctx)
+                print(
+                    f"[w{index + 1}] {task.task_id} × {cond} × {model} rep {rep}: "
+                    f"check={final['check_pass']} {final['termination']} "
+                    f"({final['duration_s']:.0f}s, US$ {final['cost_usd'] or 0:.4f})",
+                    file=sys.stderr,
+                )
+        except BaseException as exc:  # um worker que cai para os demais (sandbox sujo)
+            errors.append(exc)
+            raise
+        finally:
+            target.cleanup()
+
+    threads = [
+        threading.Thread(target=worker, args=(i, t), name=f"agent-w{i + 1}")
+        for i, t in enumerate(targets)
+    ]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        recorder.close()
+    if errors:
+        raise errors[0]

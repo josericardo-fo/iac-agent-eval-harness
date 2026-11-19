@@ -159,7 +159,7 @@ def _agent_resume_setup(tmp_path, monkeypatch):
     monkeypatch.setattr(cli_agent, "_select_modality_run", lambda *a, **k: (tasks, None))
     monkeypatch.setattr(cli_agent, "_build_agent", lambda cfg: None)
     monkeypatch.setattr(cli_agent, "_build_targets", lambda cfg: [])
-    monkeypatch.setattr(cli_agent, "_agent_loop", lambda cfg, plan, *a, **k: ran.append(plan))
+    monkeypatch.setattr(cli_agent, "run_agent_plan", lambda plan, *a, **k: ran.append(plan))
     monkeypatch.setattr(cli_agent, "_agent_summary", lambda events: "")
     return run_dir, done, orphan, ran
 

@@ -5,9 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import queue
 import sys
-import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -43,7 +41,7 @@ from iac_harness.agentic.runner import (
     HARNESS_FAILURES,
     AgentRunContext,
     agent_prompt,
-    run_agent_pair,
+    run_agent_plan,
 )
 from iac_harness.agentic.runner import unit_dir as agent_unit_dir
 from iac_harness.agentic.strata import DEFAULT_STRATA_FILE, load_strata
@@ -230,61 +228,22 @@ def _agent_plan(cfg: dict[str, Any], tasks: list[Any], reps: int) -> list[tuple]
     ]
 
 
-def _agent_loop(
-    cfg: dict[str, Any], plan: list[tuple], runs_dir: Path, run_id: str, agent: CodingAgent,
-    targets: list[Target], user_sim: UserSimSetup | None = None,
-) -> None:  # fmt: skip
-    """Distribui as unidades entre os workers (um alvo cada); o recorder é compartilhado."""
+def _agent_context(
+    cfg: dict[str, Any], runs_dir: Path, run_id: str, agent: CodingAgent,
+    user_sim: UserSimSetup | None = None,
+) -> AgentRunContext:  # fmt: skip
+    """Contexto do runner a partir de `[agentic]` e `[feedback]`; falha cedo se faltar plugin."""
     ag = cfg["agentic"]
     strata = load_strata(Path(ag.get("strata_file", DEFAULT_STRATA_FILE)))
     for cond in ag["conditions"]:  # falha cedo: plugin ausente
         resolve_toolkit(cond, AGENT_PLUGIN_ROOT)
-    recorder = JsonlRecorder(runs_dir / run_id / "events.jsonl")
-    ctx = AgentRunContext(
+    return AgentRunContext(
         run_id=run_id, runs_dir=runs_dir, agent=agent,
         plugin_root=AGENT_PLUGIN_ROOT, strata=strata,
         max_chars=cfg.get("feedback", {}).get("max_chars", DEFAULT_MAX_CHARS),
         user_sim=user_sim.simulator if user_sim else None,
         sim_judge=user_sim.judge if user_sim else None,
     )  # fmt: skip
-    pending: queue.SimpleQueue[tuple] = queue.SimpleQueue()
-    for unit in plan:
-        pending.put(unit)
-    errors: list[BaseException] = []
-
-    def worker(index: int, target: Target) -> None:
-        try:
-            while not errors:
-                try:
-                    task, cond, model, rep = pending.get_nowait()
-                except queue.Empty:
-                    return
-                final = run_agent_pair(task, cond, model, rep, target, recorder, ctx)
-                print(
-                    f"[w{index + 1}] {task.task_id} × {cond} × {model} rep {rep}: "
-                    f"check={final['check_pass']} {final['termination']} "
-                    f"({final['duration_s']:.0f}s, US$ {final['cost_usd'] or 0:.4f})",
-                    file=sys.stderr,
-                )
-        except BaseException as exc:  # um worker que cai para os demais (sandbox sujo)
-            errors.append(exc)
-            raise
-        finally:
-            target.cleanup()
-
-    threads = [
-        threading.Thread(target=worker, args=(i, t), name=f"agent-w{i + 1}")
-        for i, t in enumerate(targets)
-    ]
-    try:
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-    finally:
-        recorder.close()
-    if errors:
-        raise errors[0]
 
 
 def _agent_run_config(
@@ -332,7 +291,8 @@ def cmd_agent_run(args: argparse.Namespace) -> int:
     run_dir.mkdir(parents=True, exist_ok=False)
     run_config = _agent_run_config(cfg, tasks, reps, run_dir, agent, targets, user_sim)
     (run_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, ensure_ascii=False))
-    _agent_loop(cfg, _agent_plan(cfg, tasks, reps), runs_dir, run_id, agent, targets, user_sim)
+    ctx = _agent_context(cfg, runs_dir, run_id, agent, user_sim)
+    run_agent_plan(_agent_plan(cfg, tasks, reps), targets, ctx)
     print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0
@@ -380,9 +340,8 @@ def cmd_agent_resume(args: argparse.Namespace) -> int:
         config_path, saved, run_id, len(plan) - len(pending), len(discarded) + orphans,
         len(pending), "units",
     )  # fmt: skip
-    _agent_loop(
-        cfg, pending, runs_dir, run_id, _build_agent(cfg), _build_targets(cfg), _build_user_sim(cfg)
-    )
+    agent, targets, user_sim = _build_agent(cfg), _build_targets(cfg), _build_user_sim(cfg)
+    run_agent_plan(pending, targets, _agent_context(cfg, runs_dir, run_id, agent, user_sim))
     print(_agent_summary(load_events(run_dir / "events.jsonl")), file=sys.stderr)
     print(run_dir)
     return 0
