@@ -1,6 +1,7 @@
 """Segurança do container do agente (E3), no molde de test_safety.py: só o argv, sem Docker."""
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -28,8 +29,19 @@ def host_env(monkeypatch):
         monkeypatch.setenv(k, v)
 
 
+REAL_ROOT = Path(__file__).parent.parent
+
+
+def _registry(tmp_path: Path) -> Path:
+    """Árvore falsa com o registro de toolkits real (o registro vem da mesma raiz dos plugins)."""
+    (tmp_path / "toolkit").mkdir(exist_ok=True)
+    shutil.copy(REAL_ROOT / "toolkit" / "toolkits.toml", tmp_path / "toolkit" / "toolkits.toml")
+    return tmp_path
+
+
 def _plugin_root(tmp_path: Path) -> Path:
     """Árvore falsa com os diretórios das condições (o toolkit real pode não existir)."""
+    _registry(tmp_path)
     for rel in (
         "toolkit/plugins/own-rules",
         "toolkit/plugins/own-tools",
@@ -165,12 +177,12 @@ def test_condition_flags(host_env, tmp_path):
 
 def test_missing_condition_dir_is_rejected(tmp_path):
     with pytest.raises(FileNotFoundError):
-        resolve_toolkit("own-tools", tmp_path)
+        resolve_toolkit("own-tools", _registry(tmp_path))
 
 
 def test_unknown_condition_is_rejected(tmp_path):
     with pytest.raises(ValueError):
-        resolve_toolkit("everything", tmp_path)
+        resolve_toolkit("everything", _registry(tmp_path))
 
 
 def test_condition_loaded_checks_init_plugins(tmp_path):
@@ -184,7 +196,7 @@ def test_condition_loaded_checks_init_plugins(tmp_path):
     # plugin carregado, mas sem nenhuma skill dele
     assert cond.loaded({"plugins": ok["plugins"], "skills": ["deep-research"]}) is False
     assert cond.loaded(None) is False
-    assert resolve_toolkit("none", tmp_path).loaded({"plugins": []}) is True
+    assert resolve_toolkit("none", _registry(tmp_path)).loaded({"plugins": []}) is True
 
 
 @pytest.mark.parametrize("make_target", [_floci_target, _aws_target])

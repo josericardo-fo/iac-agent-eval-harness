@@ -80,7 +80,7 @@ def _task_source(cfg: dict[str, Any]) -> TaskSource:
 
 def _load_cfg_tasks(cfg: dict[str, Any]) -> list[Any]:
     """Tarefas do catálogo, de `[modality] tasks_dir` (ex.: tarefas de usuário simulado) ou de
-    `[modality] dataset` (E16: `"ambig-iac"`, linhas do JSONL em data/)."""
+    `[modality] dataset` (ex.: `"ambig-iac"`, linhas do JSONL em data/)."""
     return _task_source(cfg).load()
 
 

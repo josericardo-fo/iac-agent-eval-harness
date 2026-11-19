@@ -126,7 +126,7 @@ class ClaudeCodeAgent:
         missing = [k for k in self.gateway_vars if not os.environ.get(k)]
         if missing:
             raise RuntimeError(f"agente sem credencial do gateway: defina {', '.join(missing)}")
-        secret_values = {
+        secret_env = {
             **{k: os.environ[k] for k in self.gateway_vars},
             **env.secret,
         }
@@ -134,7 +134,7 @@ class ClaudeCodeAgent:
             "docker", "run", "--rm", "--name", name, "--user", AGENT_USER,
             *(a for net in target.agent_networks() for a in ("--network", net)),
             *(a for k, v in env.plain.items() for a in ("-e", f"{k}={v}")),
-            *(a for k in secret_values for a in ("-e", k)),
+            *(a for k in secret_env for a in ("-e", k)),
             "-v", f"{Path(workdir).resolve()}:/work",
             *(a for host, cont in condition.mounts for a in ("-v", f"{host}:{cont}:ro")),
             *(("-v", f"{Path(session_dir).resolve()}:{SESSION_MOUNT}") if session_dir else ()),
@@ -154,7 +154,7 @@ class ClaudeCodeAgent:
         ]  # fmt: skip
         base = {k: v for k, v in os.environ.items() if k in _CLIENT_PASSTHROUGH or
                 k.startswith("DOCKER_")}  # fmt: skip
-        return argv, {**base, **secret_values}
+        return argv, {**base, **secret_env}
 
     def run(
         self, prompt: str, workdir: Path, condition: Toolkit, model: str, target: Target,

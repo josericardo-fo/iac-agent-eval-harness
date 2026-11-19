@@ -38,6 +38,7 @@ def test_measured_toolkits_resolve_in_repo(name):
 
 
 def test_toolkit_added_by_data(tmp_path):
-    path = tmp_path / "toolkits.toml"
+    (tmp_path / "toolkit").mkdir()
+    path = tmp_path / "toolkit" / "toolkits.toml"
     path.write_text('[none]\n\n[mine]\nplugin = "p"\n')
-    assert load_toolkits(path) == {"none": (None, None), "mine": ("p", None)}
+    assert load_toolkits(tmp_path) == {"none": (None, None), "mine": ("p", None)}

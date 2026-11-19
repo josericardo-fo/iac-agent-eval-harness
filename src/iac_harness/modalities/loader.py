@@ -10,7 +10,7 @@ from iac_harness.modalities.spec import MODALITIES
 
 TASKS_DIR = Path(__file__).parent / "tasks"
 CATEGORIES = ("create", "modify", "delete", "query")
-# O que se espera do agente (E2): agir, ou perguntar (pedido ambíguo; a referência é um chute).
+# O que se espera do agente: agir, ou perguntar (pedido ambíguo; a referência é um chute).
 EXPECTS = ("act", "ask")
 UPSTREAM_DIRNAME = "upstream"
 # Cartão do usuário simulado (opcional). Fica só no host: nunca vai para o /work do agente.
@@ -42,7 +42,7 @@ class ModalityTask:
     user_card: str | None = None  # user.md: o que o usuário simulado sabe (só com [user_sim])
     check_final: str | None = None  # check_final.py: estado final desejado (só com [user_sim])
     setup: str | None = None  # setup.py: completa o estado depois do apply inicial (fora do /work)
-    # Tarefa de dataset com oráculo plan + OPA (E16, Ambig-IaC): substitui o check.py (vazio).
+    # Tarefa de dataset com oráculo plan + OPA (Ambig-IaC): substitui o check.py (vazio).
     rego_policy: str | None = None
     adaptation: str = ""  # adaptação declarada do enunciado original (tarefas de dataset)
     # Tipos de recurso do plan da referência (tarefas de dataset): base do `type_f1` do oráculo.

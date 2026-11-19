@@ -39,7 +39,7 @@ class DirectorySource:
 
 @dataclass(frozen=True)
 class AmbigIacSource:
-    """Ambig-IaC (E16): linhas do JSONL em `data_dir`; `rules_file` aplica as regras
+    """Ambig-IaC: linhas do JSONL em `data_dir`; `rules_file` aplica as regras
     discriminantes (`amendment.discriminating_rules`) por tarefa."""
 
     data_dir: Path

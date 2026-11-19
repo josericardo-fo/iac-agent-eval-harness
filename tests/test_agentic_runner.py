@@ -1,5 +1,6 @@
 """run_agent_pair com alvo e agente falsos: evento final, guardas e prompt (sem Docker nem LLM)."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,10 @@ def _task(category="create", **kw):
 
 
 def _plugin_root(tmp_path):
+    # o registro de toolkits vem da mesma raiz dos plugins
+    (tmp_path / "toolkit").mkdir(exist_ok=True)
+    real = Path(__file__).parent.parent / "toolkit" / "toolkits.toml"
+    shutil.copy(real, tmp_path / "toolkit" / "toolkits.toml")
     (tmp_path / "toolkit/plugins/own-tools").mkdir(parents=True)
     (tmp_path / "toolkit/plugins/own-tools/RULES.md").write_text("r")
     return tmp_path

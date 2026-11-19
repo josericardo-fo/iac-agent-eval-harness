@@ -1,4 +1,4 @@
-"""Adapter do Ambig-IaC (E16): JSONL da revisão fixa → tarefas do agente (`ModalityTask`).
+"""Adapter do Ambig-IaC: JSONL da revisão fixa → tarefas do agente (`ModalityTask`).
 
 O parquet do HF (`znyang/ambig-iac`) vira JSONL uma vez, fora do ambiente do projeto
 (`scripts/fetch_ambig_iac.py`, com pyarrow descartável); aqui só se lê o JSONL, conferindo o
@@ -24,7 +24,7 @@ JSONL_SHA256 = "d1f5525230979df99e0cbe5aaabae5744cda76d320663f4fd9069fe2b2b853a0
 REGION = "us-east-1"
 # Linha fixa, igual em todas as condições (o dataset é de síntese de Terraform).
 PROMPT_SUFFIX = "Write the Terraform configuration for this in main.tf in the working directory."
-# Campo do enunciado: `prompt` (ambíguo) ou `prompt_original` (braço de teto do E16).
+# Campo do enunciado: `prompt` (ambíguo) ou `prompt_original` (braço de teto).
 PROMPT_FIELDS = ("prompt", "prompt_original")
 FETCH_HINT = (
     "rode: cd /tmp && uv run --no-project --with pyarrow python -I "

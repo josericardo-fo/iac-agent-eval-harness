@@ -1,6 +1,8 @@
 """ClaudeCodeAgent.run com o processo do docker falso: guarda do system/init, sem Docker."""
 
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -69,7 +71,18 @@ def fake_docker(monkeypatch):
     return install
 
 
+REAL_ROOT = Path(__file__).parent.parent
+
+
+def _registry(tmp_path):
+    """Registro de toolkits real na árvore falsa (vem da mesma raiz dos plugins)."""
+    (tmp_path / "toolkit").mkdir(exist_ok=True)
+    shutil.copy(REAL_ROOT / "toolkit" / "toolkits.toml", tmp_path / "toolkit" / "toolkits.toml")
+    return tmp_path
+
+
 def _plugin_root(tmp_path):
+    _registry(tmp_path)
     (tmp_path / "toolkit/plugins/own-tools").mkdir(parents=True)
     (tmp_path / "toolkit/plugins/own-tools/RULES.md").write_text("r")
     return tmp_path
@@ -131,7 +144,7 @@ def test_transcript_redacts_target_secret(tmp_path, fake_docker):
 
 
 def _argv(tmp_path, **kw):
-    cond = resolve_toolkit("none", tmp_path)
+    cond = resolve_toolkit("none", _registry(tmp_path))
     return ClaudeCodeAgent().docker_argv(
         "the prompt", tmp_path, cond, "Haiku 5.5", FakeTarget(), "c1", **kw
     )[0]

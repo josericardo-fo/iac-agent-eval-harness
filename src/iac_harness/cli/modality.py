@@ -121,7 +121,7 @@ def cmd_modality_prevalidate(args: argparse.Namespace) -> int:
     return 0
 
 
-# ---------- ambig-prevalidate (E16) ----------
+# ---------- ambig-prevalidate ----------
 
 
 def cmd_ambig_prevalidate(args: argparse.Namespace) -> int:
@@ -489,7 +489,7 @@ def cmd_modality_metrics(args: argparse.Namespace) -> int:
     metrics = compute_modality_metrics(events, prices, difficulty=_modality_difficulty())
     metrics["excluded_tasks"] = excluded
     if args.baseline is not None:
-        # E4: forma livre contra um run de forma fixa (as mesmas exclusões valem nos dois)
+        # forma livre contra um run de forma fixa (as mesmas exclusões valem nos dois)
         base_events = load_events(Path(args.baseline) / "events.jsonl")
         base_events = [e for e in base_events if e.get("task_id") not in excluded]
         metrics["baseline"] = {
