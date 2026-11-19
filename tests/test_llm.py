@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from iac_harness.agentic.judge import DEFAULT_JUDGE_MODEL
-from iac_harness.llm import build_text_model
+from iac_harness.llm import build_text_model, default_model
 from iac_harness.llm import codex_cli as codex_mod
 from iac_harness.llm.anthropic_text import DEFAULT_MODEL, AnthropicText
 from iac_harness.llm.codex_cli import CodexText
@@ -26,26 +25,35 @@ def test_anthropic_complete_sends_system_and_user_and_returns_text():
 
 
 def test_default_models_match_the_old_judge_default():
-    assert DEFAULT_MODEL == DEFAULT_JUDGE_MODEL == "Sonnet 5.5"
+    assert DEFAULT_MODEL == default_model("anthropic") == "Sonnet 5.5"
+    assert default_model("codex") == "gpt-6-luna"
 
 
 def test_factory_builds_each_provider(monkeypatch):
     monkeypatch.setattr(codex_mod.CodexText, "codex_version", "codex-cli 9.9")
     monkeypatch.setattr("iac_harness.llm.anthropic_text.Anthropic", lambda: FakeClient())
-    a = build_text_model({"model": "X", "max_tokens": 5}, "anthropic")
+    a = build_text_model({"provider": "anthropic", "model": "X", "max_tokens": 5})
     assert a.params == {"provider": "anthropic", "model": "X", "max_tokens": 5}
-    c = build_text_model({}, "codex")
+    a = build_text_model({"provider": "anthropic", "model": "X"})
+    assert a.params["max_tokens"] == 1024
+    c = build_text_model({"provider": "codex", "model": "gpt-6-luna"})
     assert c.params["provider"] == "codex" and c.params["model"] == "gpt-6-luna"
-    assert c.params["codex_version"] == "codex-cli 9.9"
-    c = build_text_model(
-        {"provider": "codex", "model": "m", "reasoning_effort": "low"}, "anthropic"
-    )
+    assert c.params["codex_version"] == "codex-cli 9.9" and c.reasoning_effort is None
+    c = build_text_model({"provider": "codex", "model": "m", "reasoning_effort": "low"})
     assert (c.model, c.reasoning_effort) == ("m", "low")
 
 
 def test_factory_rejects_unknown_provider():
     with pytest.raises(ValueError, match="provider desconhecido"):
-        build_text_model({"provider": "gemini"}, "anthropic")
+        build_text_model({"provider": "gemini", "model": "m"})
+
+
+@pytest.mark.parametrize(
+    "section,key", [({"model": "m"}, "provider"), ({"provider": "anthropic"}, "model")]
+)
+def test_factory_requires_provider_and_model(section, key):
+    with pytest.raises(ValueError, match=f"falta a chave '{key}'"):
+        build_text_model(section)
 
 
 # ---------- Codex ----------

@@ -67,7 +67,7 @@ from iac_harness.datasets import ambig_iac
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION
 from iac_harness.feedback import DEFAULT_MAX_CHARS
-from iac_harness.llm import build_text_model
+from iac_harness.llm import TextModel, build_text_model, default_model
 from iac_harness.metrics import load_events
 from iac_harness.modalities.loader import TASKS_DIR as MODALITY_TASKS_DIR
 from iac_harness.recorder.jsonl import JsonlRecorder
@@ -144,13 +144,21 @@ def _build_judge(
     provider: str | None = None,
     reasoning_effort: str | None = None,
 ) -> Judge:
-    """Juiz da seção `[judge]` (`provider`, `model`); sem `provider` é o Anthropic de sempre.
+    """Juiz da seção `[judge]` (`provider` e `model` obrigatórios, sem padrão escondido).
 
     `provider` sobrescreve o da config; se difere dele, o `model` da config não é herdado
-    (vale o padrão do provedor, a menos que `model` seja dado).
+    (vale o padrão do provedor escolhido na CLI, a menos que `model` seja dado).
     """
     section = _judge_section(section, model, provider, reasoning_effort)
-    return LlmJudge(llm=build_text_model(section, "anthropic"))
+    return LlmJudge(llm=_text_model(section, "judge"))
+
+
+def _text_model(section: dict[str, Any], name: str) -> TextModel:
+    """Modelo de texto da seção `[name]`; chave ausente ou provedor desconhecido encerra."""
+    try:
+        return build_text_model(section)
+    except ValueError as exc:
+        raise SystemExit(f"erro: [{name}] {exc}") from exc
 
 
 def _judge_section(
@@ -160,8 +168,9 @@ def _judge_section(
     reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Seção `[judge]` com as opções da CLI por cima (regras em `_build_judge`)."""
-    if provider and provider != section.get("provider", "anthropic"):
+    if provider and provider != section.get("provider"):
         section = {k: v for k, v in section.items() if k != "model"}
+        model = model or default_model(provider)
     return {
         **section,
         **({"provider": provider} if provider else {}),
@@ -184,7 +193,7 @@ def _build_user_sim(cfg: dict[str, Any]) -> UserSimSetup | None:
         return None
     if section.get("max_replies", DEFAULT_MAX_REPLIES) < 1:
         raise SystemExit("erro: [user_sim] max_replies deve ser >= 1")
-    llm = build_text_model(section, "codex")
+    llm = _text_model(section, "user_sim")
     sim = UserSimulator(
         llm,
         section.get("max_replies", DEFAULT_MAX_REPLIES),
@@ -468,8 +477,7 @@ def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     cfg = json.loads((run_dir / "run_config.json").read_text())["config"]
     section = _judge_section(cfg.get("judge", {}), args.model, args.provider)
-    judge = QuestionJudge(build_text_model({**section, "max_tokens": QUESTION_MAX_TOKENS},
-                                           "anthropic"))  # fmt: skip
+    judge = QuestionJudge(_text_model({**section, "max_tokens": QUESTION_MAX_TOKENS}, "judge"))
     out_path = run_dir / args.out
     # linhas com erro são refeitas ao retomar (o relatório usa a última linha de cada id)
     done = ({j["trajectory_id"] for j in load_events(out_path) if not j.get("error")}

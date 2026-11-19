@@ -10,6 +10,11 @@ DEFAULT_MODEL = "Sonnet 5.5"  # ID aceito pelo gateway
 DEFAULT_MAX_TOKENS = 1024
 
 
+def from_section(section: dict[str, Any]) -> AnthropicText:
+    """Modelo da seção da config (`model` obrigatório; `max_tokens` opcional)."""
+    return AnthropicText(section["model"], section.get("max_tokens", DEFAULT_MAX_TOKENS))
+
+
 class AnthropicText:
     provider = "anthropic"
 

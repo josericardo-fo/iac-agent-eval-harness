@@ -108,8 +108,9 @@ In the harness the rules enter through `--append-system-prompt-file`; in the plu
 ## Limitations
 
 - AWS only. One agent (Claude Code); the LLM layer talks to an Anthropic gateway or the Codex CLI.
-- The default judge is Anthropic (`Sonnet 5.5`); the simulated user defaults to the Codex CLI
-  (`gpt-6-luna`), which needs a logged-in `codex`.
+- Judge and simulated user have no default: `[judge]` and `[user_sim]` must name `provider` and
+  `model`. The shipped configs use Anthropic (`Sonnet 5.5`) for the judge and the Codex CLI
+  (`gpt-6-luna`, needs a logged-in `codex`) for the simulated user.
 - The real AWS backend deletes everything outside its baseline in the scoped regions and costs
   money; read [docs/componentes.md](docs/componentes.md) before using it.
 - The official AWS Emulator was not evaluated. LocalStack (now token-only) was removed; the spike

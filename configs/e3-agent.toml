@@ -41,6 +41,7 @@ workers = 4
 strata_file = "configs/strata.toml"
 
 [judge]
+provider = "anthropic"
 model = "Sonnet 5.5"
 
 [feedback]

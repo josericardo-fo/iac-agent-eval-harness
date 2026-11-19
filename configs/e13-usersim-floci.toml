@@ -23,7 +23,7 @@ workers = 1
 
 [judge]
 # Também classifica, inline, a mensagem final do turno 1 (decide se o usuário responde).
-# provider = "anthropic"   # padrão; "codex" usa o Codex CLI
+provider = "anthropic"   # ou "codex" (Codex CLI)
 model = "Sonnet 5.5"
 
 [user_sim]

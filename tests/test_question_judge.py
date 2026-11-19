@@ -138,7 +138,7 @@ def _run(tmp_path, asked):
 @pytest.fixture
 def fake_llm(monkeypatch):
     llm = FakeLlm(GOOD)
-    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: llm)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section: llm)
     return llm
 
 
@@ -189,7 +189,7 @@ def test_judge_questions_leaves_judge_jsonl_untouched(tmp_path, fake_llm):
 def test_judge_questions_uses_codex_provider(tmp_path, monkeypatch):
     run, _ = _run(tmp_path, [True])
     sections = []
-    fake = lambda section, default: sections.append(section) or FakeLlm(GOOD)  # noqa: E731
+    fake = lambda section: sections.append(section) or FakeLlm(GOOD)  # noqa: E731
     monkeypatch.setattr(cli_agent, "build_text_model", fake)
     assert main(["agent-judge-questions", str(run), "--provider", "codex"]) == 0
     assert sections[0]["provider"] == "codex"

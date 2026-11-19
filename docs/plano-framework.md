@@ -260,9 +260,15 @@ simples. Só o necessário para as peças que já existem mais as da fase 6; nad
   por agente, não globais.
 - [ ] `Backend`: unifica `executors/` e `agentic/targets.py` (reset, endpoint, credenciais,
   procedência, limpeza final). Floci e AWS hoje; AWS Emulator na fase 6.
-- [ ] `Verifier` e `Judge`: interfaces separadas (sem LLM × com LLM). Modelo e fornecedor do juiz
+- [x] `Verifier` e `Judge`: interfaces separadas (sem LLM × com LLM). Modelo e fornecedor do juiz
   vêm da config, sem default Anthropic escondido.
-- [ ] `UserSimulator`: o que `user_sim.py` já faz, atrás de uma interface.
+  *`[judge]` e `[user_sim]` exigem `provider` e `model` (as configs ganharam `provider` explícito e
+  resolvem como antes), o `LlmJudge` exige o `TextModel` e os provedores viram um registro em
+  `llm/__init__.py`; `Verifier` não ganhou `Protocol`, porque o lado sem LLM (`verifiers/`,
+  `modalities/checks.py`) já é separado e tem uma implementação só de cada coisa.*
+- [x] `UserSimulator`: o que `user_sim.py` já faz, atrás de uma interface.
+  *A interface plugável é o `TextModel` (provedor e modelo da config); um `Protocol` próprio só
+  quando houver um segundo simulador.*
 - [x] `Toolkit`: registro carregado de diretório/config, não do dicionário em
   `agentic/conditions.py` (os nomes medidos continuam válidos).
   *O registro virou `toolkit/toolkits.toml` (nome → `plugin`, `rules`), lido com `tomllib`; um

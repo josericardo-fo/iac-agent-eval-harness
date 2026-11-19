@@ -44,7 +44,7 @@ def test_agent_judge_passes_mutation_summary(tmp_path, monkeypatch):
     ]
     _write_run(tmp_path / "r", events)
     monkeypatch.setattr(cli_agent, "LlmJudge", FakeJudge)
-    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: None)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section: None)
     assert main(["agent-judge", str(tmp_path / "r")]) == 0
     assert FakeJudge.last.calls == [True, False, True]
 
@@ -122,28 +122,57 @@ def test_build_user_sim_absent_keeps_old_flow():
     assert cli_agent._build_user_sim(_cfg()) is None
 
 
-def test_build_user_sim_uses_codex_by_default_and_max_replies(monkeypatch):
+def test_build_user_sim_uses_section_and_max_replies(monkeypatch):
     from test_agentic_judge import FakeText
 
     seen = []
 
-    def fake_factory(section, default_provider):
-        seen.append((section, default_provider))
+    def fake_factory(section):
+        seen.append(section)
         return FakeText("x")
 
     monkeypatch.setattr(cli_agent, "build_text_model", fake_factory)
     monkeypatch.setattr(cli_agent, "_build_judge", lambda section, model=None: FakeJudge())
-    sim, judge = cli_agent._build_user_sim(_cfg(user_sim={"max_replies": 2}, judge={"model": "J"}))
+    user_sim = {"provider": "codex", "model": "m", "max_replies": 2}
+    sim, judge = cli_agent._build_user_sim(_cfg(user_sim=user_sim, judge={"model": "J"}))
     assert sim.max_replies == 2 and isinstance(judge, FakeJudge)
-    assert seen[0][1] == "codex"
-    sim, _ = cli_agent._build_user_sim(_cfg(user_sim={}))
+    assert seen[0] == user_sim
+    sim, _ = cli_agent._build_user_sim(_cfg(user_sim={"provider": "codex", "model": "m"}))
     assert sim.max_replies == 1
+
+
+@pytest.mark.parametrize(
+    "section,key", [({"model": "m"}, "provider"), ({"provider": "codex"}, "model")]
+)
+def test_build_user_sim_requires_provider_and_model(section, key):
+    with pytest.raises(SystemExit, match=rf"\[user_sim\] falta a chave '{key}'"):
+        cli_agent._build_user_sim(_cfg(user_sim=section))
+
+
+@pytest.mark.parametrize(
+    "section,key",
+    [({"model": "m"}, "provider"), ({"provider": "anthropic"}, "model"), ({}, "provider")],
+)
+def test_build_judge_requires_provider_and_model(section, key):
+    with pytest.raises(SystemExit, match=rf"\[judge\] falta a chave '{key}'"):
+        cli_agent._build_judge(section)
+
+
+def test_build_judge_cli_provider_switch_uses_that_provider_default():
+    section = cli_agent._judge_section(
+        {"provider": "anthropic", "model": "claude-x"}, provider="codex"
+    )
+    assert (section["provider"], section["model"]) == ("codex", "gpt-6-luna")
+    same = cli_agent._judge_section(
+        {"provider": "anthropic", "model": "claude-x"}, provider="anthropic"
+    )
+    assert same["model"] == "claude-x"
 
 
 def test_build_user_sim_rejects_zero_replies(monkeypatch):
     from test_agentic_judge import FakeText
 
-    monkeypatch.setattr(cli_agent, "build_text_model", lambda s, d: FakeText("x"))
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda s: FakeText("x"))
     with pytest.raises(SystemExit):
         cli_agent._build_user_sim(_cfg(user_sim={"max_replies": 0}))
 
@@ -175,7 +204,7 @@ def test_agent_judge_out_leaves_primary_untouched(tmp_path, monkeypatch):
     _write_run(run, events, _verdicts(events, "ask"))
     before = (run / "judge.jsonl").read_bytes()
     monkeypatch.setattr(cli_agent, "LlmJudge", FakeJudge)
-    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: None)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section: None)
     assert main(["agent-judge", str(run), "--out", "judge_luna.jsonl"]) == 0
     assert (run / "judge.jsonl").read_bytes() == before
     assert len((run / "judge_luna.jsonl").read_text().splitlines()) == 3
@@ -187,7 +216,7 @@ def test_agent_judge_out_resumes_and_redo(tmp_path, monkeypatch):
     _write_run(run, events)
     _jsonl(run / "alt.jsonl", _verdicts(events[:2]))
     monkeypatch.setattr(cli_agent, "LlmJudge", FakeJudge)
-    monkeypatch.setattr(cli_agent, "build_text_model", lambda section, default: None)
+    monkeypatch.setattr(cli_agent, "build_text_model", lambda section: None)
     assert main(["agent-judge", str(run), "--out", "alt.jsonl"]) == 0
     assert FakeJudge.last.calls == [True]  # só a terceira trajetória
     assert main(["agent-judge", str(run), "--out", "alt.jsonl", "--redo"]) == 0

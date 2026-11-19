@@ -82,6 +82,7 @@ strata_file = "configs/strata.toml"
 
 [judge]
 # Também classifica, inline, a mensagem final do turno 1 (decide se o usuário responde).
+provider = "anthropic"
 model = "Sonnet 5.5"
 
 [user_sim]

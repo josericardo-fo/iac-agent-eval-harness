@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from iac_harness.agentic.judge import JUDGE_SYSTEM, KINDS, LlmJudge, parse_verdict
+from iac_harness.llm.anthropic_text import AnthropicText
 
 
 class FakeClient:
@@ -50,7 +51,7 @@ def test_invalid_verdict(text):
 
 def test_classify_sends_mutation_summary():
     client = FakeClient('Sure: {"kind": "done_with_followup"}')
-    judge = LlmJudge(client=client)
+    judge = LlmJudge(AnthropicText(client=client))
     out = judge.classify("Deleted it. Should I also delete the logs bucket?", "Delete X.", True)
     assert out["kind"] == "done_with_followup" and out["asked"] is False
     content = client.requests[0]["messages"][0]["content"]
@@ -61,14 +62,16 @@ def test_classify_sends_mutation_summary():
 @pytest.mark.parametrize("mutated,label", [(False, "no"), (None, "no")])
 def test_classify_reports_no_mutation(mutated, label):
     client = FakeClient('{"kind": "ask"}')
-    out = LlmJudge(client=client).classify("Which bucket?", "Delete the bucket.", mutated)
+    out = LlmJudge(AnthropicText(client=client)).classify(
+        "Which bucket?", "Delete the bucket.", mutated
+    )
     assert out == {"asked": True, "kind": "ask", "raw": '{"kind": "ask"}'}
     assert f"changed the AWS state: {label}" in client.requests[0]["messages"][0]["content"]
 
 
 def test_empty_final_text_is_gave_up_without_calling_model():
     client = FakeClient("unused")
-    out = LlmJudge(client=client).classify("  ", "t", False)
+    out = LlmJudge(AnthropicText(client=client)).classify("  ", "t", False)
     assert out["kind"] == "gave_up" and out["asked"] is False
     assert client.requests == []
 
@@ -93,7 +96,7 @@ class FakeText:
 @pytest.mark.parametrize("kind", KINDS)
 def test_judge_on_fake_text_model_gives_the_same_verdicts_as_the_anthropic_client(kind):
     reply = f'Sure: {{"kind": "{kind}"}}'
-    via_client = LlmJudge(client=FakeClient(reply)).classify("Msg?", "Task.", True)
+    via_client = LlmJudge(AnthropicText(client=FakeClient(reply))).classify("Msg?", "Task.", True)
     text = FakeText(reply)
     via_model = LlmJudge(llm=text).classify("Msg?", "Task.", True)
     assert via_model == via_client
@@ -102,7 +105,7 @@ def test_judge_on_fake_text_model_gives_the_same_verdicts_as_the_anthropic_clien
 
 
 def test_judge_default_params_keep_old_fields_and_add_provider():
-    params = LlmJudge(client=FakeClient("x")).params
+    params = LlmJudge(AnthropicText(client=FakeClient("x"))).params
     assert params == {
         "judge_provider": "anthropic",
         "judge_model": "Sonnet 5.5",

@@ -26,8 +26,8 @@ O usuário simulado vê o pedido, o cartão e a mensagem do agente. Nunca vê co
 
 | Chave de `[user_sim]` | Valores | Padrão |
 |---|---|---|
-| `provider` | `codex`, `anthropic` | `codex` |
-| `model` | ID do provedor | o padrão do provedor (`gpt-6-luna` no Codex) |
+| `provider` | `codex`, `anthropic` | obrigatório |
+| `model` | ID do provedor (`gpt-6-luna` no Codex) | obrigatório |
 | `reasoning_effort` | só no `codex` | do CLI |
 | `max_replies` | inteiro ≥ 1 | 1 |
 | `prompt_version` | `user-sim-v1` (técnico), `user-sim-lay-v1`, `user-sim-lay-v2` (leigo) | `user-sim-v1` |
@@ -46,8 +46,9 @@ agente perguntou.
 
 `agentic/judge.py`, prompt `e3-judge-v2`. Classifica a mensagem final de cada trajetória em
 `ask`, `done`, `done_with_followup`, `partial` ou `gave_up`, e grava `judge.jsonl`. O provedor e o
-modelo vêm de `[judge]` (`provider`, `model`); o padrão é `anthropic` com o modelo padrão do
-backend (`Sonnet 5.5`).
+modelo vêm de `[judge]` (`provider`, `model`), ambos obrigatórios: não há juiz padrão. As configs
+do repositório usam `provider = "anthropic"` e `model = "Sonnet 5.5"`. Runs gravados antes disso
+não têm `provider` no `run_config.json`; julgue-os com `--provider anthropic`.
 
 ```bash
 uv run iac-harness agent-judge runs/<id>                       # julga o que falta
@@ -60,7 +61,9 @@ uv run iac-harness agent-judge runs/<id> --compare-with judge-codex.jsonl  # jui
 
 - **Validação contra humano:** `--sample N` grava `judge_sample.csv` (`trajectory_id`,
   `final_text_excerpt`, `judge_kind`, `human_kind`); preencha `human_kind` e rode `--agreement`.
-- **Segundo juiz:** `--provider`/`--model`/`--reasoning-effort` trocam o juiz sem mexer na config;
+- **Segundo juiz:** `--provider`/`--model`/`--reasoning-effort` trocam o juiz sem mexer na config
+  (`--provider` diferente do da config sem `--model` usa o modelo padrão do provedor:
+  `gpt-6-luna` no Codex, `Sonnet 5.5` no Anthropic);
   `--out` grava em outro arquivo; `--compare-with` dá a concordância entre os dois arquivos
   (kappa de Cohen no `kind` e no "perguntou").
 

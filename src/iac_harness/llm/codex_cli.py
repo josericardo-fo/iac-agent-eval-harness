@@ -37,6 +37,11 @@ def real_auth_path() -> Path:
     return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / AUTH_FILENAME
 
 
+def from_section(section: dict[str, Any]) -> CodexText:
+    """Modelo da seção da config (`model` obrigatório; `reasoning_effort` opcional)."""
+    return CodexText(section["model"], section.get("reasoning_effort"))
+
+
 class CodexText:
     provider = "codex"
 

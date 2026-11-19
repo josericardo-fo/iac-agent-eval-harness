@@ -24,6 +24,7 @@ from iac_harness.cli.modality import (
     cmd_modality_replay,
     cmd_modality_run,
 )
+from iac_harness.llm import PROVIDERS
 from iac_harness.modalities.spec import MODALITIES
 
 
@@ -126,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         "--agreement", type=Path, help="judge_sample.csv preenchido: concordância juiz × humano"
     )
     p_ajud.add_argument(
-        "--provider", choices=("anthropic", "codex"), help="provedor do juiz (padrão: [judge])"
+        "--provider", choices=tuple(PROVIDERS), help="provedor do juiz (padrão: [judge])"
     )
     p_ajud.add_argument("--reasoning-effort", help="esforço de raciocínio do juiz (codex)")
     p_ajud.add_argument(
@@ -147,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_ajq.add_argument("run_dir", type=Path)
     p_ajq.add_argument(
-        "--provider", choices=("anthropic", "codex"), help="provedor do juiz (padrão: [judge])"
+        "--provider", choices=tuple(PROVIDERS), help="provedor do juiz (padrão: [judge])"
     )
     p_ajq.add_argument("--model", help="modelo do juiz (padrão: o do provedor / [judge])")
     p_ajq.add_argument(

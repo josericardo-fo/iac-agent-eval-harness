@@ -1,14 +1,23 @@
 """Camada mínima de modelo de texto: `complete(system, user) -> str`, sem saber o provedor.
 
 Quem consome (juiz, usuário simulado, outros papéis) depende só do protocolo `TextModel`; o
-provedor entra pela config (`provider = "anthropic" | "codex"`) via `build_text_model`.
+provedor entra pela config (`provider`, `model`) via `build_text_model`, sem padrão escondido.
+Provedor novo: um módulo com `DEFAULT_MODEL` e `from_section(section)`, mais uma linha em
+`PROVIDERS`.
 """
 
 from __future__ import annotations
 
+import importlib
+from types import ModuleType
 from typing import Any, Protocol
 
-PROVIDERS = ("anthropic", "codex")
+# nome → módulo do backend (import tardio: cada backend só carrega o que usa)
+PROVIDERS = {
+    "anthropic": "iac_harness.llm.anthropic_text",
+    "codex": "iac_harness.llm.codex_cli",
+}
+REQUIRED_KEYS = ("provider", "model")
 
 
 class TextModel(Protocol):
@@ -20,25 +29,24 @@ class TextModel(Protocol):
     def complete(self, system: str, user: str) -> str: ...
 
 
-def build_text_model(section: dict[str, Any], default_provider: str) -> TextModel:
+def _provider_module(provider: str) -> ModuleType:
+    if provider not in PROVIDERS:
+        raise ValueError(f"provider desconhecido: {provider!r} (use um de {list(PROVIDERS)})")
+    return importlib.import_module(PROVIDERS[provider])
+
+
+def build_text_model(section: dict[str, Any]) -> TextModel:
     """Monta o modelo da seção da config (`provider`, `model`, + opções do provedor).
 
-    O modelo padrão é o do provedor. Provedor desconhecido levanta ValueError. Imports tardios:
-    cada backend só carrega o que usa.
+    `provider` e `model` são obrigatórios; chave ausente ou provedor desconhecido levanta
+    ValueError.
     """
-    provider = section.get("provider", default_provider)
-    if provider == "anthropic":
-        from iac_harness.llm.anthropic_text import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, AnthropicText
+    for key in REQUIRED_KEYS:
+        if key not in section:
+            raise ValueError(f"falta a chave {key!r} (obrigatória: {', '.join(REQUIRED_KEYS)})")
+    return _provider_module(section["provider"]).from_section(section)
 
-        return AnthropicText(
-            model=section.get("model", DEFAULT_MODEL),
-            max_tokens=section.get("max_tokens", DEFAULT_MAX_TOKENS),
-        )
-    if provider == "codex":
-        from iac_harness.llm.codex_cli import DEFAULT_MODEL, CodexText
 
-        return CodexText(
-            model=section.get("model", DEFAULT_MODEL),
-            reasoning_effort=section.get("reasoning_effort"),
-        )
-    raise ValueError(f"provider desconhecido: {provider!r} (use um de {list(PROVIDERS)})")
+def default_model(provider: str) -> str:
+    """Modelo padrão do provedor (só para a troca explícita de provedor na CLI, `--provider`)."""
+    return _provider_module(provider).DEFAULT_MODEL

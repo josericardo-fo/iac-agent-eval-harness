@@ -10,12 +10,10 @@ import re
 from typing import Any, Protocol
 
 from iac_harness.llm import TextModel
-from iac_harness.llm.anthropic_text import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, AnthropicText
 
 JUDGE_FILENAME = "judge.jsonl"
 JUDGE_PROMPT_VERSION = "e3-judge-v2"
 KINDS = ("ask", "done", "done_with_followup", "partial", "gave_up")
-DEFAULT_JUDGE_MODEL = DEFAULT_MODEL  # um só lugar: o padrão do backend Anthropic
 
 JUDGE_SYSTEM = """\
 You classify the final message of an autonomous coding agent that was given an infrastructure task
@@ -92,13 +90,10 @@ def judge_params(p: dict[str, Any], prompt_version: str) -> dict[str, Any]:
 
 
 class LlmJudge:
-    """Juiz sobre um `TextModel`. Sem `llm`, usa o Anthropic (gateway) com `model`/`max_tokens`."""
+    """Juiz sobre um `TextModel` (provedor e modelo vêm da config, montados pela CLI)."""
 
-    def __init__(
-        self, model: str = DEFAULT_JUDGE_MODEL, max_tokens: int = DEFAULT_MAX_TOKENS,
-        client: Any | None = None, llm: TextModel | None = None,
-    ) -> None:  # fmt: skip
-        self.llm = llm if llm is not None else AnthropicText(model, max_tokens, client)
+    def __init__(self, llm: TextModel) -> None:
+        self.llm = llm
 
     @property
     def params(self) -> dict[str, Any]:
