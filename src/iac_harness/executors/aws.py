@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,8 +18,9 @@ from iac_harness.types import CheckStatus
 
 __all__ = ["RealAwsExecutor"]
 
-SWEEP_SCRIPT = Path(__file__).with_name("aws_sweep.py")
-SWEEP_FILENAME = "aws_sweep.py"
+# Pacote autocontido, copiado inteiro para a toolchain e rodado com `python3 -m aws_sweep`.
+SWEEP_PACKAGE = Path(__file__).with_name("aws_sweep")
+SWEEP_MODULE = "aws_sweep"
 BASELINE_FILENAME = "baseline.json"
 # Baseline persistente (conta limpa): sobrevive a quedas, para o --resume apagar as sobras.
 DEFAULT_BASELINE_FILE = "runs/aws-baseline.json"
@@ -150,7 +152,7 @@ class RealAwsExecutor(FlociExecutor):
             raise RuntimeError(f"limpeza AWS incompleta, sobrou fora do baseline: {remaining}")
 
     def _run_sweep(self, args: list[str], what: str) -> Any:
-        """Roda o aws_sweep.py (boto3 da imagem) num diretório temporário, com o baseline.
+        """Roda o pacote aws_sweep (boto3 da imagem) num diretório temporário, com o baseline.
 
         Falha de conexão (internet instável) é repetida com espera; o sweep é idempotente
         (só apaga o que está fora do baseline). Qualquer outro erro sobe na hora.
@@ -158,9 +160,13 @@ class RealAwsExecutor(FlociExecutor):
         for attempt in range(1, SWEEP_NET_TRIES + 1):
             with tempfile.TemporaryDirectory(prefix="iac-aws-") as tmp:
                 tmp_dir = Path(tmp)
-                (tmp_dir / SWEEP_FILENAME).write_text(SWEEP_SCRIPT.read_text())
+                shutil.copytree(
+                    SWEEP_PACKAGE,
+                    tmp_dir / SWEEP_MODULE,
+                    ignore=shutil.ignore_patterns("__pycache__"),
+                )
                 (tmp_dir / BASELINE_FILENAME).write_text(json.dumps(self._baseline or {}))
-                proc = self._tc.run(["python3", SWEEP_FILENAME, *args], tmp_dir)
+                proc = self._tc.run(["python3", "-m", SWEEP_MODULE, *args], tmp_dir)
             if proc.returncode == 0 or attempt == SWEEP_NET_TRIES:
                 break
             if not any(m in proc.stderr for m in NET_ERROR_MARKERS):

@@ -98,7 +98,7 @@ class _StsToolchain(Toolchain):
 
 
 class _AwsToolchain(_StsToolchain):
-    """Também responde ao aws_sweep.py: inventário fixo e sweep sem sobras."""
+    """Também responde ao `python3 -m aws_sweep`: inventário fixo e sweep sem sobras."""
 
     INVENTORY = {"s3_buckets": ["fresh-snapshot"]}
 
@@ -106,10 +106,13 @@ class _AwsToolchain(_StsToolchain):
         if args[:1] != ["python3"]:
             return super().run(args, workdir, timeout_s)
         self.calls.append(list(args))
-        if args[2] == "inventory":
+        # O pacote inteiro vai para o diretório de trabalho e roda como módulo.
+        assert args[1:3] == ["-m", "aws_sweep"]
+        assert (Path(workdir) / "aws_sweep" / "__main__.py").is_file()
+        if args[3] == "inventory":
             out = self.INVENTORY
         else:
-            self.sent_baseline = json.loads((Path(workdir) / args[3]).read_text())
+            self.sent_baseline = json.loads((Path(workdir) / args[4]).read_text())
             out = {"deleted": {}, "failed": {}, "remaining": {}}
         return subprocess.CompletedProcess(args, 0, json.dumps(out) + "\n", "")
 
@@ -120,7 +123,7 @@ def _full_baseline(**items):
 
 
 def _modes(tc):
-    return [c[2] for c in tc.calls if c[0] == "python3"]
+    return [c[3] for c in tc.calls if c[0] == "python3"]
 
 
 def test_baseline_is_loaded_from_existing_file(iac_env, tmp_path):
