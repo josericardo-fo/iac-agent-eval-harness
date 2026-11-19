@@ -261,8 +261,15 @@ simples. Só o necessário para as peças que já existem mais as da fase 6; nad
   *Registro `AGENTS` em `agentic/agents.py` (usado pelo `_build_agent`); ferramentas e variáveis
   do gateway viram atributos de `ClaudeCodeAgent`, e o `CodingAgent` expõe `secret_vars`, que o
   `secret_values` junta de todos os agentes do registro para filtrar logs e a demo.*
-- [ ] `Backend`: unifica `executors/` e `agentic/targets.py` (reset, endpoint, credenciais,
+- [x] `Backend`: unifica `executors/` e `agentic/targets.py` (reset, endpoint, credenciais,
   procedência, limpeza final). Floci e AWS hoje; AWS Emulator na fase 6.
+  *Feito: Protocol `executors.Backend` (`KIND`, `NAME`, `TOOLCHAIN_TARGET`, `reset`, `cleanup`,
+  `override_for`, `classify_error`, `provenance`, `agent_target`); cada executor dá a sua
+  procedência e o seu alvo do agente, o que tira os `isinstance` de `_build_target` e de
+  `_sandbox_provenance`, e o alvo da toolchain vem do registro `EXECUTORS`. As guardas da AWS real
+  (`allow_real_aws`, `expected_arn`, workers = 1) ficaram como estavam. O provedor de modelo das
+  modalidades virou `ModelBackend`/`MODEL_BACKENDS` (o `docs/protocolo.md` mantém `AgentBackend`,
+  nome da época).*
 - [x] `Verifier` e `Judge`: interfaces separadas (sem LLM × com LLM). Modelo e fornecedor do juiz
   vêm da config, sem default Anthropic escondido.
   *`[judge]` e `[user_sim]` exigem `provider` e `model` (as configs ganharam `provider` explícito e

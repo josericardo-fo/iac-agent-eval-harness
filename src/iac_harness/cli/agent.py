@@ -47,7 +47,7 @@ from iac_harness.agentic.runner import (
 )
 from iac_harness.agentic.runner import unit_dir as agent_unit_dir
 from iac_harness.agentic.strata import DEFAULT_STRATA_FILE, load_strata
-from iac_harness.agentic.targets import FLOCI_WORKERS, AwsTarget, FlociTarget, Target
+from iac_harness.agentic.targets import FLOCI_WORKERS, Target
 from iac_harness.agentic.user_sim import DEFAULT_MAX_REPLIES, USER_SIM_PROMPT_VERSION, UserSimulator
 from iac_harness.cli.common import (
     _load_cfg_tasks,
@@ -112,11 +112,7 @@ def _worker_cfg(cfg: dict[str, Any], worker: int) -> dict[str, Any]:
 
 
 def _build_target(cfg: dict[str, Any]) -> Target:
-    toolchain = build_toolchain(cfg)
-    executor = build_executor(cfg, toolchain, allow_real_aws=True)
-    if isinstance(executor, RealAwsExecutor):
-        return AwsTarget(toolchain, executor)
-    return FlociTarget(toolchain, executor)
+    return build_executor(cfg, build_toolchain(cfg), allow_real_aws=True).agent_target()
 
 
 def _build_targets(cfg: dict[str, Any]) -> list[Target]:

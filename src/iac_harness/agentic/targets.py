@@ -1,4 +1,5 @@
-"""Alvo onde o agente age: Floci (emulador) ou AWS real. Embrulha os executores existentes.
+"""Alvo onde o agente age: Floci (emulador) ou AWS real. É a visão do agente sobre um backend
+(`executors.Backend.agent_target`).
 
 O alvo diz o que o container do agente recebe: variáveis de ambiente (as secretas só pelo nome),
 redes Docker e proxy de egresso.
@@ -113,7 +114,7 @@ def _proxy_env(proxy: str, no_proxy: str) -> dict[str, str]:
 
 
 class FlociTarget:
-    kind = "floci"
+    kind = FlociExecutor.KIND
 
     def __init__(self, toolchain: Toolchain, executor: FlociExecutor) -> None:
         if toolchain.target != "emulator":
@@ -143,7 +144,7 @@ class FlociTarget:
 
 
 class AwsTarget:
-    kind = "aws"
+    kind = RealAwsExecutor.KIND
 
     def __init__(self, toolchain: Toolchain, executor: RealAwsExecutor) -> None:
         self.toolchain = toolchain

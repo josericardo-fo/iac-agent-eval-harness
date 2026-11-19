@@ -6,9 +6,11 @@ import re
 import subprocess
 import time
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import httpx2
 
+from iac_harness.shell import query
 from iac_harness.toolchain import (
     DEFAULT_ALLOWED_HOSTS,
     DEFAULT_ENDPOINT,
@@ -17,6 +19,9 @@ from iac_harness.toolchain import (
     check_endpoint_allowed,
 )
 from iac_harness.types import CheckStatus
+
+if TYPE_CHECKING:
+    from iac_harness.agentic.targets import FlociTarget
 
 __all__ = ["EndpointNotAllowedError", "FlociExecutor"]
 
@@ -79,9 +84,24 @@ def _top_level_alias(body: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _emulator_image(container: str) -> tuple[str | None, str | None, str | None]:
+    """Imagem, ID e RepoDigests do container do emulador (tolerante a falha, como `query`)."""
+    image = query(["docker", "inspect", "--format", "{{.Config.Image}}", container])
+    image_id = query(["docker", "inspect", "--format", "{{.Image}}", container])
+    digests = None
+    if image_id and not image_id.startswith("erro:"):
+        digests = query(
+            ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image_id]
+        )
+    return image, image_id, digests
+
+
 class FlociExecutor:
+    """Backend Floci (emulador local); ver `executors.Backend`."""
+
     KIND = "floci"  # valor de `[sandbox] kind` (cli.build_executor) e da procedência
     NAME = "Floci"
+    TOOLCHAIN_TARGET = "emulator"
     HEALTH_PATH = "/_floci/health"
 
     def __init__(
@@ -185,6 +205,22 @@ class FlociExecutor:
 
     def cleanup(self) -> None:
         """Limpeza ao fim do run: nada a fazer no emulador (o próximo reset reinicia)."""
+
+    def provenance(self) -> dict[str, Any]:
+        """Tipo, imagem, ID e RepoDigests do container do emulador."""
+        image, image_id, digests = _emulator_image(self.container)
+        return {
+            "sandbox_kind": self.KIND,
+            "sandbox_image": image,
+            "sandbox_image_id": image_id,
+            "sandbox_repo_digests": digests,
+        }
+
+    def agent_target(self) -> FlociTarget:
+        # Import local: agentic.targets importa os executores.
+        from iac_harness.agentic.targets import FlociTarget
+
+        return FlociTarget(self._tc, self)
 
     def _restart(self) -> None:
         """`docker restart` do container e espera o health (`HEALTH_PATH`) responder 200."""

@@ -9,12 +9,15 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from iac_harness.executors.aws_sweep import ORDER
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.toolchain import Toolchain
 from iac_harness.types import CheckStatus
+
+if TYPE_CHECKING:
+    from iac_harness.agentic.targets import AwsTarget
 
 __all__ = ["RealAwsExecutor"]
 
@@ -47,8 +50,11 @@ def _last_json(proc: subprocess.CompletedProcess[str], what: str) -> Any:
 
 
 class RealAwsExecutor(FlociExecutor):
+    """Backend AWS real; ver `executors.Backend`."""
+
     KIND = "aws"
     NAME = "AWS"
+    TOOLCHAIN_TARGET = "aws"
 
     def __init__(
         self,
@@ -99,6 +105,22 @@ class RealAwsExecutor(FlociExecutor):
     def forget_identity(self) -> None:
         """Descarta o cache: o próximo `identity()` consulta o sts de novo."""
         self._identity = None
+
+    def provenance(self) -> dict[str, Any]:
+        """Tipo, conta, ARN e região; a guarda de identidade (`identity`) roda aqui."""
+        identity = self.identity()
+        return {
+            "sandbox_kind": self.KIND,
+            "aws_account": identity["account"],
+            "aws_arn": identity["arn"],
+            "aws_region": self.region,
+        }
+
+    def agent_target(self) -> AwsTarget:
+        # Import local: agentic.targets importa os executores.
+        from iac_harness.agentic.targets import AwsTarget
+
+        return AwsTarget(self._tc, self)
 
     def _load_baseline(self, snapshot: bool) -> bool:
         """Carrega o baseline de `baseline_file`; sem arquivo e com `snapshot`, tira e grava.

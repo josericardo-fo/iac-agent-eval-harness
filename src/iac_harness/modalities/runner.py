@@ -25,7 +25,7 @@ from typing import Any
 
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
-from iac_harness.interfaces import AgentBackend, Recorder
+from iac_harness.interfaces import ModelBackend, Recorder
 from iac_harness.modalities.checks import apply_initial, run_check
 from iac_harness.modalities.execute import (
     ANSWER_FILENAME,
@@ -131,7 +131,7 @@ def run_pair(
     task: ModalityTask,
     modality: Modality,
     rep: int,
-    backend: AgentBackend,
+    backend: ModelBackend,
     recorder: Recorder,
     ctx: ModRunContext,
 ) -> dict[str, Any]:

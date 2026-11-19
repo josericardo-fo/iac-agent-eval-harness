@@ -61,7 +61,7 @@ from iac_harness.toolchain import (
 )
 from iac_harness.workspace import pair_dir
 
-BACKENDS = {"anthropic": AnthropicBackend}
+MODEL_BACKENDS = {"anthropic": AnthropicBackend}
 
 
 # ---------- modality-prevalidate ----------
@@ -516,7 +516,7 @@ def _build_backend(cfg: dict[str, Any], **prompt_kwargs: Any) -> Any:
     `prompt_kwargs` (system_prompt, repair_template, ...) só no teste de modalidades.
     """
     agent_cfg = cfg["agent"]
-    return BACKENDS[agent_cfg["provider"]](
+    return MODEL_BACKENDS[agent_cfg["provider"]](
         model=agent_cfg["model"],
         max_tokens=agent_cfg.get("max_tokens", DEFAULT_MAX_TOKENS),
         effort=agent_cfg.get("effort"),

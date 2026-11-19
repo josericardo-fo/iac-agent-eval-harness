@@ -45,7 +45,7 @@ def build_toolchain(cfg: dict[str, Any]) -> Toolchain:
         region=sb.get("region", DEFAULT_REGION),
         timeout_s=tc.get("timeout_s", DEFAULT_TIMEOUT_S),
         # `[sandbox] kind = "aws"`: credenciais IAC_AWS_*, sem endpoint, rede com internet.
-        target="aws" if sb.get("kind") == RealAwsExecutor.KIND else "emulator",
+        target=EXECUTORS.get(sb.get("kind"), FlociExecutor).TOOLCHAIN_TARGET,
     )
 
 
