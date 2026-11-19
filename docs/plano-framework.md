@@ -241,7 +241,10 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
   *Feito: pacote `executors/aws_sweep/` (`common`, `inventory`, `ec2`, `databases`, `storage`,
   `iam`, `other`); o `aws.py` copia o diretório inteiro para a toolchain e roda
   `python3 -m aws_sweep`. Só imports relativos, sem `iac_harness`; `sweep` e `main` ficam no
-  `__init__.py`.*
+  `__init__.py`. Só a remoção foi dividida por serviço; o inventário ficou num módulo só
+  (`inventory.py`). Desvio de "um arquivo por commit": cada divisão (execute, aws_sweep) entrou num
+  commit só, com o ouro verde; a ordem de criação dos clientes boto3 em `_deleters` mudou (criar
+  cliente não chama a API).*
 - [x] **`agentic/stream.py`**: separar o parser do stream do Claude Code (genérico) das
   heurísticas de classificação (`_AWS_VALUE_FLAGS`, `_TF_MUTATE`, `TOOLKIT_READ_SCRIPTS`). *O classificador foi para `agentic/state_ops.py`.*
 - [x] **Métricas**: um núcleo comum (taxas, intervalos, tokens, estratos) usado pelos quatro

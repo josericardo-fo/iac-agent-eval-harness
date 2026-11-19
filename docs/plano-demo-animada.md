@@ -53,7 +53,7 @@ caption, script?}], nodes: [{id, type, group, wave}], edges: [[from, to]], quest
 vale o `task_id` quando `--scene` não é passado.
 
 - **Passos do agente:** os `tool_use` do transcript, via `parse_stream`. O tipo do passo vem de
-  `call_ops` (em `state_ops.py`, em cima do mesmo `_Classifier` do `state_ops`), sem um parser novo.
+  `call_ops` (em `state_ops.py`, em cima do mesmo `_Classifier` da função `state_ops`), sem um parser novo.
   Leitura depois de um `mutate` vira `verify`. Passos consecutivos do mesmo tipo e script viram um
   só. A legenda é curta e fixa por tipo ("leu a conta", "escreveu o Terraform", "rodou o plan",
   "conferiu"), mais o campo `script` (`whoami`, `inventory`, `verify`, `diff_baseline`) quando
