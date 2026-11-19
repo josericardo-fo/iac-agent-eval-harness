@@ -12,8 +12,8 @@ import pytest
 
 from iac_harness.cli import main
 from iac_harness.cli.common import build_executor, build_toolchain, load_config
-from iac_harness.modalities.execute import replay_pair
 from iac_harness.modalities.loader import load_tasks
+from iac_harness.modalities.replay import replay_pair
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.types import Artifact
 from iac_harness.workspace import create_workspace

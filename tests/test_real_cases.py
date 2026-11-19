@@ -8,14 +8,10 @@ from pathlib import Path
 import pytest
 
 from iac_harness.executors.floci import FlociExecutor
-from iac_harness.modalities.execute import (
-    ExecResult,
-    apply_initial,
-    prevalidate_pair,
-    run_check,
-    run_setup,
-)
+from iac_harness.modalities.checks import apply_initial, run_check, run_setup
+from iac_harness.modalities.execute import ExecResult
 from iac_harness.modalities.loader import load_tasks
+from iac_harness.modalities.replay import prevalidate_pair
 from iac_harness.modalities.spec import MODALITIES
 from test_modalities import RecordingToolchain
 

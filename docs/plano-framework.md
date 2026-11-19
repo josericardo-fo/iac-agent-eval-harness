@@ -242,7 +242,7 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
   heurísticas de classificação (`_AWS_VALUE_FLAGS`, `_TF_MUTATE`, `TOOLKIT_READ_SCRIPTS`). *O classificador foi para `agentic/state_ops.py`.*
 - [ ] **Métricas**: um núcleo comum (taxas, intervalos, tokens, estratos) usado pelos quatro
   módulos; cada pipeline fica só com o que é dele.
-- [ ] **`modalities/execute.py`**: separar por modalidade (terraform, cli, boto3).
+- [x] **`modalities/execute.py`**: separar por modalidade (terraform, cli, boto3). *Dividido por papel, não por modalidade, porque os comandos vêm do `Modality` (spec): `execute.py` executa artefatos, `checks.py` tem estado inicial, scripts e verificação, `replay.py` tem prevalidate e replay.*
 
 ### Fase 4: contratos explícitos
 

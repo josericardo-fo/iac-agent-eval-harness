@@ -41,17 +41,14 @@ from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION, FlociExecu
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.metrics import load_events
 from iac_harness.modalities import prompts as mod_prompts
-from iac_harness.modalities.execute import (
-    prevalidate_pair,
-    replay_pair,
-    truncate,
-)
+from iac_harness.modalities.execute import truncate
 from iac_harness.modalities.loader import load_tasks
 from iac_harness.modalities.metrics import (
     compare_free_to_baseline,
     compute_modality_metrics,
     compute_replay_metrics,
 )
+from iac_harness.modalities.replay import prevalidate_pair, replay_pair
 from iac_harness.modalities.runner import (
     DEFAULT_MAX_ATTEMPTS,
     ModRunContext,

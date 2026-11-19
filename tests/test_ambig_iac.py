@@ -170,7 +170,7 @@ def test_agent_override_name_matches_the_runner():
 
 
 def test_run_check_uses_the_rego_oracle_for_dataset_tasks(tmp_path):
-    from iac_harness.modalities.execute import run_check
+    from iac_harness.modalities.checks import run_check
 
     task = ambig_iac.row_to_task(ROW)
     passed, details = run_check(FakeToolchain(), task, _work(tmp_path, {"main.tf": "x"}))

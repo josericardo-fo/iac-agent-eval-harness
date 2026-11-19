@@ -26,13 +26,12 @@ from typing import Any
 from iac_harness.executors.floci import FlociExecutor
 from iac_harness.feedback import DEFAULT_MAX_CHARS
 from iac_harness.interfaces import AgentBackend, Recorder
+from iac_harness.modalities.checks import apply_initial, run_check
 from iac_harness.modalities.execute import (
     ANSWER_FILENAME,
     ExecResult,
-    apply_initial,
     inherits_state,
     run_artifact,
-    run_check,
     truncate,
     with_answer,
 )

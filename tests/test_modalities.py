@@ -7,21 +7,22 @@ from pathlib import Path
 import pytest
 
 from iac_harness.executors.floci import FlociExecutor
-from iac_harness.modalities.execute import (
-    ANSWER_ERROR,
+from iac_harness.modalities.checks import (
     CHECK_SETTLE_INTERVAL_S,
     CHECK_SETTLE_WINDOW_S,
+    parse_check_output,
+    run_check,
+)
+from iac_harness.modalities.execute import (
+    ANSWER_ERROR,
     ExecResult,
     collect_answer,
     inherits_state,
-    parse_check_output,
-    prevalidate_pair,
-    replay_pair,
     run_artifact,
-    run_check,
     with_answer,
 )
 from iac_harness.modalities.loader import TASKS_DIR, load_task, load_tasks
+from iac_harness.modalities.replay import prevalidate_pair, replay_pair
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.workspace import OVERRIDE_FILENAME
 from test_floci import FakeToolchain
@@ -398,7 +399,7 @@ class SequenceCheckToolchain(RecordingToolchain):
 
 def _record_sleeps(monkeypatch) -> list[float]:
     sleeps: list[float] = []
-    monkeypatch.setattr("iac_harness.modalities.execute.time.sleep", sleeps.append)
+    monkeypatch.setattr("iac_harness.modalities.checks.time.sleep", sleeps.append)
     return sleeps
 
 

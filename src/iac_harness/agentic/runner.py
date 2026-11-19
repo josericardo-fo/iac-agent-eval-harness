@@ -29,15 +29,8 @@ from iac_harness.agentic.strata import strata_fields
 from iac_harness.agentic.targets import Target
 from iac_harness.agentic.user_sim import UserSimulator
 from iac_harness.feedback import DEFAULT_MAX_CHARS
-from iac_harness.modalities.execute import (
-    ANSWER_FILENAME,
-    INHERITED_TF_FILES,
-    diff_snapshots,
-    run_artifact,
-    run_check,
-    run_setup,
-    run_snapshot,
-)
+from iac_harness.modalities.checks import diff_snapshots, run_check, run_setup, run_snapshot
+from iac_harness.modalities.execute import ANSWER_FILENAME, INHERITED_TF_FILES, run_artifact
 from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.spec import MODALITIES
 from iac_harness.toolchain import remove_terraform_dir

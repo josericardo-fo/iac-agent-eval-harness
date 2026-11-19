@@ -368,7 +368,7 @@ def test_resumed_turn_losing_the_plugin_keeps_turn1_fields(tmp_path, monkeypatch
 
 
 def test_run_check_final_picks_check_final_code(monkeypatch):
-    from iac_harness.modalities import execute
+    from iac_harness.modalities import checks
 
     used = []
 
@@ -378,12 +378,12 @@ def test_run_check_final_picks_check_final_code(monkeypatch):
                                 "stderr": ""})  # fmt: skip
         return raise_()
 
-    monkeypatch.setattr(execute, "_run_task_script", fake_script)
+    monkeypatch.setattr(checks, "_run_task_script", fake_script)
     both = replace(_task(check_final="NEW"), check="OLD")
     only_old = replace(_task(), check="OLD")
-    execute.run_check(None, both)
-    execute.run_check(None, both, final=True)
-    execute.run_check(None, only_old, final=True)
+    checks.run_check(None, both)
+    checks.run_check(None, both, final=True)
+    checks.run_check(None, only_old, final=True)
     assert used == ["OLD", "NEW", "OLD"]
 
 
