@@ -1,6 +1,7 @@
 """Agente de código que age sozinho no alvo. Hoje: Claude Code headless (`claude -p`) em container.
 
-Outros agentes (Codex etc.) entram como outra classe com o mesmo `run`, sem mexer no runner.
+Outros agentes (Codex etc.) entram como outra classe com o mesmo `run` (protocolo `CodingAgent`),
+com suas próprias ferramentas e variáveis de ambiente, e uma linha em `AGENTS`; o runner não muda.
 """
 
 from __future__ import annotations
@@ -25,12 +26,6 @@ TRANSCRIPT_FILENAME = "transcript.jsonl"
 STDERR_FILENAME = "agent.stderr.txt"
 # Onde o Claude Code guarda as sessões (`projects/<cwd>/<id>.jsonl`) no usuário do container.
 SESSION_MOUNT = f"/home/{AGENT_USER}/.claude"
-# Mesmo conjunto em toda condição: só o contexto muda. Sem AskUserQuestion (não há quem responda),
-# sem web, sem subagentes.
-AGENT_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,Skill"
-# Credenciais do gateway: só pelo nome no argv, valor no env do cliente docker.
-GATEWAY_VARS = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")
-SECRET_VARS = (*GATEWAY_VARS, "ANTHROPIC_API_KEY")
 # Env mínimo do cliente docker (HOME: ~/.docker; DOCKER_*: host/contexto); nada mais do host.
 _CLIENT_PASSTHROUGH = ("PATH", "HOME", "TMPDIR")
 
@@ -69,6 +64,7 @@ class CodingAgent(Protocol):
     só são passados quando há usuário simulado."""
 
     name: str
+    secret_vars: tuple[str, ...]  # variáveis do host cujo valor nunca aparece em transcript/log
 
     def run(
         self, prompt: str, workdir: Path, condition: Toolkit, model: str, target: Target,
@@ -80,7 +76,9 @@ class CodingAgent(Protocol):
 
 
 def secret_values(extra: dict[str, str] | None = None) -> list[str]:
-    values = [os.environ.get(k) for k in SECRET_VARS]
+    """Valores (do host) das variáveis secretas de todos os agentes do registro, mais `extra`."""
+    names = dict.fromkeys(k for agent in AGENTS.values() for k in agent.secret_vars)
+    values = [os.environ.get(k) for k in names]
     return [v for v in [*values, *(extra or {}).values()] if v]
 
 
@@ -97,6 +95,12 @@ def _event_kind(line: str) -> tuple[str, str | None] | None:
 
 class ClaudeCodeAgent:
     name = "claude-code"
+    # Mesmo conjunto em todo toolkit: só o contexto muda. Sem AskUserQuestion (não há quem
+    # responda), sem web, sem subagentes.
+    tools = "Bash,Read,Write,Edit,Glob,Grep,Skill"
+    # Credenciais do gateway: só pelo nome no argv, valor no env do cliente docker.
+    gateway_vars = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")
+    secret_vars = (*gateway_vars, "ANTHROPIC_API_KEY")
 
     def __init__(
         self,
@@ -119,11 +123,11 @@ class ClaudeCodeAgent:
         `resume_session` acrescenta `--resume <id>`. Os demais flags são os mesmos em todo turno.
         """
         env = env if env is not None else target.agent_env()
-        missing = [k for k in GATEWAY_VARS if not os.environ.get(k)]
+        missing = [k for k in self.gateway_vars if not os.environ.get(k)]
         if missing:
             raise RuntimeError(f"agente sem credencial do gateway: defina {', '.join(missing)}")
         secret_values = {
-            **{k: os.environ[k] for k in GATEWAY_VARS},
+            **{k: os.environ[k] for k in self.gateway_vars},
             **env.secret,
         }
         argv = [
@@ -143,7 +147,7 @@ class ClaudeCodeAgent:
             "--permission-mode", "bypassPermissions",
             "--permission-prompts", "none",
             "--max-turns", str(self.max_turns),
-            "--tools", AGENT_TOOLS,
+            "--tools", self.tools,
             "--strict-mcp-config",
             "--setting-sources", "",
             *condition.flags,
@@ -259,3 +263,7 @@ class ClaudeCodeAgent:
             except (subprocess.TimeoutExpired, OSError) as exc:
                 out[key] = f"indisponível: {exc}"
         return out
+
+
+# nome (`[agentic] agent` na config) → classe do agente
+AGENTS: dict[str, type[CodingAgent]] = {ClaudeCodeAgent.name: ClaudeCodeAgent}

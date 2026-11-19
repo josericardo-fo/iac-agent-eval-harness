@@ -283,3 +283,26 @@ def test_judge_pair_agreement_kappa_none_when_pe_is_one():
     out = judge_pair_agreement([], rows, rows)
     assert out["kind"]["kappa"] is None and out["asked"]["kappa"] is None
     assert out["kind"]["rate"] == 1.0
+
+
+def test_build_agent_from_registry():
+    from iac_harness.agentic.agents import ClaudeCodeAgent
+
+    agent = cli_agent._build_agent({"agentic": {"agent": "claude-code", "max_turns": 7}})
+    assert isinstance(agent, ClaudeCodeAgent) and agent.max_turns == 7
+    assert isinstance(cli_agent._build_agent({"agentic": {}}), ClaudeCodeAgent)
+
+
+def test_build_agent_rejects_unknown_agent():
+    with pytest.raises(SystemExit, match="agente desconhecido 'codex'"):
+        cli_agent._build_agent({"agentic": {"agent": "codex"}})
+
+
+def test_secret_values_cover_each_registered_agent(monkeypatch):
+    from iac_harness.agentic.agents import AGENTS, secret_values
+
+    names = {k for a in AGENTS.values() for k in a.secret_vars}
+    assert "ANTHROPIC_AUTH_TOKEN" in names
+    for name in names:
+        monkeypatch.setenv(name, f"v-{name}")
+    assert set(secret_values({"X": "extra"})) == {f"v-{n}" for n in names} | {"extra"}

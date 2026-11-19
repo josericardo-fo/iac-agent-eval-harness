@@ -184,8 +184,8 @@ estado só em memória) e LocalStack (Community Edition arquivada em 03/2026, to
 
 - **Só AWS.** Serviços e regiões do sweep são fixos (`us-east-1` + IAM + parte de EC2 em
   `us-west-2`).
-- **Um agente.** Só o Claude Code (`ClaudeCodeAgent`); ferramentas e variáveis de ambiente são as
-  dele. A config recusa outro `[agentic] agent`.
+- **Um agente.** Só o Claude Code (`ClaudeCodeAgent`, único nome em `AGENTS`); ferramentas e
+  variáveis de ambiente são atributos da classe. A config recusa outro `[agentic] agent`.
 - **Gateway Anthropic.** O agente exige `ANTHROPIC_BASE_URL` e `ANTHROPIC_AUTH_TOKEN`; os IDs de
   modelo das configs (`Haiku 5.5`, `Sonnet 5.5`) são os do gateway.
 - **Juiz padrão Anthropic** (`Sonnet 5.5`); o provedor `codex` é a alternativa.

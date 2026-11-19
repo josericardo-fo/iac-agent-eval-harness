@@ -256,8 +256,11 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
 Trocar `if/elif` por string e dicionários fixos por interfaces (`Protocol`) com um registro
 simples. Só o necessário para as peças que já existem mais as da fase 6; nada especulativo.
 
-- [ ] `Agent`: `ClaudeCodeAgent` hoje; Codex CLI na fase 6. Variáveis de ambiente e ferramentas
+- [x] `Agent`: `ClaudeCodeAgent` hoje; Codex CLI na fase 6. Variáveis de ambiente e ferramentas
   por agente, não globais.
+  *Registro `AGENTS` em `agentic/agents.py` (usado pelo `_build_agent`); ferramentas e variáveis
+  do gateway viram atributos de `ClaudeCodeAgent`, e o `CodingAgent` expõe `secret_vars`, que o
+  `secret_values` junta de todos os agentes do registro para filtrar logs e a demo.*
 - [ ] `Backend`: unifica `executors/` e `agentic/targets.py` (reset, endpoint, credenciais,
   procedência, limpeza final). Floci e AWS hoje; AWS Emulator na fase 6.
 - [x] `Verifier` e `Judge`: interfaces separadas (sem LLM × com LLM). Modelo e fornecedor do juiz

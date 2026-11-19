@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from iac_harness.agentic.agents import DEFAULT_AGENT_IMAGE, ClaudeCodeAgent
+from iac_harness.agentic.agents import AGENTS, DEFAULT_AGENT_IMAGE, ClaudeCodeAgent, CodingAgent
 from iac_harness.agentic.conditions import load_toolkits, resolve_toolkit
 from iac_harness.agentic.judge import JUDGE_FILENAME, Judge, LlmJudge
 from iac_harness.agentic.metrics import (
@@ -125,13 +125,12 @@ def _build_targets(cfg: dict[str, Any]) -> list[Target]:
     return [_build_target(_worker_cfg(cfg, i)) for i in range(_agent_workers(cfg))]
 
 
-def _build_agent(cfg: dict[str, Any]) -> ClaudeCodeAgent:
+def _build_agent(cfg: dict[str, Any]) -> CodingAgent:
     ag = cfg["agentic"]
-    if ag.get("agent", ClaudeCodeAgent.name) != ClaudeCodeAgent.name:
-        raise SystemExit(
-            f"erro: agente desconhecido {ag['agent']!r} (use {ClaudeCodeAgent.name!r})"
-        )
-    return ClaudeCodeAgent(
+    name = ag.get("agent", ClaudeCodeAgent.name)
+    if name not in AGENTS:
+        raise SystemExit(f"erro: agente desconhecido {name!r} (use um de {sorted(AGENTS)})")
+    return AGENTS[name](
         image=ag.get("image", DEFAULT_AGENT_IMAGE),
         max_turns=ag.get("max_turns", 60),
         timeout_s=ag.get("timeout_s", 1200),
@@ -215,7 +214,7 @@ def _agent_plan(cfg: dict[str, Any], tasks: list[Any], reps: int) -> list[tuple]
 
 
 def _agent_loop(
-    cfg: dict[str, Any], plan: list[tuple], runs_dir: Path, run_id: str, agent: ClaudeCodeAgent,
+    cfg: dict[str, Any], plan: list[tuple], runs_dir: Path, run_id: str, agent: CodingAgent,
     targets: list[Target], user_sim: UserSimSetup | None = None,
 ) -> None:  # fmt: skip
     """Distribui as unidades entre os workers (um alvo cada); o recorder é compartilhado."""
