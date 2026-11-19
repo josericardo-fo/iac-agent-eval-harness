@@ -276,8 +276,12 @@ simples. Só o necessário para as peças que já existem mais as da fase 6; nad
   `agentic/conditions.py` (os nomes medidos continuam válidos).
   *O registro virou `toolkit/toolkits.toml` (nome → `plugin`, `rules`), lido com `tomllib`; um
   teste garante que os 7 nomes medidos resolvem como o dicionário antigo.*
-- [ ] `TaskSource`: carrega tasks de um diretório (`modalities/tasks/` vira um dataset entre
+- [x] `TaskSource`: carrega tasks de um diretório (`modalities/tasks/` vira um dataset entre
   outros) e de adapters (IaC-Eval, Ambig-IaC).
+  *Feito: `datasets/sources.py` (`TaskSource` com `load` e `provenance`; `DirectorySource`,
+  `AmbigIacSource` e o registro `TASK_SOURCES` por `[modality] dataset`; sem ele, diretório). Sem
+  adapter IaC-Eval: as tarefas do IaC-Eval já são pastas em `modalities/tasks/` e o
+  `IacEvalV2Adapter` só serve à consulta de dificuldade, então criar a fonte seria especulativo.*
 - [x] Unificar `Condition` (renomear a do agente para `Toolkit` resolve a colisão) e os enums de
   término.
   *`Condition` → `Toolkit` e `resolve_condition` → `resolve_toolkit` (a chave `[agentic]

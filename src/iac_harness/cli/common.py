@@ -7,16 +7,14 @@ import shutil
 import sys
 import tomllib
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from iac_harness.cli.provenance import _git_provenance
-from iac_harness.datasets import ambig_iac
+from iac_harness.datasets.sources import TaskSource, task_source
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import FlociExecutor
-from iac_harness.modalities.loader import load_tasks
 from iac_harness.modalities.spec import FREE, MODALITIES
 from iac_harness.toolchain import (
     DEFAULT_ENDPOINT,
@@ -75,29 +73,15 @@ def new_run_id(name: str) -> str:
     return f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}-{name}"
 
 
-def _prompt_field(cfg: dict[str, Any]) -> str:
-    """Campo do enunciado do Ambig-IaC (`[modality] prompt_field`; teto = `prompt_original`)."""
-    return cfg.get("modality", {}).get("prompt_field", "prompt")
+def _task_source(cfg: dict[str, Any]) -> TaskSource:
+    """Fonte das tarefas da seção [modality] (`dataset` ou `tasks_dir`; ver `task_source`)."""
+    return task_source(cfg.get("modality", {}), DATA_DIR)
 
 
 def _load_cfg_tasks(cfg: dict[str, Any]) -> list[Any]:
     """Tarefas do catálogo, de `[modality] tasks_dir` (ex.: tarefas de usuário simulado) ou de
     `[modality] dataset` (E16: `"ambig-iac"`, linhas do JSONL em data/)."""
-    dataset = cfg.get("modality", {}).get("dataset")
-    if dataset is not None:
-        if dataset != ambig_iac.DATASET:
-            raise SystemExit(f"erro: dataset desconhecido {dataset!r} (use {ambig_iac.DATASET!r})")
-        tasks = ambig_iac.load_tasks(DATA_DIR, _prompt_field(cfg))
-        rules_file = cfg["modality"].get("rules_file")
-        if rules_file is None:
-            return tasks
-        rules = json.loads(Path(rules_file).read_text())["amendment"]["discriminating_rules"]
-        return [
-            replace(t, rego_rules=tuple(rules[t.task_id])) if t.task_id in rules else t
-            for t in tasks
-        ]
-    tasks_dir = cfg.get("modality", {}).get("tasks_dir")
-    return load_tasks(Path(tasks_dir)) if tasks_dir else load_tasks()
+    return _task_source(cfg).load()
 
 
 def _select_modality_run(

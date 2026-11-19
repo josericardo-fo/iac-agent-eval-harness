@@ -16,9 +16,9 @@ from iac_harness.cli.common import (
     _allow_question,
     _load_cfg_tasks,
     _load_run_config,
-    _prompt_field,
     _record_resume,
     _select_modality_run,
+    _task_source,
     build_executor,
     build_toolchain,
     discard_incomplete,
@@ -148,7 +148,7 @@ def cmd_ambig_prevalidate(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "config": cfg, "order": order, "target_pass": args.target_pass,
-                "dataset": ambig_iac.provenance(_prompt_field(cfg)), **_git_provenance(),
+                "dataset": _task_source(cfg).provenance(), **_git_provenance(),
                 "versions": {**toolchain.versions(run_dir), "toolchain_image": toolchain.image,
                              **_sandbox_provenance(executor)},
             },

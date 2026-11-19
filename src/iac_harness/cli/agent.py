@@ -52,9 +52,9 @@ from iac_harness.agentic.user_sim import DEFAULT_MAX_REPLIES, USER_SIM_PROMPT_VE
 from iac_harness.cli.common import (
     _load_cfg_tasks,
     _load_run_config,
-    _prompt_field,
     _record_resume,
     _select_modality_run,
+    _task_source,
     build_executor,
     build_toolchain,
     discard_incomplete,
@@ -63,7 +63,6 @@ from iac_harness.cli.common import (
 )
 from iac_harness.cli.provenance import _git_provenance, _sandbox_provenance
 from iac_harness.cli.tables import _agent_metrics_table, _agent_summary
-from iac_harness.datasets import ambig_iac
 from iac_harness.executors.aws import RealAwsExecutor
 from iac_harness.executors.floci import UNSUPPORTED_PATTERNS_VERSION
 from iac_harness.feedback import DEFAULT_MAX_CHARS
@@ -280,11 +279,8 @@ def _agent_run_config(
         if user_sim
         else {}
     )
-    dataset = (
-        {"dataset": ambig_iac.provenance(_prompt_field(cfg))}
-        if cfg.get("modality", {}).get("dataset")
-        else {}
-    )
+    source_provenance = _task_source(cfg).provenance()
+    dataset = {"dataset": source_provenance} if source_provenance else {}
     return {
         **sim_provenance,
         **dataset,
