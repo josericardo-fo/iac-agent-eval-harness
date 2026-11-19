@@ -1,4 +1,4 @@
-"""Juiz LLM do E3: o agente parou para perguntar, concluiu (com ou sem oferta de próximo passo)?
+"""Juiz de desfecho: o agente parou para perguntar, concluiu (com ou sem oferta de próximo passo)?
 
 Roda no host, depois do run (`agent-judge`), e grava `judge.jsonl` ao lado do events.jsonl.
 """

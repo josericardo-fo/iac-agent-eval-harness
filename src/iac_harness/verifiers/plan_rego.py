@@ -1,4 +1,4 @@
-"""Oráculo do Ambig-IaC (E16): `terraform plan` dos arquivos finais do agente + OPA no `data`.
+"""Oráculo do Ambig-IaC: `terraform plan` dos arquivos finais do agente + OPA no `data`.
 
 Os arquivos do /work do agente são copiados para um diretório limpo (sem estado, lock, `.terraform`
 nem o override do agente), com o override do Floci do harness; o plan usa o `PlanVerifier`.

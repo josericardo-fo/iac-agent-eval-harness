@@ -1,4 +1,4 @@
-"""Usuário simulado do E3 com uma resposta: outro LLM responde ao agente a partir de um cartão.
+"""Usuário simulado com uma resposta: outro LLM responde ao agente a partir de um cartão.
 
 Quando o agente para para perguntar, o simulador (um `TextModel`, qualquer provedor) responde só
 com o que está no cartão da tarefa (`user.md`, oculto: nunca vai para o /work do agente) e a
@@ -59,7 +59,7 @@ Write your reply.
 """
 
 
-# E16: usuário leigo. A ficha (o `intent` do Ambig-IaC) é técnica, mas a persona não fala AWS:
+# Usuário leigo. A ficha (o `intent` do Ambig-IaC) é técnica, mas a persona não fala AWS:
 # só reconhece opções em palavras simples. O prompt do usuário é o mesmo do v1.
 USER_SIM_LAY_PROMPT_VERSION = "user-sim-lay-v1"
 
@@ -85,7 +85,7 @@ Rules:
 - Keep it short: one to three sentences, plain text only.
 """
 
-# Teste pós-E16 (exploratório): leigo que sabe os fatos do próprio negócio (nomes, domínio, o que
+# Exploratório: leigo que sabe os fatos do próprio negócio (nomes, domínio, o que
 # quer) e, quando perguntado, diz a preferência em palavras simples. Continua sem jargão da AWS.
 USER_SIM_LAY_V2_PROMPT_VERSION = "user-sim-lay-v2"
 

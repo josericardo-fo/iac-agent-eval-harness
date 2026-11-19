@@ -157,7 +157,7 @@ def _run_task_script(
 def _run_check_once(
     toolchain: Toolchain, task: ModalityTask, workspace: Path | None, final: bool = False
 ) -> tuple[bool, dict[str, Any]]:
-    if task.rego_policy is not None:  # tarefa de dataset (E16): oráculo plan + OPA, sem check.py
+    if task.rego_policy is not None:  # tarefa de dataset: oráculo plan + OPA, sem check.py
         return grade_config(
             toolchain, task.rego_policy, workspace, task.reference_resource_types, task.rego_rules
         )

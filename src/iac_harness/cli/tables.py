@@ -106,7 +106,7 @@ def _modality_metrics_table(metrics: dict[str, Any]) -> str:
 
 
 def _free_table(metrics: dict[str, Any]) -> str:
-    """Forma livre (E4): escolhas por categoria e, com --baseline, a comparação de tokens."""
+    """Forma livre: escolhas por categoria e, com --baseline, a comparação de tokens."""
     lines = ["", "forma livre: 1ª escolha / última escolha / troca / acordo R11"]
     free = metrics["free"]
     for category, b in [*free["by_category"].items(), ("total", free["overall"])]:

@@ -1,4 +1,4 @@
-"""Métricas do E3 (agente real): por condição × modelo, estrato e alvo; condição × `none`.
+"""Métricas do agente real: por condição × modelo, estrato e alvo; condição × `none`.
 
 Reaproveita o `_block` das modalidades (taxas por rep, instabilidade, Wilson) e os testes de
 `iac_harness.metrics` (bootstrap pareado por tarefa, McNemar pela maioria das reps, Holm), sem
@@ -393,7 +393,7 @@ def _final_check_details(e: Row) -> Row:
 
 
 def partial_scores(rows: list[Row], n_boot: int, seed: int) -> dict[str, Any] | None:
-    """Notas parciais do oráculo (E16) por condição e v3 × v2 / v3 × none (bootstrap pareado).
+    """Notas parciais do oráculo do dataset por condição e v3 × v2 / v3 × none (bootstrap pareado).
 
     None se nenhuma trajetória trouxe `rego_frac` nos detalhes do check final.
     """

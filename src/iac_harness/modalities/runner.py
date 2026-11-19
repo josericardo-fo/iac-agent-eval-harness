@@ -5,11 +5,11 @@ Loop por (tarefa, modalidade, rep), até `max_attempts`. Cada tentativa recomeç
 pelo Floci, que também recebe correção); a nota (check.py) roda uma vez no fim, sobre o estado da
 última execução, e nunca volta ao agente. `success` = última execução ok e check aprovado.
 
-Com `allow_question` (E2), o agente pode entregar question.md no lugar do arquivo: nada executa e
+Com `allow_question`, o agente pode entregar question.md no lugar do arquivo: nada executa e
 a trajetória termina com ASKED. Aí `success` depende do `expect` da tarefa: "ask" = perguntou;
 "act" = execução ok e check aprovado (perguntar reprova).
 
-Com `free_choice` (E4), a modalidade é a pseudo-modalidade `free`: em cada tentativa o agente
+Com `free_choice`, a modalidade é a pseudo-modalidade `free`: em cada tentativa o agente
 escolhe a ferramenta pelo arquivo que entrega (exatamente um de main.tf, run.sh, main.py), e a
 tentativa executa com a modalidade escolhida. A escolha vai nos eventos (`chosen`).
 """
@@ -52,7 +52,7 @@ from iac_harness.workspace import RESPONSE_FILENAME, create_workspace
 DEFAULT_MAX_ATTEMPTS = 3
 # Provisioner local-exec no Terraform: o agente roda comandos (CLI/scripts) por fora do provider.
 LOCAL_EXEC_RE = re.compile(r'provisioner\s+"local-exec"')
-# Bloco da pergunta (E2): além de title="question.md" (que o parse_files já lê), aceita o nome do
+# Bloco da pergunta: além de title="question.md" (que o parse_files já lê), aceita o nome do
 # arquivo como info string (```question.md, com ou sem title=). Fica aqui, e não no parse_files,
 # para não mudar como main.tf/run.sh/main.py são lidos (o formato medido nos outros runs).
 QUESTION_BLOCK_RE = re.compile(
@@ -80,7 +80,7 @@ class ModRunContext:
     max_attempts: int = DEFAULT_MAX_ATTEMPTS
     max_chars: int = DEFAULT_MAX_CHARS
     allow_question: bool = False  # aceita question.md como desfecho (prompt mod-v3-ask)
-    free_choice: bool = False  # forma livre (E4): modalidade `free`, prompt mod-v3-free
+    free_choice: bool = False  # forma livre: modalidade `free`, prompt mod-v3-free
 
 
 def _prepare(
@@ -276,7 +276,7 @@ def run_pair(
                 "artifact_path": str(path),
                 "artifact_hash": artifact_hash,
                 "answer": (_answer(path, ctx.max_chars) if task.wants_answer else None),
-                # E4: a escolha só na forma livre (os outros runs não mudam)
+                # a escolha só na forma livre (os outros runs não mudam)
                 **({"chosen": choices[-1]} if ctx.free_choice else {}),
             }
         )
@@ -308,10 +308,10 @@ def run_pair(
         "total_tokens": tokens_in + tokens_out,
     }
     if ctx.allow_question:
-        # Campos do E2 só com a pergunta liberada: os finals dos outros runs não mudam.
+        # Campos da pergunta só com a pergunta liberada: os finals dos outros runs não mudam.
         final.update(expect=task.expect, asked=asked, question=question, both_files=both_files)
     if ctx.free_choice:
-        # Campos do E4 só na forma livre: os finals dos outros runs não mudam.
+        # Campos da escolha só na forma livre: os finals dos outros runs não mudam.
         picked = [c for c in choices if c is not None]
         final.update(
             chosen=choices[-1] if choices else None,

@@ -1,4 +1,4 @@
-"""Juiz LLM do E15: qualidade da pergunta de esclarecimento que o agente fez.
+"""Juiz LLM da qualidade da pergunta de esclarecimento que o agente fez.
 
 Roda no host, depois do run (`agent-judge-questions`), só nas trajetórias com `asked = true`
 no judge.jsonl, e grava `judge-questions.jsonl` ao lado. O juiz vê o pedido, o `expect`, o

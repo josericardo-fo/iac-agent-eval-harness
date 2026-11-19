@@ -1,12 +1,12 @@
-"""Uma trajetória do agente real (E3): alvo → agente → check, colateral → evento `final`.
+"""Uma trajetória do agente real: alvo → agente → check, colateral → evento `final`.
 
 O runner só orquestra; alvo, agente e condição são peças trocáveis (targets, agents, conditions).
 O juiz roda depois (`agent-judge`), então `asked` e `success` ficam None no evento.
 
 Com usuário simulado (`ctx.user_sim`), se o agente parar para perguntar (veredito inline do juiz),
 o simulador responde a partir do cartão da tarefa e a mesma sessão do agente é retomada. Os campos
-de sempre continuam sendo do turno 1 (comparáveis com E2/E3/E11); o desfecho depois das respostas
-vai nos campos `*_final`.
+de sempre continuam sendo do turno 1 (comparáveis com runs sem simulador); o desfecho depois das
+respostas vai nos campos `*_final`.
 """
 
 from __future__ import annotations

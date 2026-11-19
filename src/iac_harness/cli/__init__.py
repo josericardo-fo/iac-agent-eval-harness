@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_apre = sub.add_parser(
         "ambig-prevalidate",
-        help="E16: gate do Ambig-IaC (referência passa no oráculo, main.tf vazio reprova)",
+        help="gate do Ambig-IaC (referência passa no oráculo, main.tf vazio reprova)",
     )
     p_apre.add_argument("--config", type=Path, required=True)
     p_apre.add_argument("--order", type=Path, help="selection.json com a ordem do sorteio")
@@ -94,12 +94,12 @@ def main(argv: list[str] | None = None) -> int:
         "--baseline",
         type=Path,
         metavar="RUN_DIR",
-        help="run de forma fixa para comparar com um run da forma livre (E4)",
+        help="run de forma fixa para comparar com um run da forma livre",
     )
     p_mmet.set_defaults(func=cmd_modality_metrics)
 
     p_arun = sub.add_parser(
-        "agent-run", help="E3: roda o Claude Code de verdade (headless, em container) nas tarefas"
+        "agent-run", help="roda o Claude Code de verdade (headless, em container) nas tarefas"
     )
     p_arun.add_argument("--config", type=Path, required=True)
     p_arun.add_argument("--tasks", nargs="+")
@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_ajq = sub.add_parser(
         "agent-judge-questions",
-        help="E15: juiz LLM da qualidade das perguntas (asked=true) -> judge-questions.jsonl",
+        help="juiz LLM da qualidade das perguntas (asked=true) -> judge-questions.jsonl",
     )
     p_ajq.add_argument("run_dir", type=Path)
     p_ajq.add_argument(
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_aqr = sub.add_parser(
         "agent-questions-report",
-        help="E15: notas das perguntas por condição, toolkit × none, kappa entre juízes",
+        help="notas das perguntas por condição, toolkit × none, kappa entre juízes",
     )
     p_aqr.add_argument("run_dirs", type=Path, nargs="+")
     p_aqr.add_argument(

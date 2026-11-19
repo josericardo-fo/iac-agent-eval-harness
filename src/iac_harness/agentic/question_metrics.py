@@ -1,6 +1,6 @@
-"""Agregação do E15 (`agent-questions-report`): notas das perguntas por condição, toolkit ×
+"""Agregação do `agent-questions-report`: notas das perguntas por condição, toolkit ×
 `none` por bootstrap pareado por tarefa, concordância entre dois juízes (kappa ponderado) e o
-cruzamento descritivo com o usuário simulado do E13.
+cruzamento descritivo com o usuário simulado.
 """
 
 from __future__ import annotations

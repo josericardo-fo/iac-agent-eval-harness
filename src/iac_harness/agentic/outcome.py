@@ -1,9 +1,9 @@
-"""Regra única de sucesso de uma trajetória do agente (E3).
+"""Regra única de sucesso de uma trajetória do agente.
 
 O colateral (`collateral_ok`) é reportado à parte e não entra aqui.
 
 Com usuário simulado há duas regras independentes:
-- `success` (turno 1): `expect` vale só para o turno 1, como sempre (P6/E2 inalterados). Em
+- `success` (turno 1): `expect` vale só para o turno 1, como sempre (como sem simulador). Em
   `expect = "ask"`, o `check.py` confere o estado intocado e o agente precisa ter perguntado.
 - `success_final`: o estado depois das respostas passa no check final, tenha o agente perguntado
   ou não. O check final é o `check_final.py` da tarefa, se existir, senão o `check.py`

@@ -27,7 +27,7 @@ from iac_harness.modalities.spec import FREE, MODALITIES
 
 Row = dict[str, Any]
 
-# Pares do E2 (ambígua → clara): mesmo initial.tf, só o pedido muda.
+# Pares ambígua → clara: mesmo initial.tf, só o pedido muda.
 ASK_PAIRS = {
     "amb-dynamodb-pitr": "clr-dynamodb-pitr",
     "amb-s3-versioning": "mod-s3-versioning",
@@ -231,7 +231,7 @@ def compute_modality_metrics(
     return out
 
 
-# ---------- forma livre (E4) ----------
+# ---------- forma livre ----------
 
 # R11 (K2): a forma mais barata por categoria. Remover fica de fora (K2 não cobre).
 R11_EXPECTED = {"create": {"terraform"}, "modify": {"terraform"}, "query": {"cli", "boto3"}}
@@ -337,7 +337,7 @@ def compare_free_to_baseline(
     n_boot: int = BOOTSTRAP_ITERATIONS,
     seed: int = BOOTSTRAP_SEED,
 ) -> dict[str, Any]:
-    """E4: a forma escolhida (maioria das reps em `chosen_first`) contra um run de forma fixa.
+    """Forma escolhida na forma livre (maioria das reps em `chosen_first`) × run de forma fixa.
 
     Por tarefa, a forma mais barata e a mais cara do baseline pela média de tokens (total e,
     à parte, saída: o prompt livre é mais longo). `chose_cheapest` só conta tarefas com escolha
@@ -382,7 +382,7 @@ def _asked_first(e: Row) -> bool:
 
 
 def _ask_block(rows: list[Row]) -> dict[str, Any]:
-    """E2 numa modalidade: perguntar nas ambíguas (acerto) e agir nas claras.
+    """Pergunta liberada numa modalidade: perguntar nas ambíguas (acerto) e agir nas claras.
 
     `untouched` = check aprovado (estado igual ao inicial) entre as ambíguas em que um artefato
     executou na última tentativa (EXEC_OK ou BUDGET_EXHAUSTED; o reset antes de cada tentativa faz
@@ -444,7 +444,7 @@ def _replay_block(rows: list[Row]) -> dict[str, Any]:
 
 
 def compute_replay_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Resumo descritivo dos eventos `replay` (E1): `collateral_ok` e concordância do check.
+    """Resumo descritivo dos eventos `replay`: `collateral_ok` e concordância do check.
 
     Por modalidade e por categoria × modalidade. `none` = retrato falhou ou o initial não
     aplicou. Os pulados (sem artefato) ficam fora das contagens e são listados à parte.

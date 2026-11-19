@@ -105,7 +105,7 @@ def _select_modality_run(
 ) -> tuple[list[Any], list[str]]:
     """Tarefas e modalidades: argumento da CLI > seção [modality] > todas.
 
-    `free` (E4) é a forma livre: roda sozinha e sem `allow_question` (uma variável por vez).
+    `free` é a forma livre: roda sozinha e sem `allow_question` (uma variável por vez).
     """
     mod_cfg = cfg.get("modality", {})
     tasks = _load_cfg_tasks(cfg)
@@ -128,7 +128,7 @@ def _select_modality_run(
 
 
 def _allow_question(cfg: dict[str, Any]) -> bool:
-    """`[modality] allow_question` (E2): o agente pode perguntar em vez de agir."""
+    """`[modality] allow_question`: o agente pode perguntar em vez de agir."""
     return bool(cfg.get("modality", {}).get("allow_question", False))
 
 

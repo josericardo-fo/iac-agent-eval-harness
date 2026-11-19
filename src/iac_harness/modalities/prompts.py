@@ -11,7 +11,7 @@ from iac_harness.modalities.loader import ModalityTask
 from iac_harness.modalities.spec import Modality
 
 PROMPT_VERSION = "mod-v3"
-# Versão com a opção de perguntar (E2): o mod-v3 mais a frase ASK_NOTE no prompt de sistema.
+# Versão com a opção de perguntar: o mod-v3 mais a frase ASK_NOTE no prompt de sistema.
 ASK_PROMPT_VERSION = f"{PROMPT_VERSION}-ask"
 QUESTION_FILENAME = "question.md"
 
@@ -133,7 +133,7 @@ single fenced block with title="{question}" instead of {filename}. Nothing will 
 """
 
 
-# ---------- forma livre (E4) ----------
+# ---------- forma livre ----------
 # Versão com a escolha da ferramenta: os três blocos, sem falar de custo (decisão P5).
 FREE_PROMPT_VERSION = f"{PROMPT_VERSION}-free"
 FREE_ORDER = ("terraform", "cli", "boto3")  # ordem fixa dos blocos no prompt

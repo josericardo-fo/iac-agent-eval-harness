@@ -285,8 +285,13 @@ simples. Só o necessário para as peças que já existem mais as da fase 6; nad
   saiu; `AgentTermination` e `ModTermination` ficam separados, porque descrevem laços diferentes
   (`DONE`/`MAX_TURNS`/`TIMEOUT` × `EXEC_OK`/`FORMAT_FAIL`/`ASKED`) e só `INITIAL_FAIL` é comum:
   juntar não mudaria strings gravadas, mas misturaria estados que um laço nunca produz.*
-- [ ] Tirar ids de experimento dos nomes de constante e das docstrings (os valores gravados
+- [x] Tirar ids de experimento dos nomes de constante e das docstrings (os valores gravados
   ficam; ver seção 2).
+  *Nenhum nome de constante tinha id; docstrings, comentários e ajudas da CLI passaram a nomear a
+  peça (forma livre, pergunta liberada, usuário simulado). Ficaram de fora o cabeçalho
+  `# E15: ...` que o `agent-questions-report` imprime (saída do teste de ouro) e os arquivos em
+  refatoração paralela de `TaskSource`/`Backend` (`datasets/`, `modalities/loader.py`,
+  `_load_cfg_tasks`, `cli/modality.py`, `executors/`).*
 
 ### Fase 5: nomes
 

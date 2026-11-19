@@ -72,7 +72,7 @@ from iac_harness.metrics import load_events
 from iac_harness.modalities.loader import TASKS_DIR as MODALITY_TASKS_DIR
 from iac_harness.recorder.jsonl import JsonlRecorder
 
-# E3: raiz dos plugins das condições (toolkit/, third_party/).
+# Raiz dos plugins dos toolkits (toolkit/, third_party/).
 AGENT_PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -469,7 +469,7 @@ def cmd_agent_judge(args: argparse.Namespace) -> int:
 
 
 def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
-    """E15: nota a qualidade de cada pergunta (trajetória com `asked = true` no judge.jsonl).
+    """Nota a qualidade de cada pergunta (trajetória com `asked = true` no judge.jsonl).
 
     Retomável: pula as trajetórias que já têm linha no arquivo de saída.
     """
@@ -495,7 +495,7 @@ def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
             verdict = judge.grade(
                 request=agent_prompt(task),
                 expect=task.expect,
-                # tarefas de dataset (E16) não têm meta.toml
+                # tarefas de dataset não têm meta.toml
                 meta_note=""
                 if task.rego_policy is not None
                 else meta_header((tasks_dir / task.task_id / "meta.toml").read_text()),
@@ -520,7 +520,7 @@ def cmd_agent_judge_questions(args: argparse.Namespace) -> int:
 
 
 def cmd_agent_questions_report(args: argparse.Namespace) -> int:
-    """E15: relatório das notas das perguntas (Markdown no stdout), sem LLM.
+    """Relatório das notas das perguntas (Markdown no stdout), sem LLM.
 
     Com `--compare A B`, grava os desacordos de 2 pontos em questions-disagreements.csv no run.
     """
