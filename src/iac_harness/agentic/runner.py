@@ -24,8 +24,8 @@ from typing import Any
 from iac_harness.agentic.agents import AgentResult, CodingAgent
 from iac_harness.agentic.conditions import Condition, resolve_condition
 from iac_harness.agentic.judge import Judge
+from iac_harness.agentic.state_ops import state_ops
 from iac_harness.agentic.strata import strata_fields
-from iac_harness.agentic.stream import state_ops
 from iac_harness.agentic.targets import Target
 from iac_harness.agentic.user_sim import UserSimulator
 from iac_harness.feedback import DEFAULT_MAX_CHARS

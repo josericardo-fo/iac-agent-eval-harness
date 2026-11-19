@@ -238,8 +238,8 @@ Mover código sem mudar a lógica. Um arquivo por commit, com o teste de ouro ve
 - [ ] **`executors/aws_sweep.py`**: um módulo por grupo de serviço (`sweep/ec2.py`, `sweep/s3.py`,
   `sweep/iam.py`…) com um registro de sweepers. Atenção: o arquivo roda dentro da toolchain;
   conferir como ele é copiado/montado antes de virar pacote.
-- [ ] **`agentic/stream.py`**: separar o parser do stream do Claude Code (genérico) das
-  heurísticas de classificação (`_AWS_VALUE_FLAGS`, `_TF_MUTATE`, `TOOLKIT_READ_SCRIPTS`).
+- [x] **`agentic/stream.py`**: separar o parser do stream do Claude Code (genérico) das
+  heurísticas de classificação (`_AWS_VALUE_FLAGS`, `_TF_MUTATE`, `TOOLKIT_READ_SCRIPTS`). *O classificador foi para `agentic/state_ops.py`.*
 - [ ] **Métricas**: um núcleo comum (taxas, intervalos, tokens, estratos) usado pelos quatro
   módulos; cada pipeline fica só com o que é dele.
 - [ ] **`modalities/execute.py`**: separar por modalidade (terraform, cli, boto3).

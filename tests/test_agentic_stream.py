@@ -43,7 +43,7 @@ def _write(path, content):
 
 
 def test_verified_state_true_when_read_follows_last_mutation():
-    from iac_harness.agentic.stream import state_ops
+    from iac_harness.agentic.state_ops import state_ops
 
     parsed = parse_stream(FIXTURE.read_text().splitlines())
     # o fixture escreve fix.py (set_queue_attributes), roda e relê com get-queue-attributes
@@ -217,13 +217,13 @@ def test_verified_state_true_when_read_follows_last_mutation():
     ],
 )
 def test_verified_state_cases(calls, expected):
-    from iac_harness.agentic.stream import state_ops
+    from iac_harness.agentic.state_ops import state_ops
 
     assert state_ops(calls).verified is expected
 
 
 def test_state_ops_counts_toolkit_verify_calls_and_mutation():
-    from iac_harness.agentic.stream import state_ops
+    from iac_harness.agentic.state_ops import state_ops
 
     ops = state_ops(
         [
@@ -239,7 +239,7 @@ def test_state_ops_counts_toolkit_verify_calls_and_mutation():
 
 
 def test_state_ops_without_mutation():
-    from iac_harness.agentic.stream import state_ops
+    from iac_harness.agentic.state_ops import state_ops
 
     ops = state_ops([_bash("grep -i aws main.tf"), _bash("aws s3 ls")])
     assert ops.mutated is False and ops.verified is None and ops.verify_calls == 0

@@ -15,7 +15,8 @@ from typing import Any
 from iac_harness.agentic.agents import secret_values
 from iac_harness.agentic.judge import JUDGE_FILENAME
 from iac_harness.agentic.runner import model_slug, trajectory_id
-from iac_harness.agentic.stream import TOOLKIT_READ_SCRIPTS, call_ops, parse_stream, redact
+from iac_harness.agentic.state_ops import TOOLKIT_READ_SCRIPTS, call_ops
+from iac_harness.agentic.stream import parse_stream, redact
 from iac_harness.metrics import load_events
 
 CAPTIONS = {
